@@ -7,6 +7,7 @@ use std::path::Path;
 use tokio::task::JoinSet;
 
 use super::embed::{embed_batch, ensure_embed_model, vec_literal};
+use super::lhs;
 use super::symbols::extract_symbols;
 
 const EMBED_BATCH: usize = 16;
@@ -17,8 +18,9 @@ const MAX_CHUNK_BYTES: usize = 8_000;
 const MAX_CHUNKS_PER_FILE: usize = 256;
 
 const CODE_EXTENSIONS: &[&str] = &[
-    "hs", "rs", "py", "ts", "tsx", "js", "jsx", "nix", "go", "java", "scala", "ml", "mli", "c",
-    "cpp", "h", "hpp", "sql", "sh", "toml", "yaml", "yml", "json", "tex", "cabal",
+    "hs", "lhs", "hsc", "chs", "rs", "py", "ts", "tsx", "js", "jsx", "nix", "go", "java", "scala",
+    "ml", "mli", "c", "cpp", "h", "hpp", "sql", "sh", "toml", "yaml", "yml", "json", "tex",
+    "cabal",
 ];
 
 const SKIP_DIRS: &[&str] = &[
@@ -193,7 +195,17 @@ pub async fn ingest_code(
         }
 
         let lang = detect_language(file_path);
-        let chunks = make_chunks(&source, &lang);
+        let ext = file_path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+        let fname = file_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        let chunks = if ext == "lhs" || fname.ends_with(".lhs-boot") {
+            make_lhs_chunks(&source)
+        } else {
+            make_chunks(&source, &lang)
+        };
 
         for chunk in chunks {
             pending.push(ChunkRecord {
@@ -302,9 +314,11 @@ fn collect_files(repo_path: &Path, extra_patterns: &[String]) -> Vec<std::path::
         let is_cabal_project = filename == "cabal.project"
             || filename == "cabal.project.freeze"
             || filename == "cabal.project.local";
+        let is_boot = filename.ends_with(".hs-boot") || filename.ends_with(".lhs-boot");
 
         let matches = CODE_EXTENSIONS.contains(&ext.as_str())
             || is_cabal_project
+            || is_boot
             || extra_patterns.iter().any(|p| {
                 glob::Pattern::new(p)
                     .map(|pat| pat.matches_path(&path))
@@ -328,6 +342,9 @@ fn detect_language(path: &Path) -> String {
     {
         return "cabal".to_string();
     }
+    if filename.ends_with(".hs-boot") || filename.ends_with(".lhs-boot") {
+        return "haskell".to_string();
+    }
 
     let ext = path
         .extension()
@@ -335,7 +352,7 @@ fn detect_language(path: &Path) -> String {
         .unwrap_or("")
         .to_lowercase();
     match ext.as_str() {
-        "hs" => "haskell",
+        "hs" | "lhs" | "hsc" | "chs" => "haskell",
         "rs" => "rust",
         "py" => "python",
         "ts" | "tsx" => "typescript",
@@ -535,6 +552,39 @@ async fn flush_bulk(records: Vec<ChunkRecord>, pool: PgPool) -> Result<usize> {
     Ok(n)
 }
 
+// ── Literate Haskell pre-processor ────────────────────────────────────────────
+
+/// Strip Literate Haskell markup and return code chunks with line numbers
+/// translated back to the original `.lhs` file coordinates.
+fn make_lhs_chunks(source: &str) -> Vec<Chunk> {
+    let parsed = lhs::parse_lhs(source);
+    let code_blocks: Vec<&lhs::LhsBlock> = parsed.code_blocks().collect();
+    if code_blocks.is_empty() {
+        return vec![];
+    }
+
+    // Concatenate all code blocks into a single Haskell source string for
+    // tree-sitter. Blocks are separated by a single newline so relative line
+    // offsets within each block are preserved.
+    let stripped: String = code_blocks
+        .iter()
+        .map(|b| b.content.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let line_map = lhs::LineMap::from_code_blocks(&code_blocks);
+    let mut chunks = make_chunks(&stripped, "haskell");
+
+    // Translate tree-sitter line numbers (relative to the concatenated buffer)
+    // back to original file line numbers.
+    for chunk in &mut chunks {
+        chunk.start_line = line_map.file_line(chunk.start_line as usize) as i32;
+        chunk.end_line = line_map.file_line(chunk.end_line as usize) as i32;
+    }
+
+    chunks
+}
+
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
 fn sha256_hex(s: &str) -> String {
@@ -625,6 +675,51 @@ instance Show Color where
             has_instance,
             "expected an impl chunk for 'instance Show Color'"
         );
+    }
+
+    // ── make_lhs_chunks ────────────────────────────────────────────────────────
+
+    #[test]
+    fn make_lhs_chunks_bird_strips_prefix() {
+        let src = "> myFunc = 42\n\nsome prose line\n";
+        let chunks = make_lhs_chunks(src);
+        // All returned chunks must not contain the `> ` prefix.
+        for chunk in &chunks {
+            assert!(
+                !chunk.content.contains("> "),
+                "chunk still contains '> ' prefix: {:?}",
+                chunk.content
+            );
+        }
+        // At least one chunk should exist (from the code line).
+        assert!(!chunks.is_empty());
+    }
+
+    #[test]
+    fn make_lhs_chunks_latex_strips_delimiters_and_prose() {
+        let src = "some prose\n\\begin{code}\nmyFunc = 42\n\\end{code}\nmore prose\n";
+        let chunks = make_lhs_chunks(src);
+        // The only code content is `myFunc = 42`.
+        assert!(!chunks.is_empty());
+        for chunk in &chunks {
+            assert!(
+                !chunk.content.contains("begin{code}"),
+                "chunk contains LaTeX delimiter: {:?}",
+                chunk.content
+            );
+            assert!(
+                !chunk.content.contains("some prose"),
+                "chunk contains prose: {:?}",
+                chunk.content
+            );
+        }
+    }
+
+    #[test]
+    fn make_lhs_chunks_no_code_returns_empty() {
+        let src = "This file has only prose.\nNo code lines at all.\n";
+        let chunks = make_lhs_chunks(src);
+        assert!(chunks.is_empty());
     }
 
     #[test]

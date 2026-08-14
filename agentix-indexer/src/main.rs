@@ -6,6 +6,7 @@ mod ingest {
     pub mod git;
     pub mod github;
     pub mod hackage;
+    pub mod lhs;
     pub mod prune;
     pub mod pypi;
     pub mod repo_index;

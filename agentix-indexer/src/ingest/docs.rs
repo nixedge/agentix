@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use super::embed::{embed_batch, vec_literal};
+use super::lhs;
 
 const EMBED_BATCH: usize = 8;
 const MAX_CHUNK_CHARS: usize = 4_000;
@@ -178,11 +179,69 @@ pub async fn ingest_docs(
             }
         }
 
-        let title = extract_title(
-            &source,
-            abs_path.file_stem().and_then(|s| s.to_str()).unwrap_or(""),
-        );
-        let chunks = chunk_markdown(&source);
+        let file_stem = abs_path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+
+        if doc_kind == "lhs_prose" {
+            // Extract prose blocks from the .lhs file and emit each paragraph
+            // as a separate DocRecord with an optional adjacent-code header.
+            let parsed = lhs::parse_lhs(&source);
+            let blocks = &parsed.blocks;
+            let mut chunk_idx = 0i32;
+
+            for (block_idx, block) in blocks.iter().enumerate() {
+                if block.kind != lhs::BlockKind::Prose {
+                    continue;
+                }
+                // Find the nearest Code block that follows this Prose block.
+                let next_code = blocks[block_idx + 1..]
+                    .iter()
+                    .find(|b| b.kind == lhs::BlockKind::Code);
+
+                for para in chunk_by_paragraph(&block.content) {
+                    if para.content.trim().len() < MIN_CHUNK_CHARS {
+                        continue;
+                    }
+                    let content = match next_code {
+                        Some(code) => format!(
+                            "[Adjacent code: lines {}-{}]\n\n{}",
+                            code.start_line, code.end_line, para.content
+                        ),
+                        None => para.content.clone(),
+                    };
+                    let preview: String = content.split_whitespace().collect::<Vec<_>>().join(" ");
+                    let preview = truncate_to_char_boundary(&preview, 280);
+                    pending.push(DocRecord {
+                        repo_path: repo_str.clone(),
+                        source_path: rel_path.clone(),
+                        chunk_index: chunk_idx,
+                        doc_kind: doc_kind.clone(),
+                        title: file_stem.to_string(),
+                        content,
+                        preview: preview.to_string(),
+                        content_hash: file_hash.clone(),
+                        file_mtime,
+                        project: project.map(|s| s.to_string()),
+                    });
+                    chunk_idx += 1;
+                    if pending.len() >= EMBED_BATCH {
+                        flush_docs(&mut pending, pool, &mut total_chunks).await?;
+                    }
+                }
+            }
+            bar.inc(1);
+            continue;
+        }
+
+        let title = if doc_kind == "changelog" {
+            file_stem.to_string()
+        } else {
+            extract_title(&source, file_stem)
+        };
+        let chunks = if doc_kind == "changelog" {
+            chunk_by_paragraph(&source)
+        } else {
+            chunk_markdown(&source)
+        };
 
         for chunk in chunks {
             if chunk.content.trim().len() < MIN_CHUNK_CHARS {
@@ -270,6 +329,25 @@ fn classify_doc(rel_path: &str) -> Option<&'static str> {
     }
 }
 
+fn is_changelog_filename(name: &str) -> bool {
+    matches!(
+        name,
+        "CHANGELOG"
+            | "ChangeLog"
+            | "CHANGES"
+            | "NEWS"
+            | "HISTORY"
+            | "CHANGELOG.txt"
+            | "CHANGES.txt"
+            | "NEWS.txt"
+            | "HISTORY.txt"
+            | "CHANGELOG.rst"
+            | "CHANGES.rst"
+            | "NEWS.rst"
+            | "HISTORY.rst"
+    )
+}
+
 fn collect_docs(repo_path: &Path) -> Vec<(std::path::PathBuf, String, String)> {
     let mut result = vec![];
 
@@ -287,17 +365,30 @@ fn collect_docs(repo_path: &Path) -> Vec<(std::path::PathBuf, String, String)> {
         if !path.is_file() {
             continue;
         }
-        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-        if ext.to_lowercase() != "md" {
-            continue;
-        }
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+        let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
         let rel = path
             .strip_prefix(repo_path)
             .unwrap_or(&path)
             .to_string_lossy()
             .into_owned();
-        if let Some(kind) = classify_doc(&rel) {
-            result.push((path, rel, kind.to_string()));
+
+        let kind: Option<String> = if ext == "lhs" {
+            Some("lhs_prose".to_string())
+        } else if is_changelog_filename(filename) {
+            Some("changelog".to_string())
+        } else if ext == "md" {
+            classify_doc(&rel).map(|k| k.to_string())
+        } else {
+            None
+        };
+
+        if let Some(k) = kind {
+            result.push((path, rel, k));
         }
     }
     result
@@ -313,6 +404,26 @@ fn extract_title(text: &str, fallback: &str) -> String {
         }
     }
     fallback.to_string()
+}
+
+/// Split plain text into paragraph-sized chunks, separated by blank lines.
+/// Each chunk is trimmed and truncated to [`MAX_CHUNK_CHARS`].
+fn chunk_by_paragraph(text: &str) -> Vec<MarkdownChunk> {
+    let mut chunks = Vec::new();
+    let mut idx = 0i32;
+    for para in text.split("\n\n") {
+        let para = para.trim();
+        if para.is_empty() {
+            continue;
+        }
+        let content = truncate_to_char_boundary(para, MAX_CHUNK_CHARS);
+        chunks.push(MarkdownChunk {
+            index: idx,
+            content: content.to_string(),
+        });
+        idx += 1;
+    }
+    chunks
 }
 
 fn chunk_markdown(source: &str) -> Vec<MarkdownChunk> {
@@ -438,4 +549,164 @@ fn sha256_hex(s: &str) -> String {
     let mut h = Sha256::new();
     h.update(s.as_bytes());
     hex::encode(h.finalize())
+}
+
+// ── Unit tests ────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── chunk_by_paragraph ─────────────────────────────────────────────────────
+
+    #[test]
+    fn paragraph_split_on_blank_line() {
+        let text = "First paragraph.\n\nSecond paragraph.\n";
+        let chunks = chunk_by_paragraph(text);
+        assert_eq!(chunks.len(), 2);
+        assert!(chunks[0].content.contains("First"));
+        assert!(chunks[1].content.contains("Second"));
+    }
+
+    #[test]
+    fn paragraph_empty_text_produces_no_chunks() {
+        assert!(chunk_by_paragraph("").is_empty());
+    }
+
+    // ── lhs_prose extraction ───────────────────────────────────────────────────
+
+    /// Simulate the prose extraction logic used in `ingest_docs` for lhs_prose,
+    /// without touching the database.
+    fn extract_prose_records(lhs_source: &str) -> Vec<(String, String)> {
+        let parsed = lhs::parse_lhs(lhs_source);
+        let blocks = &parsed.blocks;
+        let mut records: Vec<(String, String)> = Vec::new(); // (doc_kind, content)
+
+        for (block_idx, block) in blocks.iter().enumerate() {
+            if block.kind != lhs::BlockKind::Prose {
+                continue;
+            }
+            let next_code = blocks[block_idx + 1..]
+                .iter()
+                .find(|b| b.kind == lhs::BlockKind::Code);
+
+            for para in chunk_by_paragraph(&block.content) {
+                if para.content.trim().len() < MIN_CHUNK_CHARS {
+                    continue;
+                }
+                let content = match next_code {
+                    Some(code) => format!(
+                        "[Adjacent code: lines {}-{}]\n\n{}",
+                        code.start_line, code.end_line, para.content
+                    ),
+                    None => para.content.clone(),
+                };
+                records.push(("lhs_prose".to_string(), content));
+            }
+        }
+        records
+    }
+
+    #[test]
+    fn bird_prose_chunks_have_lhs_prose_kind_and_no_code_prefix() {
+        // T023: Bird-style prose paragraphs become lhs_prose records without `> `.
+        let src = concat!(
+            "First prose paragraph about the module.\n",
+            "It spans multiple lines for context.\n",
+            "\n",
+            "> myFunc = 42\n",
+            "\n",
+            "Second prose paragraph after the code.\n",
+            "This also spans multiple lines for the test.\n",
+        );
+        let records = extract_prose_records(src);
+        assert!(
+            !records.is_empty(),
+            "expected at least one lhs_prose record"
+        );
+        for (kind, content) in &records {
+            assert_eq!(kind, "lhs_prose");
+            assert!(
+                !content.contains("> "),
+                "prose record contains code prefix '> ': {content:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn latex_prose_chunk_carries_adjacent_code_header() {
+        // T026: Prose blocks in LaTeX-style files get an [Adjacent code: lines N-M] header.
+        let src = concat!(
+            "This is an introductory prose paragraph that describes the module.\n",
+            "It is long enough to exceed MIN_CHUNK_CHARS for the test to work.\n",
+            "\\begin{code}\n",
+            "module Foo where\n",
+            "foo = 1\n",
+            "\\end{code}\n",
+            "Trailing prose after the code block.\n",
+            "Also long enough to be indexed as a separate chunk here.\n",
+        );
+        let records = extract_prose_records(src);
+
+        // The first prose record (before the code block) should carry the header.
+        let first = records
+            .iter()
+            .find(|(_, c)| c.starts_with("[Adjacent code:"))
+            .expect("expected at least one record with [Adjacent code:] header");
+        assert!(
+            first.1.contains("[Adjacent code: lines"),
+            "header not found: {:?}",
+            first.1
+        );
+    }
+
+    #[test]
+    fn trailing_prose_has_no_adjacent_code_header() {
+        // A prose block at end of file (no following code) must not get the header.
+        let src = concat!(
+            "\\begin{code}\n",
+            "module Bar where\n",
+            "bar = 2\n",
+            "\\end{code}\n",
+            "This is trailing prose with no code block following it anywhere.\n",
+            "It should be emitted without an [Adjacent code:] header.\n",
+        );
+        let records = extract_prose_records(src);
+        let trailing = records.last().expect("expected at least one record");
+        assert!(
+            !trailing.1.starts_with("[Adjacent code:"),
+            "trailing prose should not have adjacent-code header: {:?}",
+            trailing.1
+        );
+    }
+
+    // ── is_changelog_filename ──────────────────────────────────────────────────
+
+    #[test]
+    fn changelog_names_recognized() {
+        for name in &[
+            "CHANGELOG",
+            "ChangeLog",
+            "CHANGES",
+            "NEWS",
+            "HISTORY",
+            "CHANGELOG.txt",
+            "CHANGES.rst",
+        ] {
+            assert!(
+                is_changelog_filename(name),
+                "{name:?} should be recognized as a changelog"
+            );
+        }
+    }
+
+    #[test]
+    fn non_changelog_names_rejected() {
+        for name in &["README.md", "NOTES.txt", "changelog.json"] {
+            assert!(
+                !is_changelog_filename(name),
+                "{name:?} should NOT be recognized as a changelog"
+            );
+        }
+    }
 }
