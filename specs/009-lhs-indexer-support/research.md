@@ -9,7 +9,7 @@
 
 **Decision**: The bug is confirmed and the fix is well-scoped.
 
-**Rationale**: `CODE_EXTENSIONS` in `src/ingest/code.rs:7-10` is the single gate for file discovery. `"lhs"` is not in the list. Additionally, `detect_language()` at line 283-320 has no mapping for `.lhs`, and `SYMBOL_LANGUAGES` at line 321-329 routes `"haskell"` through tree-sitter-haskell — which cannot parse raw `.lhs` source because it contains non-Haskell markup. A pre-processing layer is required.
+**Rationale**: `CODE_EXTENSIONS` in `agentix-indexer/src/ingest/code.rs:7-10` is the single gate for file discovery. `"lhs"` is not in the list. Additionally, `detect_language()` at line 283-320 has no mapping for `.lhs`, and `SYMBOL_LANGUAGES` at line 321-329 routes `"haskell"` through tree-sitter-haskell — which cannot parse raw `.lhs` source because it contains non-Haskell markup. A pre-processing layer is required.
 
 **Alternatives considered**: Relying on tree-sitter-haskell's error recovery to skip Bird markup. Rejected — the `> ` prefix lines are syntactically invalid Haskell; the parser emits ERROR nodes for every code line, making symbol extraction useless.
 
@@ -17,7 +17,7 @@
 
 ## 2. Pre-Processing Architecture
 
-**Decision**: Extract a new `src/ingest/lhs.rs` module containing the `.lhs` pre-processor. The code pipeline (`code.rs`) and doc pipeline (`docs.rs`) each consume its output separately.
+**Decision**: Extract a new `agentix-indexer/src/ingest/lhs.rs` module containing the `.lhs` pre-processor. The code pipeline (`code.rs`) and doc pipeline (`docs.rs`) each consume its output separately.
 
 **Rationale**: The `.lhs` format must fan out to two different storage tables:
 - Stripped Haskell code → `code_chunks` (via `ingest_code`)

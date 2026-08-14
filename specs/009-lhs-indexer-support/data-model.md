@@ -34,7 +34,7 @@ No schema migrations required — both tables already exist and the new data fit
 
 ---
 
-## New In-Memory Types (Rust, `src/ingest/lhs.rs`)
+## New In-Memory Types (Rust, `agentix-indexer/src/ingest/lhs.rs`)
 
 ### `LhsStyle`
 

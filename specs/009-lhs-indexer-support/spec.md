@@ -99,8 +99,8 @@ A developer working with LaTeX-style `.lhs` files (common in academic Haskell an
 
 ## Assumptions
 
-- The agentic-nix indexer is the system being changed and is under this project's control
-- The indexer currently uses a glob or file-extension filter to discover Haskell source files; adding `.lhs` to that filter is the primary entry point for the change
+- The `agentix-indexer` crate (`agentix-indexer/src/ingest/`) is the system being changed and is under this project's control
+- The indexer uses `CODE_EXTENSIONS` in `agentix-indexer/src/ingest/code.rs` as the file-extension filter; adding `.lhs` to that constant is the primary entry point for the change
 - GHC's strict Bird-style rule (`> ` with exactly one space after `>`) is the authoritative definition; lines starting with `>` without a following space are treated as prose
 - LaTeX rendering is out of scope — prose is indexed as raw `.lhs` source text, not rendered HTML or PDF
 - The indexer's chunking and embedding pipeline can accept the stripped Haskell source without modification; only the pre-processing (unwrapping) step changes
