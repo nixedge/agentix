@@ -13,7 +13,7 @@
 ### Current
 
 ```
-agentix/                        (workspace root — agentix-jails package)
+agentix/                        (workspace root — agentix package)
 ├── src/jail/                   claude-jail binary (bubblewrap sandbox for claude-code)
 ├── src/ax_jail/                ax-jail binary (bubblewrap sandbox for agentix-ax)
 ├── src/gh_proxy/               gh-jail-client + gh-jail-server binaries

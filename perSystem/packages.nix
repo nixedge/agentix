@@ -17,26 +17,29 @@
     # plus stubs at every [[bin]]/[lib] entry point so cargo can resolve and
     # compile all dependencies without touching real source.
     # This keeps cargoArtifacts stable across source-only changes.
+    # All workspace member Cargo.toml manifests — included in every source tree so
+    # cargo can resolve the full workspace even when building a single package.
+    allManifests = [
+      ../Cargo.toml
+      ../agentix-api/Cargo.toml
+      ../agentix-router/Cargo.toml
+      ../agentix-daemon/Cargo.toml
+      ../agentix-harness/Cargo.toml
+      ../agentix-ax/Cargo.toml
+      ../agentix-infer/Cargo.toml
+      ../agentix-search/Cargo.toml
+      ../agentix-indexer/Cargo.toml
+      ../agentix-llama/Cargo.toml
+      ../agentix-whisper/Cargo.toml
+      ../agentix-mcp-server/Cargo.toml
+      ../agentix-jails/Cargo.toml
+    ];
+
     depsOnlySrc = let
       cargoFiles = lib.fileset.toSource {
         root = ./..;
         fileset = lib.fileset.unions (
-          [
-            ../Cargo.toml
-            # Workspace member manifests — cargo must be able to read the full
-            # workspace even when building a single package.
-            ../agentix-api/Cargo.toml
-            ../agentix-router/Cargo.toml
-            ../agentix-daemon/Cargo.toml
-            ../agentix-harness/Cargo.toml
-            ../agentix-ax/Cargo.toml
-            ../agentix-infer/Cargo.toml
-            ../agentix-search/Cargo.toml
-            ../agentix-indexer/Cargo.toml
-            ../agentix-llama/Cargo.toml
-            ../agentix-whisper/Cargo.toml
-            ../agentix-mcp-server/Cargo.toml
-          ]
+          allManifests
           ++ lib.optional (lib.pathExists ../Cargo.lock) ../Cargo.lock
         );
       };
@@ -44,12 +47,6 @@
       pkgs.runCommand "crane-deps-src" {} ''
         cp -rT ${cargoFiles} $out
         chmod -R u+w $out
-        # Root crate stubs (agentix-jails: jail + ax-jail + gh-proxy only)
-        mkdir -p $out/src/jail $out/src/ax_jail $out/src/gh_proxy
-        cp ${stubMain} $out/src/jail/main.rs
-        cp ${stubMain} $out/src/ax_jail/main.rs
-        cp ${stubMain} $out/src/gh_proxy/client.rs
-        cp ${stubMain} $out/src/gh_proxy/server.rs
         # Workspace member stubs
         mkdir -p $out/agentix-api/src
         cp ${stubLib} $out/agentix-api/src/lib.rs
@@ -76,6 +73,11 @@
         cp ${stubMain} $out/agentix-whisper/src/main.rs
         mkdir -p $out/agentix-mcp-server/src
         cp ${stubMain} $out/agentix-mcp-server/src/main.rs
+        mkdir -p $out/agentix-jails/src/jail $out/agentix-jails/src/ax_jail $out/agentix-jails/src/gh_proxy
+        cp ${stubMain} $out/agentix-jails/src/jail/main.rs
+        cp ${stubMain} $out/agentix-jails/src/ax_jail/main.rs
+        cp ${stubMain} $out/agentix-jails/src/gh_proxy/client.rs
+        cp ${stubMain} $out/agentix-jails/src/gh_proxy/server.rs
       '';
 
     # agentix-infer depends on llama-cpp-2 which drives a C++ build via cmake.
@@ -141,40 +143,78 @@
       value = craneLib.buildDepsOnly (commonArgs // cudaArgs);
     };
 
-    # Full source tree for agentix-* workspace packages.
-    agentixSrc = lib.fileset.toSource {
-      root = ./..;
-      fileset = lib.fileset.unions (
-        [
-          ../Cargo.toml
-          ../src
-          ../agentix-api
-          ../agentix-router
-          ../agentix-daemon
-          ../agentix-harness
-          ../agentix-ax
-          ../agentix-infer
-          ../agentix-search
-          ../agentix-indexer
-          ../agentix-llama
-          ../agentix-whisper
-          ../agentix-mcp-server
-        ]
-        ++ lib.optional (lib.pathExists ../Cargo.lock) ../Cargo.lock
-      );
+    # Stub commands for each workspace member — written when the member is NOT in the
+    # build's keepCrates list.  $out is the shell variable set by pkgs.runCommand.
+    # Stub shell commands for each workspace member.  Each command is self-contained
+    # (creates its own subdirs) so agentix-jails' nested layout works without special-casing.
+    memberStubs = {
+      agentix-api        = "mkdir -p $out/agentix-api/src;        cp ${stubLib}  $out/agentix-api/src/lib.rs";
+      agentix-router     = "mkdir -p $out/agentix-router/src;     cp ${stubLib}  $out/agentix-router/src/lib.rs";
+      agentix-daemon     = "mkdir -p $out/agentix-daemon/src;     cp ${stubMain} $out/agentix-daemon/src/main.rs";
+      agentix-harness    = "mkdir -p $out/agentix-harness/src;    cp ${stubLib}  $out/agentix-harness/src/lib.rs";
+      agentix-ax         = "mkdir -p $out/agentix-ax/src;         cp ${stubMain} $out/agentix-ax/src/main.rs";
+      agentix-infer      = "mkdir -p $out/agentix-infer/src;      cp ${stubLib}  $out/agentix-infer/src/lib.rs";
+      agentix-search     = "mkdir -p $out/agentix-search/src;     cp ${stubLib}  $out/agentix-search/src/lib.rs";
+      # agentix-indexer is both a lib (used by mcp-server) and a bin.
+      agentix-indexer    = "mkdir -p $out/agentix-indexer/src;    cp ${stubLib}  $out/agentix-indexer/src/lib.rs; cp ${stubMain} $out/agentix-indexer/src/main.rs";
+      # agentix-llama has no [lib] target but cargo still probes src/lib.rs by convention.
+      agentix-llama      = "mkdir -p $out/agentix-llama/src;      cp ${stubLib}  $out/agentix-llama/src/lib.rs;   cp ${stubMain} $out/agentix-llama/src/main.rs";
+      agentix-whisper    = "mkdir -p $out/agentix-whisper/src;    cp ${stubLib}  $out/agentix-whisper/src/lib.rs; cp ${stubMain} $out/agentix-whisper/src/main.rs";
+      agentix-mcp-server = "mkdir -p $out/agentix-mcp-server/src; cp ${stubMain} $out/agentix-mcp-server/src/main.rs";
+      # agentix-jails has four bins spread across nested subdirs.
+      agentix-jails      = "mkdir -p $out/agentix-jails/src/jail $out/agentix-jails/src/ax_jail $out/agentix-jails/src/gh_proxy; cp ${stubMain} $out/agentix-jails/src/jail/main.rs; cp ${stubMain} $out/agentix-jails/src/ax_jail/main.rs; cp ${stubMain} $out/agentix-jails/src/gh_proxy/client.rs; cp ${stubMain} $out/agentix-jails/src/gh_proxy/server.rs";
     };
+
+    # Scoped source tree for a workspace binary package.  keepCrates must include
+    # the package itself and every transitive workspace path dependency.
+    # All other workspace members get stub entry points so cargo can resolve the
+    # workspace without compiling unrelated code.  Changing agentix-indexer no
+    # longer invalidates agentix-llama's derivation, for example.
+    mkWorkspaceSrc = keepCrates:
+      let
+        realDirs = map (name: ../${name}) keepCrates;
+        base = lib.fileset.toSource {
+          root = ./..;
+          fileset = lib.fileset.unions (
+            allManifests
+            ++ realDirs
+            ++ lib.optional (lib.pathExists ../Cargo.lock) ../Cargo.lock
+          );
+        };
+        stubLines = lib.concatStringsSep "\n" (
+          lib.mapAttrsToList (name: stubCmd:
+            if builtins.elem name keepCrates then "" else stubCmd
+          ) memberStubs
+        );
+      in
+        pkgs.runCommand "crane-workspace-src" {} ''
+          cp -rT ${base} $out
+          chmod -R u+w $out
+          # Workspace member stubs (skipped for crates in keepCrates).
+          ${stubLines}
+        '';
+
+    # Workspace path deps per package (package itself + transitive workspace path deps):
+    #   agentix-daemon:     api, router
+    #   agentix-llama:      api, infer
+    #   agentix-whisper:    api, infer
+    #   agentix-ax:         harness
+    #   agentix-indexer:    (leaf)
+    #   agentix-mcp-server: search, indexer
 
     # agentix-daemon is now pure Rust (no C++ deps) — no CUDA feature or cudaArgs needed.
     agentixDaemonPkg = craneLib.buildPackage (commonArgs
       // {
-        src = agentixSrc;
+        pname = "agentix-daemon";
+        src = mkWorkspaceSrc ["agentix-daemon" "agentix-api" "agentix-router"];
         inherit cargoArtifacts;
         cargoExtraArgs = "--package agentix-daemon";
       });
 
     agentixWhisperPkg = craneLib.buildPackage (commonArgs
       // {
-        src = agentixSrc;
+        pname = "agentix-whisper";
+        src = mkWorkspaceSrc ["agentix-whisper" "agentix-api" "agentix-infer"];
         inherit cargoArtifacts;
         cargoExtraArgs = "--package agentix-whisper";
       });
@@ -183,7 +223,8 @@
     agentixLlamaPkg = craneLib.buildPackage (commonArgs
       // cudaArgs
       // {
-        src = agentixSrc;
+        pname = "agentix-llama";
+        src = mkWorkspaceSrc ["agentix-llama" "agentix-api" "agentix-infer"];
         cargoArtifacts = if withCuda then cudaCargoArtifacts.value else cargoArtifacts;
         cargoExtraArgs =
           "--package agentix-llama"
@@ -193,121 +234,45 @@
 
     axPkg = craneLib.buildPackage (commonArgs
       // {
-        src = agentixSrc;
+        pname = "agentix-ax";
+        src = mkWorkspaceSrc ["agentix-ax" "agentix-harness"];
         inherit cargoArtifacts;
         cargoExtraArgs = "--package agentix-ax";
       });
 
     agentixMcpServerPkg = craneLib.buildPackage (commonArgs
       // {
-        src = agentixSrc;
+        pname = "agentix-mcp-server";
+        src = mkWorkspaceSrc ["agentix-mcp-server" "agentix-search" "agentix-indexer"];
         inherit cargoArtifacts;
         cargoExtraArgs = "--package agentix-mcp-server";
       });
 
     agentixIndexerPkg = craneLib.buildPackage (commonArgs
       // {
-        src = agentixSrc;
+        pname = "agentix-indexer";
+        src = mkWorkspaceSrc ["agentix-indexer"];
         inherit cargoArtifacts;
         cargoExtraArgs = "--package agentix-indexer";
       });
 
-    # Build a per-binary source tree: real files from keepFileset, plus
-    # stubs at the listed paths so cargo finds all [[bin]]/[lib] entries.
-    # binStubs get "fn main() {}", libStubs get an empty file.
-    mkBinSrc = keepFileset: {
-      binStubs ? [],
-      libStubs ? [],
-    }:
-      let
-        base = lib.fileset.toSource {
-          root = ./..;
-          fileset = lib.fileset.unions (
-            [
-              ../Cargo.toml
-              # Workspace member manifests must be present so cargo can
-              # resolve the full workspace even when building a single bin.
-              ../agentix-api/Cargo.toml
-              ../agentix-router/Cargo.toml
-              ../agentix-daemon/Cargo.toml
-              ../agentix-harness/Cargo.toml
-              ../agentix-ax/Cargo.toml
-              ../agentix-infer/Cargo.toml
-              ../agentix-search/Cargo.toml
-              ../agentix-indexer/Cargo.toml
-              ../agentix-llama/Cargo.toml
-              ../agentix-whisper/Cargo.toml
-              ../agentix-mcp-server/Cargo.toml
-              keepFileset
-            ]
-            ++ lib.optional (lib.pathExists ../Cargo.lock) ../Cargo.lock
-          );
-        };
-      in
-        pkgs.runCommand "crane-bin-src" {} ''
-          cp -rT ${base} $out
-          chmod -R u+w $out
-          # Workspace member stubs (cargo needs entry points even for
-          # members not being compiled)
-          mkdir -p $out/agentix-api/src
-          cp ${stubLib} $out/agentix-api/src/lib.rs
-          mkdir -p $out/agentix-router/src
-          cp ${stubLib} $out/agentix-router/src/lib.rs
-          mkdir -p $out/agentix-daemon/src
-          cp ${stubMain} $out/agentix-daemon/src/main.rs
-          mkdir -p $out/agentix-harness/src
-          cp ${stubLib} $out/agentix-harness/src/lib.rs
-          mkdir -p $out/agentix-ax/src
-          cp ${stubMain} $out/agentix-ax/src/main.rs
-          mkdir -p $out/agentix-infer/src
-          cp ${stubLib} $out/agentix-infer/src/lib.rs
-          mkdir -p $out/agentix-search/src
-          cp ${stubLib} $out/agentix-search/src/lib.rs
-          mkdir -p $out/agentix-indexer/src
-          cp ${stubLib} $out/agentix-indexer/src/lib.rs
-          cp ${stubMain} $out/agentix-indexer/src/main.rs
-          mkdir -p $out/agentix-llama/src
-          cp ${stubLib} $out/agentix-llama/src/lib.rs
-          cp ${stubMain} $out/agentix-llama/src/main.rs
-          mkdir -p $out/agentix-whisper/src
-          cp ${stubLib} $out/agentix-whisper/src/lib.rs
-          cp ${stubMain} $out/agentix-whisper/src/main.rs
-          mkdir -p $out/agentix-mcp-server/src
-          cp ${stubMain} $out/agentix-mcp-server/src/main.rs
-          ${lib.concatMapStringsSep "\n" (p: ''
-            mkdir -p "$out/$(dirname "${p}")"
-            cp ${stubMain} "$out/${p}"
-          '')
-          binStubs}
-          ${lib.concatMapStringsSep "\n" (p: ''
-            mkdir -p "$out/$(dirname "${p}")"
-            cp ${stubLib} "$out/${p}"
-          '')
-          libStubs}
-        '';
+    # All jail binaries live in the agentix-jails workspace member, so each
+    # jail package uses mkWorkspaceSrc ["agentix-jails"] with a --bin selector.
+    # All four packages share one source derivation (Nix deduplicates).
+    jailsSrc = mkWorkspaceSrc ["agentix-jails"];
 
     claudeJailUnwrapped = craneLib.buildPackage (commonArgs
       // {
-        src = mkBinSrc ../src/jail/main.rs {
-          binStubs = [
-            "src/ax_jail/main.rs"
-            "src/gh_proxy/client.rs"
-            "src/gh_proxy/server.rs"
-          ];
-        };
+        pname = "claude-jail";
+        src = jailsSrc;
         inherit cargoArtifacts;
         cargoExtraArgs = "--bin claude-jail";
       });
 
     ghJailClientPkg = craneLib.buildPackage (commonArgs
       // {
-        src = mkBinSrc ../src/gh_proxy/client.rs {
-          binStubs = [
-            "src/ax_jail/main.rs"
-            "src/jail/main.rs"
-            "src/gh_proxy/server.rs"
-          ];
-        };
+        pname = "gh-jail-client";
+        src = jailsSrc;
         inherit cargoArtifacts;
         cargoExtraArgs = "--bin gh-jail-client";
         # Deploy as 'gh' so it shadows the real gh inside the jail.
@@ -318,26 +283,16 @@
 
     ghJailServerPkg = craneLib.buildPackage (commonArgs
       // {
-        src = mkBinSrc ../src/gh_proxy/server.rs {
-          binStubs = [
-            "src/ax_jail/main.rs"
-            "src/jail/main.rs"
-            "src/gh_proxy/client.rs"
-          ];
-        };
+        pname = "gh-jail-server";
+        src = jailsSrc;
         inherit cargoArtifacts;
         cargoExtraArgs = "--bin gh-jail-server";
       });
 
     axJailUnwrapped = craneLib.buildPackage (commonArgs
       // {
-        src = mkBinSrc ../src/ax_jail/main.rs {
-          binStubs = [
-            "src/jail/main.rs"
-            "src/gh_proxy/client.rs"
-            "src/gh_proxy/server.rs"
-          ];
-        };
+        pname = "ax-jail";
+        src = jailsSrc;
         inherit cargoArtifacts;
         cargoExtraArgs = "--bin ax-jail";
       });

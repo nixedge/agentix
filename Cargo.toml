@@ -1,37 +1,23 @@
 [workspace]
-members = ["agentix-api", "agentix-router", "agentix-daemon", "agentix-harness", "agentix-ax", "agentix-infer", "agentix-search", "agentix-indexer", "agentix-llama", "agentix-whisper", "agentix-mcp-server"]
+members = [
+  "agentix-api",
+  "agentix-router",
+  "agentix-daemon",
+  "agentix-harness",
+  "agentix-ax",
+  "agentix-infer",
+  "agentix-search",
+  "agentix-indexer",
+  "agentix-llama",
+  "agentix-whisper",
+  "agentix-mcp-server",
+  "agentix-jails",
+]
 resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
 
 [workspace.lints.clippy]
 unwrap_used = "deny"
 expect_used = "deny"
-
-[package]
-name = "agentix-jails"
-version = "0.1.0"
-edition = "2021"
-license = "Apache-2.0"
-
-[[bin]]
-name = "claude-jail"
-path = "src/jail/main.rs"
-
-[[bin]]
-name = "ax-jail"
-path = "src/ax_jail/main.rs"
-
-[[bin]]
-name = "gh-jail-client"
-path = "src/gh_proxy/client.rs"
-
-[[bin]]
-name = "gh-jail-server"
-path = "src/gh_proxy/server.rs"
-
-[dependencies]
-anyhow = "1"
-clap = { version = "4", features = ["derive"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-tempfile = "3"
-tokio = { version = "1", features = ["full"] }
