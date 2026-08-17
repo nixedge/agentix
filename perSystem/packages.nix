@@ -95,7 +95,7 @@
       doCheck = false;
     };
 
-    cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+    cargoArtifacts = craneLib.buildDepsOnly (commonArgs // { pname = "agentix-workspace"; });
 
     # Pinned whisper.cpp tiny English model (~75 MB) for whisper integration tests.
     agentixTestWhisperModel = pkgs.fetchurl {
@@ -140,7 +140,7 @@
     # Separate cargoArtifacts for the CUDA-enabled build; CPU build reuses
     # commonArgs cargoArtifacts since feature flags change the compiled output.
     cudaCargoArtifacts = lib.optionalAttrs withCuda {
-      value = craneLib.buildDepsOnly (commonArgs // cudaArgs);
+      value = craneLib.buildDepsOnly (commonArgs // cudaArgs // { pname = "agentix-workspace"; });
     };
 
     # Stub commands for each workspace member — written when the member is NOT in the
