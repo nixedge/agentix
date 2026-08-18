@@ -115,9 +115,9 @@ impl LoadedModel for WhisperLoadedModel {
 
         tokio::task::spawn_blocking(move || {
             // WhisperState is !Send and must stay inside this closure.
-            let mut state = ctx.create_state().map_err(|e| {
-                InferError::Transcription(format!("state creation failed: {e:?}"))
-            })?;
+            let mut state = ctx
+                .create_state()
+                .map_err(|e| InferError::Transcription(format!("state creation failed: {e:?}")))?;
 
             // FullParams has lifetime parameters — create it here inside spawn_blocking.
             let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
@@ -127,9 +127,9 @@ impl LoadedModel for WhisperLoadedModel {
             params.set_print_special(false);
             params.set_single_segment(false);
 
-            state.full(params, &pcm).map_err(|e| {
-                InferError::Transcription(format!("whisper full() failed: {e:?}"))
-            })?;
+            state
+                .full(params, &pcm)
+                .map_err(|e| InferError::Transcription(format!("whisper full() failed: {e:?}")))?;
 
             let n = state
                 .full_n_segments()

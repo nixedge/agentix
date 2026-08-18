@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use clap::Parser;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -167,11 +167,17 @@ fn main() -> Result<()> {
         .context("creating gitconfig tempdir")?;
     let gitconfig_host_path = write_synthetic_gitconfig(gitconfig_dir.path())?;
 
-    // Build the allowed-repos list: cwd origin + any --repo flags.
-    let mut allowed_repos = args.allowed_repos.clone();
-    if let Some(origin) = github_repo_from_remote(&cwd) {
-        if !allowed_repos.contains(&origin) {
-            allowed_repos.insert(0, origin);
+    // Build the allowed-repos list: all GitHub remotes + any explicit --repo flags.
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut allowed_repos: Vec<String> = Vec::new();
+    for repo in github_repos_from_all_remotes(&cwd) {
+        if seen.insert(repo.clone()) {
+            allowed_repos.push(repo);
+        }
+    }
+    for repo in &args.allowed_repos {
+        if seen.insert(repo.clone()) {
+            allowed_repos.push(repo.clone());
         }
     }
 
@@ -305,7 +311,9 @@ fn main() -> Result<()> {
 
     // Bind the gh proxy socket directory so the socket is reachable inside.
     if let Some((ref proxy, _)) = gh_proxy {
-        let sock_dir = proxy.socket_path.parent().expect("socket path has parent");
+        let Some(sock_dir) = proxy.socket_path.parent() else {
+            anyhow::bail!("gh proxy socket path has no parent directory");
+        };
         bind(&mut b, "--bind", sock_dir, sock_dir);
     }
 
@@ -544,15 +552,9 @@ fn passthrough(b: &mut Vec<OsString>, key: &str) {
     }
 }
 
-fn github_repo_from_remote(cwd: &Path) -> Option<String> {
-    let out = Command::new("git")
-        .args(["-C", &cwd.to_string_lossy(), "remote", "get-url", "origin"])
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let url = std::str::from_utf8(&out.stdout).ok()?.trim();
+/// Extract `owner/repo` from a GitHub remote URL (SSH or HTTPS). Returns `None` for
+/// non-GitHub URLs or any URL that doesn't match the expected patterns.
+fn parse_github_slug(url: &str) -> Option<String> {
     let slug = if let Some(rest) = url.strip_prefix("git@github.com:") {
         rest
     } else if let Some(rest) = url.strip_prefix("https://github.com/") {
@@ -561,6 +563,44 @@ fn github_repo_from_remote(cwd: &Path) -> Option<String> {
         return None;
     };
     Some(slug.trim_end_matches(".git").to_string())
+}
+
+/// Enumerate all git remotes in `cwd` and return the GitHub `owner/repo` slug for each
+/// one that points at GitHub. Non-GitHub remotes are silently skipped. Duplicates are
+/// removed. Returns an empty Vec if the directory is not a git repo or git fails.
+fn github_repos_from_all_remotes(cwd: &Path) -> Vec<String> {
+    let names_out = Command::new("git")
+        .args(["-C", &cwd.to_string_lossy(), "remote"])
+        .output();
+    let names_out = match names_out {
+        Ok(o) if o.status.success() => o,
+        _ => return Vec::new(),
+    };
+    let names = std::str::from_utf8(&names_out.stdout)
+        .unwrap_or("")
+        .lines()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>();
+
+    let mut seen = HashSet::new();
+    let mut repos = Vec::new();
+    for name in names {
+        let url_out = Command::new("git")
+            .args(["-C", &cwd.to_string_lossy(), "remote", "get-url", name])
+            .output();
+        let url = match url_out {
+            Ok(o) if o.status.success() => o.stdout,
+            _ => continue,
+        };
+        let url_str = std::str::from_utf8(&url).unwrap_or("").trim().to_string();
+        if let Some(slug) = parse_github_slug(&url_str) {
+            if seen.insert(slug.clone()) {
+                repos.push(slug);
+            }
+        }
+    }
+    repos
 }
 
 fn detect_git_worktree(cwd: &Path) -> Option<(PathBuf, PathBuf)> {
@@ -606,4 +646,83 @@ fn capture_direnv_env(dir: &Path) -> Result<HashMap<String, String>> {
         .into_iter()
         .filter_map(|(k, v)| v.map(|v| (k, v)))
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_github_slug;
+
+    // T005: positive cases — SSH and HTTPS GitHub URLs
+    #[test]
+    fn parse_ssh_with_git_suffix() {
+        assert_eq!(
+            parse_github_slug("git@github.com:user/repo.git"),
+            Some("user/repo".into())
+        );
+    }
+
+    #[test]
+    fn parse_ssh_without_git_suffix() {
+        assert_eq!(
+            parse_github_slug("git@github.com:user/repo"),
+            Some("user/repo".into())
+        );
+    }
+
+    #[test]
+    fn parse_https_with_git_suffix() {
+        assert_eq!(
+            parse_github_slug("https://github.com/user/repo.git"),
+            Some("user/repo".into())
+        );
+    }
+
+    #[test]
+    fn parse_https_without_git_suffix() {
+        assert_eq!(
+            parse_github_slug("https://github.com/user/repo"),
+            Some("user/repo".into())
+        );
+    }
+
+    // T006: negative cases — non-GitHub URLs return None without panicking
+    #[test]
+    fn parse_gitlab_ssh_returns_none() {
+        assert_eq!(parse_github_slug("git@gitlab.com:user/repo.git"), None);
+    }
+
+    #[test]
+    fn parse_non_github_https_returns_none() {
+        assert_eq!(parse_github_slug("https://example.com/repo.git"), None);
+    }
+
+    #[test]
+    fn parse_malformed_returns_none() {
+        assert_eq!(parse_github_slug("not-a-url"), None);
+    }
+
+    #[test]
+    fn parse_empty_returns_none() {
+        assert_eq!(parse_github_slug(""), None);
+    }
+
+    // T007: deduplication — same slug from SSH and HTTPS appears only once
+    #[test]
+    fn dedup_same_slug_different_url_forms() {
+        let urls = [
+            "git@github.com:org/repo.git",
+            "https://github.com/org/repo.git",
+            "git@github.com:org/repo",
+        ];
+        let mut seen = std::collections::HashSet::new();
+        let mut repos: Vec<String> = Vec::new();
+        for url in &urls {
+            if let Some(slug) = parse_github_slug(url) {
+                if seen.insert(slug.clone()) {
+                    repos.push(slug);
+                }
+            }
+        }
+        assert_eq!(repos, vec!["org/repo".to_string()]);
+    }
 }

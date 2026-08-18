@@ -85,6 +85,7 @@ Key constraints:
 <!-- MANUAL ADDITIONS END -->
 
 ## Recent Changes
+- 012-gh-jail-all-remotes: Enumerate all GitHub remotes for gh proxy allowlist (was only origin)
 - 011-source-filters: Per-package scoped source trees (mkWorkspaceSrc); jail binaries moved to `agentix-jails` workspace member; root Cargo.toml is now workspace-only
 - 007-cargo-cleanup: Decomposed workspace — llama-cpp-2 isolated in `agentix-llama`; new crates: `agentix-search`, `agentix-indexer`, `agentix-mcp-server`; root crate renamed to `agentix-jails`; pure-Rust GGUF metadata parser added to `agentix-infer`
 - 006-whisper-integration: Added `agentix-whisper` crate (whisper.cpp via whisper-rs; audio decoding via symphonia+rubato); extended `agentix-infer` with `Capability::Transcription`, `BackendHint::Whisper`, `ModelFormat::WhisperBin`, `InferEngine::transcribe_pcm()`, `InferEngine::warmup()`; added `/v1/audio/transcriptions` endpoint; NixOS `whisperAlwaysOn` option; daemon build.rs with `--allow-multiple-definition` for ggml symbol collision

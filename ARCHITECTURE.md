@@ -174,6 +174,12 @@ Each jailed agent gets exactly:
 | Home | tmpfs with selective bind mounts | `.gitconfig`, etc. as needed |
 | `.claude` | Bind-mounted from host | **Transitional** — see note below |
 
+**gh proxy allowlist**: `claude-jail` auto-populates the gh proxy allowlist from all
+GitHub remotes in the working directory (SSH and HTTPS patterns), not just `origin`.
+Additional repos can be added with `--repo owner/repo`. Non-GitHub remotes are silently
+skipped. This is a security-neutral change: the proxy still enforces the allowlist;
+only the discovery mechanism is broadened.
+
 **Transitional exception — `.claude` mount**: `~/.claude` (containing OAuth
 credentials) is currently bind-mounted because `claude-code` is the jailed
 agent and requires it for authentication. This violates Principle IV's

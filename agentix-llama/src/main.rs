@@ -11,9 +11,7 @@
 //!   AGENTIX_VRAM_LIMIT_BYTES  Hard VRAM cap in bytes (optional)
 //!   AGENTIX_MAX_LOADED_MODELS Max models in memory simultaneously (default 2)
 
-use agentix_infer::{
-    CompletionMessage, CompletionRequest, FinishReason, InferConfig, InferEngine,
-};
+use agentix_infer::{CompletionMessage, CompletionRequest, FinishReason, InferConfig, InferEngine};
 use agentix_llama::LlamaCppBackend;
 use axum::{
     body::Body,
@@ -181,7 +179,10 @@ async fn chat_completions_handler(
     let stream = match state.engine.complete(&resolved, req).await {
         Ok(s) => s,
         Err(e) => {
-            return (StatusCode::INTERNAL_SERVER_ERROR, format!("complete error: {e}"))
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("complete error: {e}"),
+            )
                 .into_response()
         }
     };
@@ -276,7 +277,9 @@ async fn chat_completions_handler(
 async fn embeddings_handler(State(state): State<AppState>, body: axum::body::Bytes) -> Response {
     let req: serde_json::Value = match serde_json::from_slice(&body) {
         Ok(v) => v,
-        Err(e) => return (StatusCode::BAD_REQUEST, format!("invalid request: {e}")).into_response(),
+        Err(e) => {
+            return (StatusCode::BAD_REQUEST, format!("invalid request: {e}")).into_response()
+        }
     };
     let model = match req["model"].as_str() {
         Some(m) => m.to_string(),
@@ -300,14 +303,20 @@ async fn embeddings_handler(State(state): State<AppState>, body: axum::body::Byt
         Err(agentix_infer::InferError::ModelNotFound(_)) => {
             (StatusCode::NOT_FOUND, "model not in local store").into_response()
         }
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("inference error: {e}")).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("inference error: {e}"),
+        )
+            .into_response(),
     }
 }
 
 async fn ollama_embed_handler(State(state): State<AppState>, body: axum::body::Bytes) -> Response {
     let req: serde_json::Value = match serde_json::from_slice(&body) {
         Ok(v) => v,
-        Err(e) => return (StatusCode::BAD_REQUEST, format!("invalid request: {e}")).into_response(),
+        Err(e) => {
+            return (StatusCode::BAD_REQUEST, format!("invalid request: {e}")).into_response()
+        }
     };
     let model = match req["model"].as_str() {
         Some(m) => m.to_string(),
@@ -323,7 +332,11 @@ async fn ollama_embed_handler(State(state): State<AppState>, body: axum::body::B
         Err(agentix_infer::InferError::ModelNotFound(_)) => {
             (StatusCode::NOT_FOUND, "model not in local store").into_response()
         }
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("inference error: {e}")).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("inference error: {e}"),
+        )
+            .into_response(),
     }
 }
 
@@ -360,7 +373,11 @@ async fn pull_handler(State(state): State<AppState>, body: axum::body::Bytes) ->
     tracing::info!(model = %name, "pull requested");
     match state.engine.pull(&name).await {
         Ok(_) => StatusCode::OK.into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("pull failed: {e}")).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("pull failed: {e}"),
+        )
+            .into_response(),
     }
 }
 
@@ -375,7 +392,11 @@ async fn delete_handler(State(state): State<AppState>, body: axum::body::Bytes) 
     tracing::info!(model = %name, "delete requested");
     match state.engine.remove(&name).await {
         Ok(()) => StatusCode::OK.into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("delete failed: {e}")).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("delete failed: {e}"),
+        )
+            .into_response(),
     }
 }
 

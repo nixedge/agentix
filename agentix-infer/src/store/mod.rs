@@ -284,7 +284,10 @@ fn detect_format(filename: &str) -> ModelFormat {
 fn select_backend(format: ModelFormat, meta: &meta::DetectedMeta) -> BackendHint {
     // Whisper capability overrides format-based default — both LlamaCpp and Whisper
     // accept GGUF, so we must disambiguate by capability rather than format.
-    if meta.capabilities.contains(&crate::Capability::Transcription) {
+    if meta
+        .capabilities
+        .contains(&crate::Capability::Transcription)
+    {
         return BackendHint::Whisper;
     }
     match format {
