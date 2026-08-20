@@ -51,6 +51,7 @@ impl SessionStore {
         .context("spawn_blocking")?
     }
 
+    #[allow(dead_code)]
     pub async fn prune_older_than_days(&self, days: i64) -> anyhow::Result<()> {
         let tree = self.0.sessions.clone();
         tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
@@ -128,10 +129,7 @@ mod tests {
             .expect("sled insert old");
 
         // Prune sessions older than 1 day
-        store
-            .prune_older_than_days(1)
-            .await
-            .expect("prune");
+        store.prune_older_than_days(1).await.expect("prune");
 
         let old_msgs = store.load(old_id).await.expect("load old");
         let recent_msgs = store.load(recent_id).await.expect("load recent");

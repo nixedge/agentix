@@ -92,8 +92,11 @@ impl NotificationStore {
                 },
             };
             let id = record.id;
-            tree.insert(key, serde_json::to_vec(&record).context("serialize notification")?)
-                .context("sled insert")?;
+            tree.insert(
+                key,
+                serde_json::to_vec(&record).context("serialize notification")?,
+            )
+            .context("sled insert")?;
             Ok(id)
         })
         .await
@@ -115,8 +118,11 @@ impl NotificationStore {
             let mut record: NotificationRecord =
                 serde_json::from_slice(&bytes).context("deserialize notification")?;
             record.sent_at = Some(Utc::now());
-            tree.insert(key, serde_json::to_vec(&record).context("serialize notification")?)
-                .context("sled insert")?;
+            tree.insert(
+                key,
+                serde_json::to_vec(&record).context("serialize notification")?,
+            )
+            .context("sled insert")?;
             Ok(())
         })
         .await
@@ -146,8 +152,11 @@ impl NotificationStore {
                 );
                 return Ok(());
             }
-            tree.insert(key, serde_json::to_vec(&record).context("serialize notification")?)
-                .context("sled insert")?;
+            tree.insert(
+                key,
+                serde_json::to_vec(&record).context("serialize notification")?,
+            )
+            .context("sled insert")?;
             Ok(())
         })
         .await
@@ -196,10 +205,7 @@ mod tests {
             .await
             .expect("record_attempt");
 
-        store
-            .mark_sent(&kind, ref_id)
-            .await
-            .expect("mark_sent");
+        store.mark_sent(&kind, ref_id).await.expect("mark_sent");
 
         let is_sent = store
             .already_sent(ref_id, &kind)

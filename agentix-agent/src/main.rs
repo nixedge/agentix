@@ -14,7 +14,7 @@ use tracing_subscriber::EnvFilter;
 
 use config::AgentConfig;
 use db::AgentDb;
-use store::{TodoStore, todos::TodoSource};
+use store::{todos::TodoSource, TodoStore};
 use tools::ntfy::NtfyClient;
 
 #[derive(Parser)]

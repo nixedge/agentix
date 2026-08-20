@@ -29,6 +29,7 @@ impl AppState {
         SessionStore(self.db.clone())
     }
 
+    #[allow(dead_code)]
     pub fn gmail_cursor_store(&self) -> GmailCursorStore {
         GmailCursorStore(self.db.clone())
     }

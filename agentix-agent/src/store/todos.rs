@@ -193,6 +193,7 @@ impl TodoStore {
         .context("spawn_blocking")?
     }
 
+    #[allow(dead_code)]
     pub async fn find_by_source(
         &self,
         source: &str,
@@ -286,10 +287,7 @@ mod tests {
             )
             .await
             .expect("first insert");
-        let found = store
-            .find_by_source("gmail", "msg123")
-            .await
-            .expect("find");
+        let found = store.find_by_source("gmail", "msg123").await.expect("find");
         assert!(found.is_some());
         // Second insert with same source_id should fail
         let dup = store

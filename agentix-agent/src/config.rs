@@ -23,6 +23,7 @@ pub struct NtfyConfig {
 pub struct GoogleConfig {
     pub credentials_path: String,
     pub token_cache_path: String,
+    #[allow(dead_code)]
     pub calendar_id: String,
 }
 
@@ -30,8 +31,10 @@ pub struct GoogleConfig {
 pub struct SchedulerConfig {
     #[serde(default = "default_notification_interval")]
     pub notification_interval_secs: u64,
+    #[allow(dead_code)]
     #[serde(default = "default_gmail_scan_interval")]
     pub gmail_scan_interval_secs: u64,
+    #[allow(dead_code)]
     #[serde(default = "default_event_reminder_lead")]
     pub event_reminder_lead_secs: i64,
     #[serde(default = "default_overdue_grace")]
@@ -69,7 +72,10 @@ impl AgentConfig {
 fn expand_home(s: &str) -> String {
     if let Some(rest) = s.strip_prefix("~/") {
         if let Ok(home) = std::env::var("HOME") {
-            return PathBuf::from(home).join(rest).to_string_lossy().into_owned();
+            return PathBuf::from(home)
+                .join(rest)
+                .to_string_lossy()
+                .into_owned();
         }
     }
     s.to_owned()

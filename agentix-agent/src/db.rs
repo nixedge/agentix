@@ -5,6 +5,7 @@ pub struct AgentDb {
     pub todos: sled::Tree,
     pub todos_by_source: sled::Tree,
     pub notifications: sled::Tree,
+    #[allow(dead_code)]
     pub gmail_cursor: sled::Tree,
     pub sessions: sled::Tree,
 }
