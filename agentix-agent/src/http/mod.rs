@@ -22,7 +22,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/chat/voice", post(chat::chat_voice))
         .route("/todos", get(todos::list_todos))
         .route("/todos", post(todos::create_todo))
-        .route("/todos/:id", patch(todos::update_todo))
+        .route("/todos/{id}", patch(todos::update_todo))
         .route("/voice/stream", post(voice_stream_stub))
         .with_state(state)
 }

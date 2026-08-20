@@ -15,23 +15,47 @@ pub struct GmailMessage {
     pub from: Option<String>,
 }
 
-#[derive(Clone)]
 pub struct GmailClient {
-    auth: Arc<GoogleAuth>,
+    auth: Option<Arc<GoogleAuth>>,
+    static_token: Option<String>,
     client: reqwest::Client,
+    base_url: String,
 }
 
 impl GmailClient {
     pub fn new(auth: Arc<GoogleAuth>) -> Self {
         Self {
-            auth,
+            auth: Some(auth),
+            static_token: None,
             client: reqwest::Client::new(),
+            base_url: GMAIL_API.to_owned(),
         }
     }
 
+    #[cfg(test)]
+    pub fn new_for_test(base_url: String, token: String) -> Self {
+        Self {
+            auth: None,
+            static_token: Some(token),
+            client: reqwest::Client::new(),
+            base_url,
+        }
+    }
+
+    async fn get_token(&self) -> anyhow::Result<String> {
+        if let Some(ref t) = self.static_token {
+            return Ok(t.clone());
+        }
+        self.auth
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("GoogleAuth is not configured"))?
+            .token()
+            .await
+    }
+
     pub async fn list_unread(&self, max_results: u32) -> anyhow::Result<Vec<GmailMessage>> {
-        let token = self.auth.token().await?;
-        let url = format!("{GMAIL_API}/users/me/messages");
+        let token = self.get_token().await?;
+        let url = format!("{}/users/me/messages", self.base_url);
         let resp = self
             .client
             .get(&url)
@@ -70,8 +94,8 @@ impl GmailClient {
     }
 
     pub async fn get_message_meta(&self, message_id: &str) -> anyhow::Result<GmailMessage> {
-        let token = self.auth.token().await?;
-        let url = format!("{GMAIL_API}/users/me/messages/{message_id}");
+        let token = self.get_token().await?;
+        let url = format!("{}/users/me/messages/{message_id}", self.base_url);
         let resp = self
             .client
             .get(&url)
@@ -122,8 +146,8 @@ impl GmailClient {
     }
 
     pub async fn get_history_id(&self) -> anyhow::Result<String> {
-        let token = self.auth.token().await?;
-        let url = format!("{GMAIL_API}/users/me/profile");
+        let token = self.get_token().await?;
+        let url = format!("{}/users/me/profile", self.base_url);
         let resp = self
             .client
             .get(&url)
