@@ -76,8 +76,8 @@
 - [X] T018 Run `nix develop --command cargo fmt --all --check` and fix any formatting issues (constitution Principle VIII gate 1)
 - [X] T019 Run `nix develop --command cargo clippy --workspace -- -D warnings` and fix all warnings (pay special attention to unused imports from `llama_cpp_2` when `common` feature is enabled)
 - [X] T020 Add integration test in `agentix-llama/tests/grammar_integration.rs` using the fixture GGUF model already pinned in the Nix flake: (1) `json_object_produces_valid_json` — spin up InferEngine with fixture model via `LlamaCppBackend::new()`, build a CompletionRequest with `grammar: Some(GrammarConstraint::Gbnf(JSON_GBNF))`, call `complete()`, collect output, assert `serde_json::from_str(&output).is_ok()`; (2) `no_grammar_output_unchanged` — same request with `grammar: None`, assert completion returns without error (regression guard); add `#[ignore]` attribute if the fixture model is not available in CI and document the skip reason
-- [ ] T021 Run `nix build .#agentix-llama` to verify the Nix build succeeds with the `common` feature enabled (constitution Principle VIII gate 5)
-- [ ] T022 Run `nix build .#agentix-daemon` to verify daemon changes compile and the Nix build succeeds (constitution Principle VIII gate 5 — all changed deliverables must have a passing nix build)
+- [X] T021 Run `nix build .#agentix-llama` to verify the Nix build succeeds with the `common` feature enabled (constitution Principle VIII gate 5)
+- [X] T022 Run `nix build .#agentix-daemon` to verify daemon changes compile and the Nix build succeeds (constitution Principle VIII gate 5 — all changed deliverables must have a passing nix build)
 
 ---
 
