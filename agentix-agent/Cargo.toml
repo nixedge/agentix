@@ -24,6 +24,7 @@ reqwest         = { version = "0.12", default-features = false, features = ["jso
 sled            = "0.34"
 
 yup-oauth2      = { version = "12", features = ["hyper-rustls", "service-account"] }
+hyper-util      = { version = "0.1", features = ["client-legacy"] }
 
 serde           = { version = "1", features = ["derive"] }
 serde_json      = "1"

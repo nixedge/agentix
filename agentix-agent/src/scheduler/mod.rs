@@ -1,3 +1,4 @@
+pub mod gmail_scan;
 pub mod notification;
 
 use crate::{
@@ -14,6 +15,7 @@ pub struct AppState {
     pub config: AgentConfig,
     pub ntfy: NtfyClient,
     pub google_auth: Option<Arc<crate::google::auth::GoogleAuth>>,
+    pub prometheus_handle: metrics_exporter_prometheus::PrometheusHandle,
 }
 
 impl AppState {
@@ -29,7 +31,6 @@ impl AppState {
         SessionStore(self.db.clone())
     }
 
-    #[allow(dead_code)]
     pub fn gmail_cursor_store(&self) -> GmailCursorStore {
         GmailCursorStore(self.db.clone())
     }
@@ -49,4 +50,22 @@ pub fn spawn(state: Arc<AppState>, token: CancellationToken) {
             _ = t.cancelled() => {}
         }
     });
+
+    if let Some(auth) = state.google_auth.as_ref().cloned() {
+        let gmail_client = Arc::new(crate::google::gmail::GmailClient::new(auth));
+        let s2 = Arc::clone(&state);
+        let t2 = token;
+        tokio::spawn(async move {
+            tokio::select! {
+                _ = gmail_scan::run_gmail_scan_loop(
+                    gmail_client,
+                    s2.todo_store(),
+                    s2.notif_store(),
+                    s2.gmail_cursor_store(),
+                    s2.config.scheduler.gmail_scan_interval_secs,
+                ) => {}
+                _ = t2.cancelled() => {}
+            }
+        });
+    }
 }

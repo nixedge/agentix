@@ -6,10 +6,9 @@ use crate::scheduler::AppState;
 
 pub async fn health(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     let gateway_status = check_gateway(&state.config.gateway_url).await;
-    let google_auth_status = if state.google_auth.is_some() {
-        "ok"
-    } else {
-        "unconfigured"
+    let google_auth_status = match &state.google_auth {
+        None => "unconfigured",
+        Some(_) => "ok",
     };
 
     Json(json!({

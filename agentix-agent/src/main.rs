@@ -14,6 +14,7 @@ use tracing_subscriber::EnvFilter;
 
 use config::AgentConfig;
 use db::AgentDb;
+use google::{auth::GoogleAuth, calendar::CalendarClient};
 use store::{todos::TodoSource, TodoStore};
 use tools::ntfy::NtfyClient;
 
@@ -36,6 +37,10 @@ enum Commands {
     Notify {
         #[command(subcommand)]
         action: NotifyAction,
+    },
+    Calendar {
+        #[command(subcommand)]
+        action: CalendarAction,
     },
 }
 
@@ -69,6 +74,14 @@ enum NotifyAction {
     },
 }
 
+#[derive(Subcommand)]
+enum CalendarAction {
+    Today {
+        #[arg(long, default_value = "24")]
+        hours: i64,
+    },
+}
+
 fn expand_config_path(p: PathBuf) -> PathBuf {
     let s = p.to_string_lossy();
     if let Some(rest) = s.strip_prefix("~/") {
@@ -77,6 +90,17 @@ fn expand_config_path(p: PathBuf) -> PathBuf {
         }
     }
     p
+}
+
+async fn init_google_auth(config: &AgentConfig) -> Option<Arc<GoogleAuth>> {
+    let g = config.google.as_ref()?;
+    match GoogleAuth::init(&g.credentials_path, &g.token_cache_path).await {
+        Ok(auth) => Some(Arc::new(auth)),
+        Err(e) => {
+            tracing::warn!(error = %e, "Google auth init failed, running without Google integration");
+            None
+        }
+    }
 }
 
 #[tokio::main]
@@ -103,18 +127,28 @@ async fn main() -> anyhow::Result<()> {
             let config = AgentConfig::load(&config_path)?;
             run_notify(config, action).await
         }
+        Commands::Calendar { action } => {
+            let config = AgentConfig::load(&config_path)?;
+            run_calendar(config, action).await
+        }
     }
 }
 
 async fn run_daemon(config: AgentConfig) -> anyhow::Result<()> {
+    let prometheus_handle = metrics_exporter_prometheus::PrometheusBuilder::new()
+        .install_recorder()
+        .context("installing Prometheus recorder")?;
+
     let db = AgentDb::open(&config.db_path)?;
     let ntfy = NtfyClient::new(config.ntfy.url.clone(), config.ntfy.topic.clone());
+    let google_auth = init_google_auth(&config).await;
 
     let state = Arc::new(scheduler::AppState {
         db,
         ntfy,
         config: config.clone(),
-        google_auth: None,
+        google_auth,
+        prometheus_handle,
     });
 
     let token = CancellationToken::new();
@@ -179,6 +213,40 @@ async fn run_notify(config: AgentConfig, action: NotifyAction) -> anyhow::Result
             let ntfy = NtfyClient::new(config.ntfy.url, config.ntfy.topic);
             ntfy.send(&title, &body, "default").await?;
             println!("Notification sent.");
+        }
+    }
+    Ok(())
+}
+
+async fn run_calendar(config: AgentConfig, action: CalendarAction) -> anyhow::Result<()> {
+    let google_cfg = config
+        .google
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("Google integration not configured"))?;
+    let auth = Arc::new(
+        GoogleAuth::init(&google_cfg.credentials_path, &google_cfg.token_cache_path).await?,
+    );
+    let client = CalendarClient::new(Arc::clone(&auth), google_cfg.calendar_id.clone());
+
+    match action {
+        CalendarAction::Today { hours } => {
+            let now = chrono::Utc::now();
+            let end = now + chrono::Duration::hours(hours);
+            let events = client.list_events(now, end, 20).await?;
+            if events.is_empty() {
+                println!("No events in the next {hours} hours.");
+            } else {
+                for e in events {
+                    let title = e.summary.as_deref().unwrap_or("(no title)");
+                    let start = e
+                        .start
+                        .date_time
+                        .map(|d| d.format("%H:%M").to_string())
+                        .or(e.start.date)
+                        .unwrap_or_else(|| "?".to_owned());
+                    println!("{start}  {title}");
+                }
+            }
         }
     }
     Ok(())

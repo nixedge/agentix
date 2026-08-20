@@ -19,6 +19,7 @@ dependencies = [
  "axum",
  "chrono",
  "clap",
+ "hyper-util",
  "metrics",
  "metrics-exporter-prometheus",
  "reqwest",
