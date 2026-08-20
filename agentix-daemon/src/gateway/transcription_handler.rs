@@ -1,10 +1,5 @@
 use super::{proxy, AppState};
-use axum::{
-    body::Body,
-    extract::State,
-    http::HeaderMap,
-    response::Response,
-};
+use axum::{body::Body, extract::State, http::HeaderMap, response::Response};
 
 pub async fn handler(
     State(state): State<AppState>,

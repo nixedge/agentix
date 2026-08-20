@@ -20,8 +20,7 @@ pub struct Config {
 impl Config {
     pub fn from_env() -> Self {
         Self {
-            gateway_host: std::env::var("AGENTIX_GATEWAY_HOST")
-                .unwrap_or_else(|_| "[::]".into()),
+            gateway_host: std::env::var("AGENTIX_GATEWAY_HOST").unwrap_or_else(|_| "[::]".into()),
             gateway_port: std::env::var("AGENTIX_GATEWAY_PORT")
                 .ok()
                 .and_then(|v| v.parse().ok())
