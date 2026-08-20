@@ -47,6 +47,7 @@ pub fn router(model_router: Arc<ModelRouter>, config: Config) -> anyhow::Result<
         .route("/health", get(health::handler))
         .route("/v1/models", get(models_handler))
         .route("/v1/chat/completions", post(chat_completions_handler))
+        .route("/v1/responses", post(responses_proxy_handler))
         .route("/v1/embeddings", post(embeddings_handler))
         // Anthropic-native endpoint (for clients using the Anthropic SDK directly)
         .route("/v1/messages", post(messages_handler))
@@ -179,6 +180,21 @@ async fn messages_handler(
     body: axum::body::Bytes,
 ) -> Response {
     anthropic::proxy_messages(&state, headers, body).await
+}
+
+async fn responses_proxy_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    proxy::forward(
+        &state.llama_socket,
+        axum::http::Method::POST,
+        "/v1/responses",
+        headers,
+        Body::from(body),
+    )
+    .await
 }
 
 async fn models_handler(State(state): State<AppState>) -> impl IntoResponse {

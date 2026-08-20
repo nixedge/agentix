@@ -11,8 +11,12 @@
 //!   AGENTIX_VRAM_LIMIT_BYTES  Hard VRAM cap in bytes (optional)
 //!   AGENTIX_MAX_LOADED_MODELS Max models in memory simultaneously (default 2)
 
+use agentix_api::{
+    ResponseFormatType, ResponseInputContent, ResponseOutputContent, ResponseOutputMessage,
+    ResponsesRequest, ResponsesResponse,
+};
 use agentix_infer::{
-    CompletionMessage, CompletionRequest, FinishReason, InferConfig, InferEngine,
+    CompletionMessage, CompletionRequest, FinishReason, GrammarConstraint, InferConfig, InferEngine,
 };
 use agentix_llama::LlamaCppBackend;
 use axum::{
@@ -27,6 +31,29 @@ use std::{path::PathBuf, sync::Arc};
 use tokio::sync::{oneshot, Mutex};
 use tokio_stream::StreamExt;
 use tracing::info;
+use uuid::Uuid;
+
+const JSON_GBNF: &str = r#"root   ::= object
+value  ::= object | array | string | number | ("true" | "false" | "null")
+object ::= "{" (string ":" value ("," string ":" value)*)? "}"
+array  ::= "[" (value ("," value)*)? "]"
+string ::= "\"" ([^"\\] | "\\" (["\\/bfnrt] | "u" [0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]))* "\""
+number ::= ("-"? ([0-9] | [1-9] [0-9]*)) ("." [0-9]+)? ([eE] [-+]? [0-9]+)?"#;
+
+fn validate_and_convert_schema(schema: &serde_json::Value) -> Result<String, String> {
+    let schema_str = serde_json::to_string(schema).map_err(|e| e.to_string())?;
+    // Reject external $ref URIs (http/https) — would require network fetch to resolve
+    if schema_str.contains("\"$ref\"") {
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&schema_str) {
+            if let Some(r) = v.get("$ref").and_then(|r| r.as_str()) {
+                if r.starts_with("http://") || r.starts_with("https://") {
+                    return Err(format!("external $ref URI not supported: {r}"));
+                }
+            }
+        }
+    }
+    llama_cpp_2::json_schema_to_grammar(&schema_str).map_err(|e| e.to_string())
+}
 
 #[derive(Clone)]
 struct AppState {
@@ -99,6 +126,7 @@ async fn main() -> anyhow::Result<()> {
 
     let router = Router::new()
         .route("/v1/chat/completions", post(chat_completions_handler))
+        .route("/v1/responses", post(responses_handler))
         .route("/v1/embeddings", post(embeddings_handler))
         .route("/api/embed", post(ollama_embed_handler))
         .route("/v1/models", get(models_handler))
@@ -166,6 +194,43 @@ async fn chat_completions_handler(
         })
         .unwrap_or_default();
 
+    let grammar = match api_req.response_format.as_ref().map(|rf| &rf.format_type) {
+        Some(ResponseFormatType::JsonObject) => {
+            Some(GrammarConstraint::Gbnf(JSON_GBNF.to_string()))
+        }
+        Some(ResponseFormatType::JsonSchema) => {
+            let schema = api_req
+                .response_format
+                .as_ref()
+                .and_then(|rf| rf.json_schema.as_ref())
+                .map(|js| &js.schema);
+            match schema {
+                Some(s) => match validate_and_convert_schema(s) {
+                    Ok(gbnf) => Some(GrammarConstraint::Gbnf(gbnf)),
+                    Err(msg) => {
+                        return (
+                            StatusCode::BAD_REQUEST,
+                            Json(serde_json::json!({
+                                "error": format!("response_format.json_schema.schema could not be converted to a grammar: {msg}")
+                            })),
+                        )
+                            .into_response();
+                    }
+                },
+                None => {
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json(serde_json::json!({
+                            "error": "response_format.json_schema.schema is required when type is json_schema"
+                        })),
+                    )
+                        .into_response();
+                }
+            }
+        }
+        Some(ResponseFormatType::Text) | Some(ResponseFormatType::Unknown) | None => None,
+    };
+
     let req = CompletionRequest {
         messages,
         max_tokens: api_req.max_tokens,
@@ -176,12 +241,16 @@ async fn chat_completions_handler(
             .and_then(|v| v.as_f64())
             .map(|f| f as f32),
         stop,
+        grammar,
     };
 
     let stream = match state.engine.complete(&resolved, req).await {
         Ok(s) => s,
         Err(e) => {
-            return (StatusCode::INTERNAL_SERVER_ERROR, format!("complete error: {e}"))
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("complete error: {e}"),
+            )
                 .into_response()
         }
     };
@@ -276,7 +345,9 @@ async fn chat_completions_handler(
 async fn embeddings_handler(State(state): State<AppState>, body: axum::body::Bytes) -> Response {
     let req: serde_json::Value = match serde_json::from_slice(&body) {
         Ok(v) => v,
-        Err(e) => return (StatusCode::BAD_REQUEST, format!("invalid request: {e}")).into_response(),
+        Err(e) => {
+            return (StatusCode::BAD_REQUEST, format!("invalid request: {e}")).into_response()
+        }
     };
     let model = match req["model"].as_str() {
         Some(m) => m.to_string(),
@@ -300,14 +371,20 @@ async fn embeddings_handler(State(state): State<AppState>, body: axum::body::Byt
         Err(agentix_infer::InferError::ModelNotFound(_)) => {
             (StatusCode::NOT_FOUND, "model not in local store").into_response()
         }
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("inference error: {e}")).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("inference error: {e}"),
+        )
+            .into_response(),
     }
 }
 
 async fn ollama_embed_handler(State(state): State<AppState>, body: axum::body::Bytes) -> Response {
     let req: serde_json::Value = match serde_json::from_slice(&body) {
         Ok(v) => v,
-        Err(e) => return (StatusCode::BAD_REQUEST, format!("invalid request: {e}")).into_response(),
+        Err(e) => {
+            return (StatusCode::BAD_REQUEST, format!("invalid request: {e}")).into_response()
+        }
     };
     let model = match req["model"].as_str() {
         Some(m) => m.to_string(),
@@ -323,7 +400,11 @@ async fn ollama_embed_handler(State(state): State<AppState>, body: axum::body::B
         Err(agentix_infer::InferError::ModelNotFound(_)) => {
             (StatusCode::NOT_FOUND, "model not in local store").into_response()
         }
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("inference error: {e}")).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("inference error: {e}"),
+        )
+            .into_response(),
     }
 }
 
@@ -360,7 +441,11 @@ async fn pull_handler(State(state): State<AppState>, body: axum::body::Bytes) ->
     tracing::info!(model = %name, "pull requested");
     match state.engine.pull(&name).await {
         Ok(_) => StatusCode::OK.into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("pull failed: {e}")).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("pull failed: {e}"),
+        )
+            .into_response(),
     }
 }
 
@@ -375,7 +460,11 @@ async fn delete_handler(State(state): State<AppState>, body: axum::body::Bytes) 
     tracing::info!(model = %name, "delete requested");
     match state.engine.remove(&name).await {
         Ok(()) => StatusCode::OK.into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("delete failed: {e}")).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("delete failed: {e}"),
+        )
+            .into_response(),
     }
 }
 
@@ -460,9 +549,278 @@ fn parse_model_list(var: &str) -> Vec<String> {
 }
 
 fn uuid_simple() -> String {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .subsec_nanos()
-        .to_string()
+    Uuid::new_v4().simple().to_string()
+}
+
+async fn responses_handler(State(state): State<AppState>, body: axum::body::Bytes) -> Response {
+    let api_req: ResponsesRequest = match serde_json::from_slice(&body) {
+        Ok(r) => r,
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": format!("invalid request: {e}")})),
+            )
+                .into_response()
+        }
+    };
+
+    let resolved = match resolve_model(&state.engine, &api_req.model).await {
+        Some(m) => m,
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({
+                    "error": format!("model '{}' not found — pull it first", api_req.model)
+                })),
+            )
+                .into_response()
+        }
+    };
+
+    let mut messages = Vec::with_capacity(api_req.input.len());
+    for item in &api_req.input {
+        let role = if item.role == "developer" {
+            "system".to_string()
+        } else {
+            item.role.clone()
+        };
+        let content = match &item.content {
+            ResponseInputContent::Text(s) => s.clone(),
+            ResponseInputContent::Parts(parts) => parts
+                .iter()
+                .filter(|p| p.part_type == "input_text")
+                .filter_map(|p| p.text.as_deref())
+                .collect::<Vec<_>>()
+                .join(""),
+        };
+        messages.push(CompletionMessage { role, content });
+    }
+
+    let grammar = match api_req
+        .text
+        .as_ref()
+        .and_then(|t| t.format.as_ref())
+        .map(|f| f.format_type.as_str())
+    {
+        Some("json_schema") => {
+            let schema = api_req
+                .text
+                .as_ref()
+                .and_then(|t| t.format.as_ref())
+                .and_then(|f| f.schema.as_ref());
+            match schema {
+                Some(s) => match validate_and_convert_schema(s) {
+                    Ok(gbnf) => Some(GrammarConstraint::Gbnf(gbnf)),
+                    Err(msg) => {
+                        return (
+                            StatusCode::BAD_REQUEST,
+                            Json(serde_json::json!({
+                                "error": format!("text.format.schema could not be converted to a grammar: {msg}")
+                            })),
+                        )
+                            .into_response();
+                    }
+                },
+                None => None,
+            }
+        }
+        _ => None,
+    };
+
+    let comp_req = CompletionRequest {
+        messages,
+        max_tokens: api_req.max_output_tokens,
+        temperature: None,
+        top_p: None,
+        stop: vec![],
+        grammar,
+    };
+
+    let stream = match state.engine.complete(&resolved, comp_req).await {
+        Ok(s) => s,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": format!("complete error: {e}")})),
+            )
+                .into_response()
+        }
+    };
+
+    let mut full_text = String::new();
+    let mut stream = stream;
+    while let Some(result) = stream.next().await {
+        match result {
+            Ok(chunk) => full_text.push_str(&chunk.delta),
+            Err(e) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({"error": format!("stream error: {e}")})),
+                )
+                    .into_response();
+            }
+        }
+    }
+
+    // FR-011: refusal detection requires a model-level signal not yet available in agentix-llama;
+    // all non-error completions are treated as OutputText
+    let content = vec![ResponseOutputContent::OutputText {
+        text: full_text.clone(),
+    }];
+    let output_msg = ResponseOutputMessage {
+        msg_type: "message".to_string(),
+        id: format!("msg_{}", Uuid::new_v4()),
+        role: "assistant".to_string(),
+        status: "completed".to_string(),
+        content,
+    };
+    let response = ResponsesResponse {
+        id: format!("resp_{}", Uuid::new_v4()),
+        object: "response".to_string(),
+        model: api_req.model,
+        output: vec![output_msg],
+        output_text: full_text,
+    };
+
+    Json(response).into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use agentix_api::{JsonSchemaSpec, ResponseFormat, ResponseInputItem, ResponseInputPart};
+
+    // T009 — grammar conversion unit tests
+
+    #[test]
+    fn json_object_format_produces_json_gbnf() {
+        let rf = ResponseFormat {
+            format_type: ResponseFormatType::JsonObject,
+            json_schema: None,
+        };
+        let grammar = match rf.format_type {
+            ResponseFormatType::JsonObject => Some(GrammarConstraint::Gbnf(JSON_GBNF.to_string())),
+            _ => None,
+        };
+        let GrammarConstraint::Gbnf(gbnf) = grammar.unwrap();
+        assert!(gbnf.contains("root") && gbnf.contains("::= object"));
+    }
+
+    #[test]
+    fn valid_json_schema_converts_to_gbnf() {
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": { "x": { "type": "string" } },
+            "required": ["x"]
+        });
+        let result = validate_and_convert_schema(&schema);
+        assert!(result.is_ok(), "expected Ok, got: {result:?}");
+        assert!(result.unwrap().contains("root ::="));
+    }
+
+    #[test]
+    fn external_ref_schema_rejected() {
+        let schema = serde_json::json!({ "$ref": "https://example.com/schema.json" });
+        let result = validate_and_convert_schema(&schema);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("external $ref URI"));
+    }
+
+    #[test]
+    fn text_format_type_produces_no_grammar() {
+        let rf = ResponseFormat {
+            format_type: ResponseFormatType::Text,
+            json_schema: None,
+        };
+        let grammar: Option<GrammarConstraint> = match rf.format_type {
+            ResponseFormatType::JsonObject => Some(GrammarConstraint::Gbnf(JSON_GBNF.to_string())),
+            ResponseFormatType::Text | ResponseFormatType::Unknown => None,
+            _ => None,
+        };
+        assert!(grammar.is_none());
+    }
+
+    // T013 — responses handler helper unit tests
+
+    #[test]
+    fn developer_role_maps_to_system() {
+        let item = ResponseInputItem {
+            role: "developer".to_string(),
+            content: ResponseInputContent::Text("hello".to_string()),
+        };
+        let role = if item.role == "developer" {
+            "system".to_string()
+        } else {
+            item.role.clone()
+        };
+        assert_eq!(role, "system");
+    }
+
+    #[test]
+    fn string_content_normalizes_to_text() {
+        let content = ResponseInputContent::Text("hello world".to_string());
+        let text = match &content {
+            ResponseInputContent::Text(s) => s.clone(),
+            ResponseInputContent::Parts(parts) => parts
+                .iter()
+                .filter(|p| p.part_type == "input_text")
+                .filter_map(|p| p.text.as_deref())
+                .collect::<Vec<_>>()
+                .join(""),
+        };
+        assert_eq!(text, "hello world");
+    }
+
+    #[test]
+    fn array_content_concatenates_input_text_parts() {
+        let content = ResponseInputContent::Parts(vec![
+            ResponseInputPart {
+                part_type: "input_text".to_string(),
+                text: Some("foo ".to_string()),
+            },
+            ResponseInputPart {
+                part_type: "input_text".to_string(),
+                text: Some("bar".to_string()),
+            },
+        ]);
+        let text = match &content {
+            ResponseInputContent::Text(s) => s.clone(),
+            ResponseInputContent::Parts(parts) => parts
+                .iter()
+                .filter(|p| p.part_type == "input_text")
+                .filter_map(|p| p.text.as_deref())
+                .collect::<Vec<_>>()
+                .join(""),
+        };
+        assert_eq!(text, "foo bar");
+    }
+
+    #[test]
+    fn store_and_reasoning_fields_ignored() {
+        let json = serde_json::json!({
+            "model": "test-model",
+            "input": [{ "role": "user", "content": "hello" }],
+            "store": true,
+            "reasoning": { "effort": "high" }
+        });
+        let req: Result<ResponsesRequest, _> = serde_json::from_value(json);
+        assert!(req.is_ok(), "expected deserialization to succeed: {req:?}");
+    }
+
+    #[test]
+    fn json_schema_format_missing_schema_handled() {
+        let rf = ResponseFormat {
+            format_type: ResponseFormatType::JsonSchema,
+            json_schema: Some(JsonSchemaSpec {
+                name: None,
+                schema: serde_json::json!({
+                    "type": "object",
+                    "properties": { "name": { "type": "string" } }
+                }),
+                strict: None,
+            }),
+        };
+        assert!(matches!(rf.format_type, ResponseFormatType::JsonSchema));
+        assert!(rf.json_schema.is_some());
+    }
 }

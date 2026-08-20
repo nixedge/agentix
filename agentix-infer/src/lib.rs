@@ -96,12 +96,18 @@ pub struct ModelInfo {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub enum GrammarConstraint {
+    Gbnf(String),
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CompletionRequest {
     pub messages: Vec<CompletionMessage>,
     pub max_tokens: Option<u32>,
     pub temperature: Option<f32>,
     pub top_p: Option<f32>,
     pub stop: Vec<String>,
+    pub grammar: Option<GrammarConstraint>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -124,6 +130,7 @@ impl CompletionRequest {
             temperature,
             top_p,
             stop,
+            grammar: None,
         }
     }
 }

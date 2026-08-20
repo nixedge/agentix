@@ -355,15 +355,24 @@ fn complete_sync(
         return;
     }
 
-    // Build sampler chain: top-k → top-p → temperature → dist (random sampling)
+    // Build sampler chain: grammar (optional, must be first) → top-k → top-p → temperature → dist
     let temperature = req.temperature.unwrap_or(0.8);
     let top_p = req.top_p.unwrap_or(0.95);
-    let mut sampler = LlamaSampler::chain_simple([
-        LlamaSampler::top_k(40),
-        LlamaSampler::top_p(top_p, 1),
-        LlamaSampler::temp(temperature),
-        LlamaSampler::dist(0xDEAD_BEEF),
-    ]);
+    let mut samplers: Vec<LlamaSampler> = Vec::new();
+    if let Some(agentix_infer::GrammarConstraint::Gbnf(gbnf)) = &req.grammar {
+        match LlamaSampler::grammar(model, gbnf, "root") {
+            Ok(s) => samplers.push(s),
+            Err(e) => {
+                let _ = tx.send(Err(InferError::Backend(format!("grammar init: {e:?}"))));
+                return;
+            }
+        }
+    }
+    samplers.push(LlamaSampler::top_k(40));
+    samplers.push(LlamaSampler::top_p(top_p, 1));
+    samplers.push(LlamaSampler::temp(temperature));
+    samplers.push(LlamaSampler::dist(0xDEAD_BEEF));
+    let mut sampler = LlamaSampler::chain_simple(samplers);
 
     let mut n_pos = n_prompt;
 
