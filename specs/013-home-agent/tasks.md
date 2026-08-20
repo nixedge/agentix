@@ -118,8 +118,8 @@
 
 - [X] T044 Add `agentix-agent` package attribute to `flake.nix`: use crane `buildPackage` with `mkWorkspaceSrc`-scoped source filter matching `agentix-agent/`, `agentix-harness/`, `agentix-api/`; ensure `nix build .#agentix-agent` succeeds
 - [X] T045 [P] Add NixOS service module for agentix-agent in `nix/modules/agentix-agent.nix`: `services.agentix-agent` options: `enable`, `configFile` (path), `user`, `group`; generates a `systemd.services.agentix-agent` unit with `ExecStart`, `Restart=on-failure`, working dir, and `EnvironmentFile` for any secrets not in the config file
-- [ ] T046 [P] Run `cargo fmt --all --check` and fix all formatting issues in `agentix-agent/` (rustfmt)
-- [ ] T047 [P] Run `cargo clippy -p agentix-agent -- -D warnings` and resolve all `unwrap_used`, `expect_used`, and other lint violations; replace `.unwrap()` / `.expect()` with `?` or explicit `anyhow::bail!`; add `// SAFETY:` comments for any `unsafe` blocks
+- [X] T046 [P] Run `cargo fmt --all --check` and fix all formatting issues in `agentix-agent/` (rustfmt)
+- [X] T047 [P] Run `cargo clippy -p agentix-agent -- -D warnings` and resolve all `unwrap_used`, `expect_used`, and other lint violations; replace `.unwrap()` / `.expect()` with `?` or explicit `anyhow::bail!`; add `// SAFETY:` comments for any `unsafe` blocks
 - [ ] T048 Verify `nix build .#agentix-agent` succeeds after T044; fix any Nix build failures (missing SQL migration files in source filter, missing static/ assets, link flags)
 - [X] T049 [P] Update `ARCHITECTURE.md`: add `agentix-agent` row to crate inventory table; add `Port 8765` to port registry; document Complexity Tracking justifications (second port, no bubblewrap jail) per plan.md
 - [ ] T050 Add `agentix-agent` to CI test matrix (wherever other crates are tested): `cargo test -p agentix-agent`; ensure migration files and static assets are present in CI environment
