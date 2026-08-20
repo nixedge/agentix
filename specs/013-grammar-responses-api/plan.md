@@ -110,9 +110,9 @@ Files: `agentix-llama/Cargo.toml`, `agentix-llama/src/lib.rs`
 
 2. In `complete_sync()`, modify sampler chain construction:
    - If `req.grammar` is `Some(GrammarConstraint::Gbnf(gbnf))`:
-     - Build grammar sampler: `LlamaSampler::grammar(&model, &gbnf, "root")` 
-     - Return 500 (mapped to InferError) if grammar init fails
-     - Prepend grammar sampler before the top-k/top-p/temp/dist chain
+     - Build grammar sampler: `LlamaSampler::grammar(&model, &gbnf, "root")`
+     - Return InferError on failure
+     - Build a **new** chain from scratch: `LlamaSampler::chain_simple([grammar_sampler, top_k, top_p, temp, dist])` with grammar as element 0 (NOT appended to an existing chain)
    - If `req.grammar` is `None`: existing chain unchanged
 
    `LlamaModel` is already available in the inference thread — pass it to `complete_sync()` as it already receives `&LlamaModel`.
@@ -139,7 +139,7 @@ In `chat_completions_handler`:
    - `Text` / `Unknown` / absent → `None`
 3. Set `req.grammar = grammar_constraint` in `CompletionRequest`
 
-Add helper `fn validate_and_convert_schema(schema: &serde_json::Value) -> Result<GrammarConstraint, String>`:
+Add helper `fn validate_and_convert_schema(schema: &serde_json::Value) -> Result<String, String>` (returns the GBNF string; caller wraps in `GrammarConstraint::Gbnf`):
 - Reject if schema contains `$ref` with external URI (check `schema_str.contains("\"$ref\"")` + parse)
 - Call `llama_cpp_2::json_schema_to_grammar(&serde_json::to_string(schema)?)` 
 - Return `Err(String)` on failure → maps to 400 response
@@ -150,8 +150,8 @@ Add `/v1/responses` handler:
 3. Normalize content: string → use directly; array → concatenate text parts
 4. Extract grammar from `text.format` (same logic as `response_format`)
 5. Build `CompletionRequest`, run inference via `state.engine`
-6. Construct `ResponsesResponse` with generated UUIDs, wrap output text in `ResponseOutputContent::OutputText`
-7. Detect refusal heuristically (finish_reason or content starting with refusal markers) → `ResponseOutputContent::Refusal`
+6. Construct `ResponsesResponse` with generated UUIDs, wrap all non-error output in `ResponseOutputContent::OutputText`
+7. **FR-011 MVP scope**: no refusal detection — agentix-llama has no model-level refusal signal. Add `// FR-011: refusal detection requires a model-level signal not yet implemented` comment. All completions that return without InferError are treated as `OutputText`. Refusal classification is deferred to a future feature.
 
 ### Phase 5: Daemon Forwarding
 
