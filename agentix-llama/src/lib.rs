@@ -377,9 +377,8 @@ fn complete_sync(
     let mut n_pos = n_prompt;
 
     for i in 0..max_new {
-        // Sample the next token from the last decode position.
+        // sample() internally calls llama_sampler_accept; no separate accept call needed.
         let new_token = sampler.sample(ctx, -1);
-        sampler.accept(new_token);
 
         if model.is_eog_token(new_token) {
             let _ = tx.send(Ok(CompletionChunk::new(
