@@ -12,6 +12,7 @@ members = [
   "agentix-whisper",
   "agentix-mcp-server",
   "agentix-jails",
+  "agentix-agent",
 ]
 resolver = "2"
 

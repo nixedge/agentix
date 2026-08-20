@@ -24,6 +24,10 @@ data/
 # Local environment overrides (machine-specific, not committed)
 .env
 
+# agentix-agent runtime data (sled db, google tokens)
+agentix-agent/db/
+agentix-agent/google-token.json
+
 # Claude
 .claude/settings.local.json
 models/

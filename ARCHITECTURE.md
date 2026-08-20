@@ -37,7 +37,11 @@ agentix/                        (workspace root — agentix package)
 ├── agentix-mcp-server/         MCP stdio server exposing search tools
 │                               depends on: agentix-search, agentix-indexer, rmcp
 ├── agentix-harness/            agent loop library (no daemon dependency)
-└── agentix-ax/                 TUI agent; runs inside bubblewrap jail
+├── agentix-ax/                 TUI agent; runs inside bubblewrap jail
+└── agentix-agent/              home assistant daemon (todos, calendar, gmail, ntfy, chat UI)
+                                depends on: agentix-harness, agentix-api
+                                binds: Port 8765 (HTTP + WebSocket seam)
+                                NOT jailed: runs trusted on LAN with Google OAuth credentials
 ```
 
 The workspace is decomposed so that changes to search, indexing, MCP server, or
@@ -51,6 +55,7 @@ only `agentix-daemon` and `agentix-llama` itself pull in the C++ build.
 ```
 agentix-daemon      →  agentix-api, agentix-router, agentix-infer, agentix-llama
 agentix-ax          →  agentix-api, agentix-harness
+agentix-agent       →  agentix-harness, agentix-api
 agentix-router      →  agentix-api                    (NO C++ deps — invariant)
 agentix-llama       →  agentix-infer, llama-cpp-2
 agentix-mcp-server  →  agentix-search, agentix-indexer
@@ -82,6 +87,36 @@ Axum-based server. Exposed routes:
 All credentials (API keys) live in the daemon's config. No key is exposed to
 jailed agents. The jail calls the daemon over HTTP and the daemon holds the
 trust boundary.
+
+---
+
+## Home Assistant (agentix-agent)
+
+*Outside the jail perimeter. Runs trusted on the LAN server.*
+
+Axum-based server on **Port 8765** (configurable via `bind_addr`). Exposed routes:
+
+| Route | Method | Purpose |
+|-------|--------|---------|
+| `/` | GET | Mobile web chat UI (embedded HTML) |
+| `/health` | GET | Liveness probe (db, gateway, google_auth status) |
+| `/metrics` | GET | Prometheus text format |
+| `/chat` | POST | Text chat with session persistence |
+| `/chat/voice` | POST | Multipart audio → whisper transcription → chat |
+| `/todos` | GET, POST | List / create todos |
+| `/todos/:id` | PATCH | Complete / update a todo |
+| `/voice/stream` | POST | 501 stub — reserved for ESP32 PCM streaming |
+
+**Port registry**: Port 8765 is agentix-agent's exclusive port (LAN-only service).
+
+**Complexity tracking justifications**:
+- *Second port* (8765 alongside daemon's 11434): agentix-agent is a separate service
+  persona (home assistant vs inference gateway) with a different access model (open LAN
+  browser UI vs daemon's API-key-gated interface). Merging them would couple unrelated
+  concerns. Accepted.
+- *No bubblewrap jail*: agentix-agent holds Google OAuth tokens and sled state on-disk;
+  it is a trusted service component analogous to a home server, not an untrusted agent.
+  Jailing it would block OAuth flows and complicate sled path management. Accepted.
 
 ---
 
@@ -240,3 +275,5 @@ inconsistency to revisit when `agentix-infer` lands.
 | Model storage layout | Ollama-compatible content-addressed blobs | Custom layout | Existing Ollama models usable without re-download |
 | C++ isolation — infer split | `agentix-infer` (pure Rust traits) + `agentix-llama` (C++) | Single crate with feature flags | Feature-gated crate still pulls C++ into the dep graph for all consumers; separate crates mean search/indexer/router never trigger llama-cpp-2 recompilation |
 | C++ isolation — search/indexer | tree-sitter kept in `agentix-indexer`; fastembed kept in `agentix-search` | Move all C++ to agentix-llama | tree-sitter and fastembed are bounded C++ builds; removing them would require rewriting parsers and reranking in pure Rust for no practical gain |
+| agentix-agent embedded storage | sled (key-value, no SQL) | SQLite, PostgreSQL | SQLite is disallowed by constitution; PostgreSQL is overkill for a single-user home assistant; sled gives durable atomic writes with five named trees and no migration files |
+| agentix-agent port 8765 | Separate Axum server on 8765 | Embed into agentix-daemon | Home assistant is a separate trust domain and lifecycle; coupling it to the inference gateway would complicate both deployment and future jail migration |
