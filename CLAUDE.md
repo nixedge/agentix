@@ -88,6 +88,7 @@ Key constraints:
 
 ## Recent Changes
 - 014-home-agent: agentix-agent home assistant daemon — todos (sled), ntfy.sh push, Google Calendar/Gmail, mobile chat UI, Prometheus metrics, NixOS service module
+<<<<<<< HEAD
 - 013-grammar-responses-api: Added grammar enforcement and /v1/responses endpoint; `llama-cpp-2` common feature, `axum 0.8`, `agentix-api`, `agentix-infer`
 - 011-source-filters: Per-package scoped source trees (mkWorkspaceSrc); jail binaries moved to `agentix-jails` workspace member; root Cargo.toml is now workspace-only
 - 007-cargo-cleanup: Decomposed workspace — llama-cpp-2 isolated in `agentix-llama`; new crates: `agentix-search`, `agentix-indexer`, `agentix-mcp-server`; root crate renamed to `agentix-jails`; pure-Rust GGUF metadata parser added to `agentix-infer`
