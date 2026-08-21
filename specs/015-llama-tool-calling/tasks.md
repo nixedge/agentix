@@ -2,13 +2,13 @@
 
 **Feature Branch**: `015-llama-tool-calling`
 **Spec**: [spec.md](./spec.md) | **Plan**: [plan.md](./plan.md)
-**Total Tasks**: 18 | **Parallelizable**: T002–T005, T012–T013, T015
+**Total Tasks**: 18 | **Parallelizable**: T002 ∥ T004, T003 ∥ T005, T012–T013, T015
 
 ---
 
 ## Phase 1: Setup
 
-- [ ] T001 Add `minijinja = { version = "2", features = ["json"] }` to `agentix-llama/Cargo.toml`
+- [X] T001 Add `minijinja = { version = "2", features = ["json"] }` to `agentix-llama/Cargo.toml`
 
 ---
 
@@ -16,10 +16,10 @@
 
 These four tasks touch different files and can run concurrently. Must all complete before Phase 3.
 
-- [ ] T002 [P] Add `tool_calls: Option<serde_json::Value>` and `tool_call_id: Option<String>` fields (with `#[serde(skip_serializing_if = "Option::is_none")]`) to `ChatMessage` in `agentix-api/src/lib.rs`, before the `#[serde(flatten)]` field
-- [ ] T003 [P] Add `tools: Option<Vec<serde_json::Value>>` field (with `#[serde(skip_serializing_if = "Option::is_none")]`) to `ChatCompletionRequest` in `agentix-api/src/lib.rs`, before the `#[serde(flatten)]` field
-- [ ] T004 [P] Add `tool_calls: Option<serde_json::Value>` and `tool_call_id: Option<String>` fields (with `#[serde(skip_serializing_if = "Option::is_none")]`) to `CompletionMessage` in `agentix-infer/src/lib.rs`
-- [ ] T005 [P] Add `tools: Option<Vec<serde_json::Value>>` field (with `#[serde(skip_serializing_if = "Option::is_none")]`) to `CompletionRequest` in `agentix-infer/src/lib.rs`; leave `CompletionRequest::new()` setting `tools: None`
+- [X] T002 [P] Add `tool_calls: Option<serde_json::Value>` and `tool_call_id: Option<String>` fields (with `#[serde(skip_serializing_if = "Option::is_none")]`) to `ChatMessage` in `agentix-api/src/lib.rs`, before the `#[serde(flatten)]` field
+- [X] T003 Add `tools: Option<Vec<serde_json::Value>>` field (with `#[serde(skip_serializing_if = "Option::is_none")]`) to `ChatCompletionRequest` in `agentix-api/src/lib.rs`, before the `#[serde(flatten)]` field (run after T002 — same file)
+- [X] T004 [P] Add `tool_calls: Option<serde_json::Value>` and `tool_call_id: Option<String>` fields (with `#[serde(skip_serializing_if = "Option::is_none")]`) to `CompletionMessage` in `agentix-infer/src/lib.rs`
+- [X] T005 Add `tools: Option<Vec<serde_json::Value>>` field (with `#[serde(skip_serializing_if = "Option::is_none")]`) to `CompletionRequest` in `agentix-infer/src/lib.rs`; leave `CompletionRequest::new()` setting `tools: None` (run after T004 — same file)
 
 ---
 
@@ -31,17 +31,17 @@ These four tasks touch different files and can run concurrently. Must all comple
 
 ### Implementation
 
-- [ ] T006 [US1] Add `ToolCallResult` struct (fields: `id: String`, `name: String`, `arguments: String`) to `agentix-llama/src/lib.rs` — internal only, no `pub`
-- [ ] T007 [US1] Implement `parse_tool_calls(output: &str) -> Result<Vec<ToolCallResult>, String>` in `agentix-llama/src/lib.rs`: scan for `<tool_call>` / `</tool_call>` markers, parse each body as `serde_json::Value`, extract `name` as string, re-serialize `arguments` object as JSON string (or use string as-is), generate `uuid::Uuid::new_v4()` formatted as `"call_{uuid}"` for each `id`; return `Err(String)` if a marker is found but the body is not valid JSON or lacks a `name` field
-- [ ] T008 [US1] Modify `apply_chat_template` in `agentix-llama/src/lib.rs` to accept `tools: Option<&[serde_json::Value]>` as a third parameter; when `tools` is `None` or empty, use the existing `model.apply_chat_template()` path unchanged; when tools are present: call `model.chat_template(None)?.to_str()?.to_string()` to get the Jinja2 string, build a `minijinja::Environment` with the `json` feature (tojson filter available by default), construct the messages context as a `serde_json::Value` array from `messages` (each with `role`, `content`, and optionally `tool_calls`/`tool_call_id`), render with `{messages, tools, add_generation_prompt: true}`, return rendered string or map error to `String`
-- [ ] T009 [US1] Update `complete_sync` in `agentix-llama/src/lib.rs` to pass `req.tools.as_deref()` as the third argument to `apply_chat_template`
-- [ ] T010 [US1] In `chat_completions_handler` in `agentix-llama/src/main.rs`: (a) extract `let tools = api_req.tools.clone()` from the typed field; (b) when building each `CompletionMessage` from `ChatMessage`, also copy `tool_calls: msg.tool_calls.clone()` and `tool_call_id: msg.tool_call_id.clone()`; (c) set `req.tools = tools` on the `CompletionRequest` after construction
-- [ ] T011 [US1] In the non-streaming response path of `chat_completions_handler` in `agentix-llama/src/main.rs`: after accumulating `full_content`, call `parse_tool_calls(&full_content)`; if `Ok(calls)` and calls is non-empty, serialize the response with `"content": null`, `"tool_calls": [...]`, `"finish_reason": "tool_calls"`; if `Err(e)`, return HTTP 500 with `{"error": format!("tool call parse error: {e}")}`; otherwise keep existing response construction unchanged; add `tracing::warn!` when `tools` is present and `stream: true` noting streaming tool calling is not supported
+- [X] T006 [US1] Add `ToolCallResult` struct (fields: `id: String`, `name: String`, `arguments: String`) to `agentix-llama/src/lib.rs` — internal only, no `pub`
+- [X] T007 [US1] Implement `parse_tool_calls(output: &str) -> Result<Vec<ToolCallResult>, String>` in `agentix-llama/src/lib.rs`: scan for `<tool_call>` / `</tool_call>` markers, parse each body as `serde_json::Value`, extract `name` as string, re-serialize `arguments` object as JSON string (or use string as-is), generate `uuid::Uuid::new_v4()` formatted as `"call_{uuid}"` for each `id`; return `Err(String)` if a marker is found but the body is not valid JSON or lacks a `name` field
+- [X] T008 [US1] Modify `apply_chat_template` in `agentix-llama/src/lib.rs` to accept `tools: Option<&[serde_json::Value]>` as a third parameter; when `tools` is `None` or empty, use the existing `model.apply_chat_template()` path unchanged; when tools are present: call `model.chat_template(None)?.to_str()?.to_string()` to get the Jinja2 string, build a `minijinja::Environment` with the `json` feature (tojson filter available by default), construct the messages context as a `serde_json::Value` array from `messages` — for each message, set `"role"` and `"tool_call_id"` directly; **for `"content"`: if `msg.content == "null"` (the exact string produced by `normalize_content` for a JSON null input) substitute `serde_json::Value::Null`, otherwise use `serde_json::Value::String(msg.content.clone())`** (this preserves the falsy `null` that Qwen2.5's template uses to detect tool-call-only assistant turns); include `"tool_calls"` and `"tool_call_id"` when `Some`; render with `{messages, tools, add_generation_prompt: true}`, return rendered string or map error to `String`
+- [X] T009 [US1] Update `complete_sync` in `agentix-llama/src/lib.rs` to pass `req.tools.as_deref()` as the third argument to `apply_chat_template`
+- [X] T010 [US1] In `chat_completions_handler` in `agentix-llama/src/main.rs`: (a) extract `let tools = api_req.tools.clone()` from the typed field; (b) when building each `CompletionMessage` from `ChatMessage`, also copy `tool_calls: msg.tool_calls.clone()` and `tool_call_id: msg.tool_call_id.clone()`; (c) set `req.tools = tools` on the `CompletionRequest` after construction
+- [X] T011 [US1] In the non-streaming response path of `chat_completions_handler` in `agentix-llama/src/main.rs`: after accumulating `full_content`, call `parse_tool_calls(&full_content)`; if `Ok(calls)` and calls is non-empty, serialize the response with `"content": null`, `"tool_calls": [...]`, `"finish_reason": "tool_calls"`; if `Err(e)`, return HTTP 500 with `{"error": format!("tool call parse error: {e}")}`; otherwise keep existing response construction unchanged; add `tracing::warn!` when `tools` is present and `stream: true` noting streaming tool calling is not supported
 
 ### Tests
 
-- [ ] T012 [P] [US1] Write unit tests for `parse_tool_calls` in `agentix-llama/src/lib.rs`: `single_tool_call` (one marker, assert name and arguments correct), `multiple_tool_calls` (two consecutive markers, assert two results), `no_markers` (plain text, assert empty vec returned as Ok), `malformed_json_body` (valid markers but invalid JSON inside, assert Err returned)
-- [ ] T013 [P] [US1] Write unit tests for deserialization in `agentix-api/src/lib.rs`: `chat_message_with_tool_calls_round_trips` (assistant message with `tool_calls` array deserializes and re-serializes correctly), `chat_message_with_tool_call_id_round_trips` (tool result message with `tool_call_id`), `chat_completion_request_with_tools_round_trips` (request with `tools` array)
+- [X] T012 [P] [US1] Write unit tests for `parse_tool_calls` in `agentix-llama/src/lib.rs`: `single_tool_call` (one marker, assert name and arguments correct), `multiple_tool_calls` (two consecutive markers, assert two results), `no_markers` (plain text, assert empty vec returned as Ok), `malformed_json_body` (valid markers but invalid JSON inside, assert Err returned)
+- [X] T013 [P] [US1] Write unit tests for deserialization in `agentix-api/src/lib.rs`: `chat_message_with_tool_calls_round_trips` (assistant message with `tool_calls` array deserializes and re-serializes correctly), `chat_message_with_tool_call_id_round_trips` (tool result message with `tool_call_id`), `chat_completion_request_with_tools_round_trips` (request with `tools` array)
 
 ---
 
@@ -53,19 +53,19 @@ These four tasks touch different files and can run concurrently. Must all comple
 
 ### Implementation
 
-- [ ] T014 [US2] In `parse_tool_calls` in `agentix-llama/src/lib.rs`: after extracting the JSON body, if `arguments` is a JSON object re-serialize it via `serde_json::to_string` (ensures compact, valid JSON string); if `arguments` is already a string in the JSON body use it as-is; if the body has no `arguments` key use `"{}"` as the default; this guarantees `function.arguments` is always a valid JSON-encoded string in the output
+- [X] T014 [US2] In `parse_tool_calls` in `agentix-llama/src/lib.rs`: after extracting the JSON body, if `arguments` is a JSON object re-serialize it via `serde_json::to_string` (ensures compact, valid JSON string); if `arguments` is already a string in the JSON body use it as-is; if the body has no `arguments` key use `"{}"` as the default; this guarantees `function.arguments` is always a valid JSON-encoded string in the output
 
 ### Tests
 
-- [ ] T015 [P] [US2] Extend unit tests for `parse_tool_calls` in `agentix-llama/src/lib.rs`: `arguments_as_object_serialized_to_string` (body has `"arguments": {"key": "val"}`, assert result `arguments == r#"{"key":"val"}"#`), `arguments_absent_defaults_to_empty_object` (body has only `"name"`, assert `arguments == "{}"`), `arguments_as_string_preserved` (body has `"arguments": "{\"key\":\"val\"}"`, assert string preserved as-is)
+- [X] T015 [P] [US2] Extend unit tests for `parse_tool_calls` in `agentix-llama/src/lib.rs`: `arguments_as_object_serialized_to_string` (body has `"arguments": {"key": "val"}`, assert result `arguments == r#"{"key":"val"}"#`), `arguments_absent_defaults_to_empty_object` (body has only `"name"`, assert `arguments == "{}"`), `arguments_as_string_preserved` (body has `"arguments": "{\"key\":\"val\"}"`, assert string preserved as-is)
 
 ---
 
 ## Phase 5: Polish
 
-- [ ] T016 Run `nix develop --command cargo fmt --all --check` from `agentix-llama/`, `agentix-infer/`, `agentix-api/`; fix any formatting issues
-- [ ] T017 Run `nix develop --command cargo clippy -- -D warnings` across affected crates; fix all warnings (pay attention to unused field warnings on new optional fields)
-- [ ] T018 Run `nix develop --command cargo test -p agentix-api -p agentix-infer -p agentix-llama` and confirm all tests pass
+- [X] T016 Run `nix develop --command cargo fmt --all --check` from `agentix-llama/`, `agentix-infer/`, `agentix-api/`; fix any formatting issues
+- [X] T017 Run `nix develop --command cargo clippy -- -D warnings` across affected crates; fix all warnings (pay attention to unused field warnings on new optional fields)
+- [X] T018 Run `nix develop --command cargo test -p agentix-api -p agentix-infer -p agentix-llama` and confirm all tests pass; then manually validate quickstart.md **Test 3** (tool-free regression — `finish_reason: "stop"`, no `tool_calls` field) and **Test 4** (multi-turn: assistant tool-call turn → tool result → final answer) before marking complete
 
 ---
 
