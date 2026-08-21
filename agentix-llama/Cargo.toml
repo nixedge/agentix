@@ -22,6 +22,7 @@ agentix-api = { path = "../agentix-api" }
 agentix-infer = { path = "../agentix-infer" }
 llama-cpp-2 = { version = "0.1", features = ["common"] }
 uuid = { version = "1", features = ["v4"] }
+minijinja = { version = "2", features = ["json"] }
 tokio = { version = "1", features = ["full"] }
 tokio-stream = "0.1"
 async-trait = "0.1"
