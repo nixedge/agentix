@@ -10,7 +10,9 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use agentix_infer::{CompletionMessage, CompletionRequest, GrammarConstraint, InferConfig, InferEngine};
+use agentix_infer::{
+    CompletionMessage, CompletionRequest, GrammarConstraint, InferConfig, InferEngine,
+};
 use agentix_llama::LlamaCppBackend;
 use std::sync::Arc;
 use tokio_stream::StreamExt;
@@ -72,6 +74,7 @@ async fn json_object_produces_valid_json() {
         top_p: None,
         stop: vec![],
         grammar: Some(GrammarConstraint::Gbnf(JSON_GBNF.to_string())),
+        tools: None,
     };
 
     let output = collect_output(&engine, &model, req).await;
@@ -102,6 +105,7 @@ async fn no_grammar_output_unchanged() {
         top_p: None,
         stop: vec![],
         grammar: None,
+        tools: None,
     };
 
     let output = collect_output(&engine, &model, req).await;

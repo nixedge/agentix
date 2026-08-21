@@ -289,6 +289,53 @@ fn embed_batch_sync(
     Ok(results)
 }
 
+pub struct ToolCallResult {
+    pub id: String,
+    pub name: String,
+    pub arguments: String,
+}
+
+pub fn parse_tool_calls(output: &str) -> Result<Vec<ToolCallResult>, String> {
+    let mut results = Vec::new();
+    let mut remaining = output;
+
+    while let Some(start) = remaining.find("<tool_call>") {
+        let after_open = &remaining[start + "<tool_call>".len()..];
+        let end = match after_open.find("</tool_call>") {
+            Some(i) => i,
+            None => break,
+        };
+        let body = &after_open[..end];
+
+        let v: serde_json::Value = serde_json::from_str(body.trim())
+            .map_err(|e| format!("invalid tool_call JSON: {e}"))?;
+
+        let name = v["name"]
+            .as_str()
+            .ok_or_else(|| "tool_call missing 'name' field".to_string())?
+            .to_string();
+
+        let arguments = match v.get("arguments") {
+            None => "{}".to_string(),
+            Some(serde_json::Value::String(s)) => s.clone(),
+            Some(other) => {
+                serde_json::to_string(other).map_err(|e| format!("arguments serialize: {e}"))?
+            }
+        };
+
+        let id = format!("call_{}", uuid::Uuid::new_v4());
+        results.push(ToolCallResult {
+            id,
+            name,
+            arguments,
+        });
+
+        remaining = &after_open[end + "</tool_call>".len()..];
+    }
+
+    Ok(results)
+}
+
 fn complete_sync(
     model: &LlamaModel,
     ctx: &mut llama_cpp_2::context::LlamaContext<'_>,
@@ -296,7 +343,7 @@ fn complete_sync(
     tx: &tokio::sync::mpsc::UnboundedSender<Result<CompletionChunk, InferError>>,
 ) {
     // Apply the model's built-in chat template to convert structured messages to a prompt.
-    let prompt = match apply_chat_template(model, &req.messages) {
+    let prompt = match apply_chat_template(model, &req.messages, req.tools.as_deref()) {
         Ok(p) => p,
         Err(e) => {
             let _ = tx.send(Err(InferError::Backend(format!(
@@ -436,22 +483,71 @@ fn complete_sync(
 fn apply_chat_template(
     model: &LlamaModel,
     messages: &[CompletionMessage],
+    tools: Option<&[serde_json::Value]>,
 ) -> Result<String, String> {
     use llama_cpp_2::model::LlamaChatMessage;
 
-    let tmpl = model
+    let tools_present = tools.map(|t| !t.is_empty()).unwrap_or(false);
+
+    if !tools_present {
+        let tmpl = model
+            .chat_template(None)
+            .map_err(|e| format!("chat_template: {e:?}"))?;
+
+        let chat: Vec<LlamaChatMessage> = messages
+            .iter()
+            .map(|m| LlamaChatMessage::new(m.role.clone(), m.content.clone()))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("LlamaChatMessage: {e:?}"))?;
+
+        return model
+            .apply_chat_template(&tmpl, &chat, true)
+            .map_err(|e| format!("apply_chat_template: {e:?}"));
+    }
+
+    // Tools path: render the raw Jinja2 template from the GGUF via minijinja.
+    let tmpl_obj = model
         .chat_template(None)
         .map_err(|e| format!("chat_template: {e:?}"))?;
+    let template_str = tmpl_obj
+        .to_str()
+        .map_err(|e| format!("template_to_str: {e:?}"))?
+        .to_string();
 
-    let chat: Vec<LlamaChatMessage> = messages
+    // Build messages context. For tool-call assistant turns the content must be
+    // JSON null (falsy) so Qwen2.5's template detects tool-call-only turns.
+    // normalize_content() maps Value::Null to the string "null"; we reverse that here.
+    let messages_json: Vec<serde_json::Value> = messages
         .iter()
-        .map(|m| LlamaChatMessage::new(m.role.clone(), m.content.clone()))
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| format!("LlamaChatMessage: {e:?}"))?;
+        .map(|msg| {
+            let content = if msg.content == "null" {
+                serde_json::Value::Null
+            } else {
+                serde_json::Value::String(msg.content.clone())
+            };
+            let mut obj = serde_json::json!({
+                "role": msg.role,
+                "content": content,
+            });
+            if let Some(tc) = &msg.tool_calls {
+                obj["tool_calls"] = tc.clone();
+            }
+            if let Some(id) = &msg.tool_call_id {
+                obj["tool_call_id"] = serde_json::Value::String(id.clone());
+            }
+            obj
+        })
+        .collect();
 
-    model
-        .apply_chat_template(&tmpl, &chat, true)
-        .map_err(|e| format!("apply_chat_template: {e:?}"))
+    let ctx = serde_json::json!({
+        "messages": messages_json,
+        "tools": tools,
+        "add_generation_prompt": true,
+    });
+
+    let env = minijinja::Environment::new();
+    env.render_str(&template_str, ctx)
+        .map_err(|e| format!("minijinja render error: {e}"))
 }
 
 #[async_trait::async_trait]
@@ -514,5 +610,66 @@ impl LoadedModel for LlamaCppLoadedModel {
 
     fn vram_bytes(&self) -> u64 {
         self.vram_est
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn single_tool_call() {
+        let output = r#"<tool_call>{"name":"todo_list","arguments":{}}</tool_call>"#;
+        let calls = parse_tool_calls(output).expect("parse ok");
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name, "todo_list");
+        assert_eq!(calls[0].arguments, "{}");
+        assert!(calls[0].id.starts_with("call_"));
+    }
+
+    #[test]
+    fn multiple_tool_calls() {
+        let output = concat!(
+            r#"<tool_call>{"name":"foo","arguments":{"x":1}}</tool_call>"#,
+            r#"<tool_call>{"name":"bar","arguments":{}}</tool_call>"#
+        );
+        let calls = parse_tool_calls(output).expect("parse ok");
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0].name, "foo");
+        assert_eq!(calls[1].name, "bar");
+    }
+
+    #[test]
+    fn no_markers() {
+        let calls = parse_tool_calls("Just a plain text response").expect("parse ok");
+        assert!(calls.is_empty());
+    }
+
+    #[test]
+    fn malformed_json_body() {
+        let output = "<tool_call>not valid json</tool_call>";
+        let result = parse_tool_calls(output);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn arguments_as_object_serialized_to_string() {
+        let output = r#"<tool_call>{"name":"f","arguments":{"key":"val"}}</tool_call>"#;
+        let calls = parse_tool_calls(output).expect("parse ok");
+        assert_eq!(calls[0].arguments, r#"{"key":"val"}"#);
+    }
+
+    #[test]
+    fn arguments_absent_defaults_to_empty_object() {
+        let output = r#"<tool_call>{"name":"f"}</tool_call>"#;
+        let calls = parse_tool_calls(output).expect("parse ok");
+        assert_eq!(calls[0].arguments, "{}");
+    }
+
+    #[test]
+    fn arguments_as_string_preserved() {
+        let output = r#"<tool_call>{"name":"f","arguments":"{\"key\":\"val\"}"}</tool_call>"#;
+        let calls = parse_tool_calls(output).expect("parse ok");
+        assert_eq!(calls[0].arguments, r#"{"key":"val"}"#);
     }
 }

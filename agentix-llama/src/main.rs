@@ -18,7 +18,7 @@ use agentix_api::{
 use agentix_infer::{
     CompletionMessage, CompletionRequest, FinishReason, GrammarConstraint, InferConfig, InferEngine,
 };
-use agentix_llama::LlamaCppBackend;
+use agentix_llama::{parse_tool_calls, LlamaCppBackend};
 use axum::{
     body::Body,
     extract::State,
@@ -171,6 +171,8 @@ async fn chat_completions_handler(
         }
     };
 
+    let tools = api_req.tools.clone();
+
     let mut messages = Vec::with_capacity(api_req.messages.len());
     for m in &api_req.messages {
         let content = match normalize_content(&m.content) {
@@ -180,6 +182,8 @@ async fn chat_completions_handler(
         messages.push(CompletionMessage {
             role: m.role.clone(),
             content,
+            tool_calls: m.tool_calls.clone(),
+            tool_call_id: m.tool_call_id.clone(),
         });
     }
 
@@ -242,6 +246,7 @@ async fn chat_completions_handler(
             .map(|f| f as f32),
         stop,
         grammar,
+        tools: tools.clone(),
     };
 
     let stream = match state.engine.complete(&resolved, req).await {
@@ -263,6 +268,9 @@ async fn chat_completions_handler(
         .as_secs();
 
     if api_req.stream.unwrap_or(false) {
+        if tools.as_ref().map(|t| !t.is_empty()).unwrap_or(false) {
+            tracing::warn!("tools present with stream=true — streaming tool calling not supported; tools ignored");
+        }
         let sse_stream = stream.map(move |result| {
             let chunk = match result {
                 Ok(c) => c,
@@ -325,6 +333,48 @@ async fn chat_completions_handler(
                             StatusCode::INTERNAL_SERVER_ERROR
                         },
                         format!("stream error: {e}"),
+                    )
+                        .into_response();
+                }
+            }
+        }
+        let has_tools = tools.as_ref().map(|t| !t.is_empty()).unwrap_or(false);
+        if has_tools {
+            match parse_tool_calls(&full_content) {
+                Ok(calls) if !calls.is_empty() => {
+                    let tool_calls_json: Vec<serde_json::Value> = calls
+                        .iter()
+                        .map(|c| {
+                            serde_json::json!({
+                                "id": c.id,
+                                "type": "function",
+                                "function": {"name": c.name, "arguments": c.arguments}
+                            })
+                        })
+                        .collect();
+                    return Json(serde_json::json!({
+                        "id": completion_id,
+                        "object": "chat.completion",
+                        "created": created,
+                        "model": model_id,
+                        "choices": [{
+                            "index": 0,
+                            "message": {
+                                "role": "assistant",
+                                "content": null,
+                                "tool_calls": tool_calls_json
+                            },
+                            "finish_reason": "tool_calls"
+                        }],
+                        "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+                    }))
+                    .into_response();
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(serde_json::json!({"error": format!("tool call parse error: {e}")})),
                     )
                         .into_response();
                 }
@@ -593,7 +643,12 @@ async fn responses_handler(State(state): State<AppState>, body: axum::body::Byte
                 .collect::<Vec<_>>()
                 .join(""),
         };
-        messages.push(CompletionMessage { role, content });
+        messages.push(CompletionMessage {
+            role,
+            content,
+            tool_calls: None,
+            tool_call_id: None,
+        });
     }
 
     let grammar = match api_req
@@ -634,6 +689,7 @@ async fn responses_handler(State(state): State<AppState>, body: axum::body::Byte
         top_p: None,
         stop: vec![],
         grammar,
+        tools: None,
     };
 
     let stream = match state.engine.complete(&resolved, comp_req).await {
