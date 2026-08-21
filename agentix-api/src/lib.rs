@@ -118,6 +118,10 @@ pub struct ChatMessage {
     pub content: serde_json::Value,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -132,6 +136,8 @@ pub struct ChatCompletionRequest {
     pub temperature: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub response_format: Option<ResponseFormat>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tools: Option<Vec<serde_json::Value>>,
     #[serde(flatten)]
     pub extra: serde_json::Map<String, serde_json::Value>,
 }
@@ -147,6 +153,53 @@ pub struct EmbeddingRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TranscriptionResponse {
     pub text: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn chat_message_with_tool_calls_round_trips() {
+        let json = serde_json::json!({
+            "role": "assistant",
+            "content": null,
+            "tool_calls": [{"id": "call_abc", "type": "function", "function": {"name": "todo_list", "arguments": "{}"}}]
+        });
+        let msg: ChatMessage = serde_json::from_value(json.clone()).expect("deserialize ok");
+        assert_eq!(msg.role, "assistant");
+        assert!(msg.tool_calls.is_some());
+        let re = serde_json::to_value(&msg).expect("serialize ok");
+        assert_eq!(re["tool_calls"], json["tool_calls"]);
+    }
+
+    #[test]
+    fn chat_message_with_tool_call_id_round_trips() {
+        let json = serde_json::json!({
+            "role": "tool",
+            "content": "[{\"id\":\"1\"}]",
+            "tool_call_id": "call_abc"
+        });
+        let msg: ChatMessage = serde_json::from_value(json).expect("deserialize ok");
+        assert_eq!(msg.role, "tool");
+        assert_eq!(msg.tool_call_id.as_deref(), Some("call_abc"));
+        let re = serde_json::to_value(&msg).expect("serialize ok");
+        assert_eq!(re["tool_call_id"], "call_abc");
+    }
+
+    #[test]
+    fn chat_completion_request_with_tools_round_trips() {
+        let json = serde_json::json!({
+            "model": "test-model",
+            "messages": [{"role": "user", "content": "hello"}],
+            "tools": [{"type": "function", "function": {"name": "f", "description": "desc", "parameters": {}}}]
+        });
+        let req: ChatCompletionRequest = serde_json::from_value(json).expect("deserialize ok");
+        assert!(req.tools.is_some());
+        let tools = req.tools.as_ref().unwrap();
+        assert_eq!(tools.len(), 1);
+        assert_eq!(tools[0]["function"]["name"], "f");
+    }
 }
 
 /// The only valid path to a cloud backend (Principle II).

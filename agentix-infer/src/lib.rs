@@ -108,12 +108,18 @@ pub struct CompletionRequest {
     pub top_p: Option<f32>,
     pub stop: Vec<String>,
     pub grammar: Option<GrammarConstraint>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tools: Option<Vec<serde_json::Value>>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CompletionMessage {
     pub role: String,
     pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
 }
 
 impl CompletionRequest {
@@ -131,6 +137,7 @@ impl CompletionRequest {
             top_p,
             stop,
             grammar: None,
+            tools: None,
         }
     }
 }
@@ -140,6 +147,8 @@ impl CompletionMessage {
         Self {
             role: role.into(),
             content: content.into(),
+            tool_calls: None,
+            tool_call_id: None,
         }
     }
 }
