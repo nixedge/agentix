@@ -10,7 +10,9 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use agentix_infer::{CompletionMessage, CompletionRequest, GrammarConstraint, InferConfig, InferEngine};
+use agentix_infer::{
+    CompletionMessage, CompletionRequest, GrammarConstraint, InferConfig, InferEngine,
+};
 use agentix_llama::LlamaCppBackend;
 use std::sync::Arc;
 use tokio_stream::StreamExt;

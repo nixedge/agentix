@@ -37,6 +37,9 @@
         cmake
         ninja
         libclang.lib
+        # ALSA development libs for cpal (agentix-voice, agentix-whisper)
+        alsa-lib
+        alsa-lib.dev
         # PostgreSQL client (matches server version)
         postgresql_17
         # Ollama

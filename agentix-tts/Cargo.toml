@@ -1,0 +1,14 @@
+[package]
+name = "agentix-tts"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Kokoro TTS engine wrapper for agentix"
+
+[lints]
+workspace = true
+
+[dependencies]
+hound = "3"
+tokio = { version = "1", features = ["full"] }
+thiserror = "1"

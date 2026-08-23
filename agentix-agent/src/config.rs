@@ -11,6 +11,34 @@ pub struct AgentConfig {
     pub ntfy: NtfyConfig,
     pub google: Option<GoogleConfig>,
     pub scheduler: SchedulerConfig,
+    pub voice: Option<VoiceAgentConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct VoiceAgentConfig {
+    pub tts: Option<TtsCfg>,
+    #[serde(default = "default_daemon_url")]
+    pub daemon_url: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct TtsCfg {
+    pub model_path: PathBuf,
+    pub voices_dir: PathBuf,
+    #[serde(default = "default_voice")]
+    pub voice: String,
+    #[serde(default = "default_max_text")]
+    pub max_text_len: usize,
+}
+
+fn default_daemon_url() -> String {
+    "http://127.0.0.1:8766".to_string()
+}
+fn default_voice() -> String {
+    "af_heart".to_string()
+}
+fn default_max_text() -> usize {
+    500
 }
 
 #[derive(Debug, Clone, Deserialize)]

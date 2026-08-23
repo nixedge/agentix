@@ -196,11 +196,8 @@ mod tests {
             .mount(&server)
             .await;
 
-        let client = CalendarClient::new_for_test(
-            server.uri(),
-            "test_token".into(),
-            "primary".into(),
-        );
+        let client =
+            CalendarClient::new_for_test(server.uri(), "test_token".into(), "primary".into());
 
         let time_min = Utc.with_ymd_and_hms(2026, 8, 20, 0, 0, 0).unwrap();
         let time_max = Utc.with_ymd_and_hms(2026, 8, 21, 0, 0, 0).unwrap();
@@ -227,11 +224,8 @@ mod tests {
             .mount(&server)
             .await;
 
-        let client = CalendarClient::new_for_test(
-            server.uri(),
-            "test_token".into(),
-            "primary".into(),
-        );
+        let client =
+            CalendarClient::new_for_test(server.uri(), "test_token".into(), "primary".into());
 
         let start = Utc.with_ymd_and_hms(2026, 8, 25, 14, 0, 0).unwrap();
         let end = Utc.with_ymd_and_hms(2026, 8, 25, 15, 0, 0).unwrap();

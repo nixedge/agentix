@@ -49,6 +49,7 @@ pub struct AgentLoop {
     local_model: String,
     tools: Vec<Box<dyn Tool>>,
     policy: EscalationPolicy,
+    system_prompt: Option<String>,
 }
 
 impl AgentLoop {
@@ -58,6 +59,7 @@ impl AgentLoop {
             local_model: local_model.into(),
             tools: vec![],
             policy: EscalationPolicy::default(),
+            system_prompt: None,
         }
     }
 
@@ -68,6 +70,11 @@ impl AgentLoop {
 
     pub fn with_policy(mut self, policy: EscalationPolicy) -> Self {
         self.policy = policy;
+        self
+    }
+
+    pub fn with_system_prompt(mut self, prompt: impl Into<String>) -> Self {
+        self.system_prompt = Some(prompt.into());
         self
     }
 
@@ -95,8 +102,14 @@ impl AgentLoop {
         let client = GatewayClient::new(&self.gateway_url)?;
         let tool_refs: Vec<&dyn Tool> = self.tools.iter().map(|t| t.as_ref()).collect();
 
-        let mut messages: Vec<serde_json::Value> =
-            vec![serde_json::json!({"role": "user", "content": prompt})];
+        let mut messages: Vec<serde_json::Value> = {
+            let mut m = Vec::new();
+            if let Some(ref sys) = self.system_prompt {
+                m.push(serde_json::json!({"role": "system", "content": sys}));
+            }
+            m.push(serde_json::json!({"role": "user", "content": prompt}));
+            m
+        };
 
         let mut tool_calls_made: usize = 0;
         let mut escalations: usize = 0;

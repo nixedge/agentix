@@ -127,7 +127,8 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/users/me/messages/msg_abc"))
             .respond_with(
-                ResponseTemplate::new(200).set_body_json(message_detail("msg_abc", "Your package arrives tomorrow")),
+                ResponseTemplate::new(200)
+                    .set_body_json(message_detail("msg_abc", "Your package arrives tomorrow")),
             )
             .expect(2)
             .mount(&server)
@@ -155,10 +156,7 @@ mod tests {
             .await
             .expect("second scan");
 
-        let todos = todo_store
-            .list(false, None, 100)
-            .await
-            .expect("list todos");
+        let todos = todo_store.list(false, None, 100).await.expect("list todos");
 
         assert_eq!(
             todos.len(),

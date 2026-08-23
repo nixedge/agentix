@@ -1,9 +1,9 @@
 use fastembed::{RerankInitOptions, RerankerModel, TextRerank};
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
-static RERANKER: OnceLock<Option<TextRerank>> = OnceLock::new();
+static RERANKER: OnceLock<Option<Mutex<TextRerank>>> = OnceLock::new();
 
-fn get_reranker() -> &'static Option<TextRerank> {
+fn get_reranker() -> &'static Option<Mutex<TextRerank>> {
     RERANKER.get_or_init(|| {
         let enabled = std::env::var("RERANK_MODEL")
             .map(|v| !v.is_empty())
@@ -12,7 +12,7 @@ fn get_reranker() -> &'static Option<TextRerank> {
             return None;
         }
         match TextRerank::try_new(RerankInitOptions::new(RerankerModel::BGERerankerBase)) {
-            Ok(r) => Some(r),
+            Ok(r) => Some(Mutex::new(r)),
             Err(e) => {
                 tracing::warn!("reranker init failed: {e}");
                 None
@@ -29,7 +29,8 @@ pub async fn rerank(query: &str, docs: &[String]) -> Option<Vec<f32>> {
     let docs = docs.to_vec();
 
     tokio::task::spawn_blocking(move || {
-        let reranker = get_reranker().as_ref()?;
+        let mutex = get_reranker().as_ref()?;
+        let mut reranker = mutex.lock().ok()?;
         let doc_strs: Vec<&String> = docs.iter().collect();
         let results = reranker.rerank(&query, doc_strs, false, None).ok()?;
         // results are sorted by score desc; reconstruct original-order scores

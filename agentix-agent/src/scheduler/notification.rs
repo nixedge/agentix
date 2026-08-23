@@ -73,8 +73,8 @@ pub(crate) async fn check_overdue_todos(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::store::{notifications::NotificationKind, NotificationStore, TodoStore};
     use crate::store::todos::TodoSource;
+    use crate::store::{notifications::NotificationKind, NotificationStore, TodoStore};
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -122,11 +122,23 @@ mod tests {
 
         // Two overdue todos
         let todo1 = todo_store
-            .insert("overdue task 1".into(), Some(past), TodoSource::Manual, None, None)
+            .insert(
+                "overdue task 1".into(),
+                Some(past),
+                TodoSource::Manual,
+                None,
+                None,
+            )
             .await
             .expect("insert todo1");
         todo_store
-            .insert("overdue task 2".into(), Some(past), TodoSource::Manual, None, None)
+            .insert(
+                "overdue task 2".into(),
+                Some(past),
+                TodoSource::Manual,
+                None,
+                None,
+            )
             .await
             .expect("insert todo2");
 

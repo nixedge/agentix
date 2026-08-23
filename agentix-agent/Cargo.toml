@@ -15,6 +15,7 @@ workspace = true
 [dependencies]
 agentix-harness = { path = "../agentix-harness" }
 agentix-api     = { path = "../agentix-api" }
+agentix-tts     = { path = "../agentix-tts" }
 
 axum            = { version = "0.8", features = ["json", "multipart"] }
 tokio           = { version = "1", features = ["full"] }
