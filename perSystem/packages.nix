@@ -44,6 +44,7 @@
         fileset = lib.fileset.unions (
           allManifests
           ++ lib.optional (lib.pathExists ../Cargo.lock) ../Cargo.lock
+          ++ lib.optional (lib.pathExists ../patches) ../patches
         );
       };
     in
@@ -196,6 +197,7 @@
             allManifests
             ++ realDirs
             ++ lib.optional (lib.pathExists ../Cargo.lock) ../Cargo.lock
+            ++ lib.optional (lib.pathExists ../patches) ../patches
           );
         };
         stubLines = lib.concatStringsSep "\n" (

@@ -3,6 +3,7 @@ mod config;
 mod state;
 mod vad;
 mod voice_loop;
+mod wake;
 
 use anyhow::Context;
 use clap::Parser;

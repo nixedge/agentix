@@ -9,6 +9,7 @@ description = "Kokoro TTS engine wrapper for agentix"
 workspace = true
 
 [dependencies]
+kokoro-tts = "0.3.3"
 hound = "3"
 tokio = { version = "1", features = ["full"] }
 thiserror = "1"

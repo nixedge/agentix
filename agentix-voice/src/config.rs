@@ -10,6 +10,7 @@ pub struct VoiceConfig {
     #[serde(default = "default_vad_silence_ms")]
     pub vad_silence_ms: u64,
     pub tts: TtsCfg,
+    pub wake_word: WakeWordConfig,
     pub session_id: Option<String>,
 }
 
@@ -23,6 +24,23 @@ pub struct TtsCfg {
     pub max_text_len: usize,
 }
 
+/// Wake word model configuration for oww-rs.
+/// `model` can be a built-in keyword ("hey_jarvis", "alexa", "hey_mycroft", "ahoj_hugo")
+/// or a path to a custom openWakeWord ONNX model file.
+#[derive(Debug, Clone, Deserialize)]
+pub struct WakeWordConfig {
+    #[serde(default = "default_ww_model")]
+    pub model: String,
+    #[serde(default = "default_ww_threshold")]
+    pub threshold: f32,
+}
+
+fn default_ww_model() -> String {
+    "hey_jarvis".to_string()
+}
+fn default_ww_threshold() -> f32 {
+    0.3
+}
 fn default_vad_threshold() -> f32 {
     0.02
 }

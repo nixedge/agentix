@@ -28,3 +28,4 @@ hound = "3"
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"
 tokio-util = { version = "0.7", features = ["rt"] }
+oww-rs = "0.3.3"

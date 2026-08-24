@@ -5,6 +5,7 @@ use tokio::sync::mpsc;
 use crate::audio::{play_f32, AudioRecorder};
 use crate::config::VoiceConfig;
 use crate::vad::{Vad, VadResult};
+use crate::wake::WakeDetector;
 use agentix_tts::TtsEngine;
 
 const SAMPLE_RATE: u32 = 16_000;
@@ -44,21 +45,23 @@ impl VoiceLoop {
 
     /// Run the voice loop until the cancellation token fires.
     pub async fn run(&self, cancel: tokio_util::sync::CancellationToken) -> Result<()> {
+        let mut wake = WakeDetector::new(&self.config.wake_word)?;
         let recorder = AudioRecorder::new(SAMPLE_RATE);
-        let (tx, mut rx) = mpsc::channel::<Vec<f32>>(64);
+        let (tx, mut rx) = mpsc::channel::<Vec<f32>>(128);
 
         tracing::info!(
-            "Voice loop started; wake word detection is passive (button-triggered in this build)"
+            model = %self.config.wake_word.model,
+            "Voice loop started; listening for wake word"
         );
 
-        // Without a wake word detector, we run in push-to-talk mode:
-        // the loop waits for a trigger on a oneshot channel that can be
-        // sent from a future UI or HTTP endpoint. For now, just demonstrate
-        // the VAD→STT→chat→TTS pipeline by starting to record immediately.
         let _guard = recorder.start(tx)?;
         let mut vad = Vad::new(self.config.vad_threshold, self.config.vad_silence_ms);
         let mut recording_buf: Vec<f32> = Vec::new();
-        let mut recording = false;
+
+        // State: are we currently recording after wake word?
+        let mut awake = false;
+        // Accumulate samples into 1280-sample chunks for oww-rs
+        let mut ww_buf: Vec<f32> = Vec::new();
 
         loop {
             tokio::select! {
@@ -68,29 +71,41 @@ impl VoiceLoop {
                 }
                 chunk = rx.recv() => {
                     let Some(chunk) = chunk else { break };
-                    let vad_result = vad.process(&chunk);
 
-                    match vad_result {
-                        VadResult::Speaking => {
-                            if !recording {
-                                tracing::info!("Speech detected — recording");
-                                recording = true;
+                    if !awake {
+                        // Feed samples into wake word detector in 1280-sample chunks
+                        ww_buf.extend_from_slice(&chunk);
+                        while ww_buf.len() >= WakeDetector::chunk_size() {
+                            let oww_chunk: Vec<f32> =
+                                ww_buf.drain(..WakeDetector::chunk_size()).collect();
+                            if wake.process_chunk(oww_chunk) {
+                                tracing::info!("Wake word detected — recording");
+                                awake = true;
+                                recording_buf.clear();
+                                vad.reset();
+                                ww_buf.clear();
+                                break;
                             }
-                            recording_buf.extend_from_slice(&chunk);
                         }
-                        VadResult::Silence => {
-                            if recording {
+                    } else {
+                        // Recording: run VAD on each chunk
+                        let vad_result = vad.process(&chunk);
+                        match vad_result {
+                            VadResult::Speaking | VadResult::Silence => {
                                 recording_buf.extend_from_slice(&chunk);
                             }
-                        }
-                        VadResult::EndOfUtterance => {
-                            if recording && !recording_buf.is_empty() {
-                                recording = false;
-                                let audio = std::mem::take(&mut recording_buf);
-                                vad.reset();
-                                tracing::info!(samples = audio.len(), "Utterance complete — transcribing");
-                                if let Err(e) = self.handle_utterance(audio).await {
-                                    tracing::warn!(error = %e, "utterance handling failed");
+                            VadResult::EndOfUtterance => {
+                                if !recording_buf.is_empty() {
+                                    awake = false;
+                                    let audio = std::mem::take(&mut recording_buf);
+                                    vad.reset();
+                                    tracing::info!(
+                                        samples = audio.len(),
+                                        "Utterance complete — transcribing"
+                                    );
+                                    if let Err(e) = self.handle_utterance(audio).await {
+                                        tracing::warn!(error = %e, "utterance handling failed");
+                                    }
                                 }
                             }
                         }
@@ -102,7 +117,7 @@ impl VoiceLoop {
     }
 
     async fn handle_utterance(&self, samples: Vec<f32>) -> Result<()> {
-        let wav = f32_to_wav(&samples, SAMPLE_RATE)?;
+        let wav = agentix_tts::encode_wav(&samples, SAMPLE_RATE)?;
 
         let part = reqwest::multipart::Part::bytes(wav)
             .file_name("audio.wav")
@@ -177,21 +192,4 @@ impl VoiceLoop {
 
         Ok(())
     }
-}
-
-fn f32_to_wav(samples: &[f32], sample_rate: u32) -> Result<Vec<u8>> {
-    use hound::{SampleFormat, WavSpec, WavWriter};
-    let spec = WavSpec {
-        channels: 1,
-        sample_rate,
-        bits_per_sample: 32,
-        sample_format: SampleFormat::Float,
-    };
-    let mut buf = std::io::Cursor::new(Vec::new());
-    let mut writer = WavWriter::new(&mut buf, spec)?;
-    for &s in samples {
-        writer.write_sample(s)?;
-    }
-    writer.finalize()?;
-    Ok(buf.into_inner())
 }
