@@ -66,15 +66,20 @@ pub async fn handler(
     {
         Ok(resp) => {
             let status = resp.status();
-            match resp.json::<serde_json::Value>().await {
-                Ok(body) => (
-                    StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::OK),
-                    Json(body),
-                )
-                    .into_response(),
+            let status_code =
+                StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
+            match resp.text().await {
+                Ok(body) => match serde_json::from_str::<serde_json::Value>(&body) {
+                    Ok(json) => (status_code, Json(json)).into_response(),
+                    Err(_) => (
+                        status_code,
+                        Json(serde_json::json!({"error": body.trim()})),
+                    )
+                        .into_response(),
+                },
                 Err(e) => (
                     StatusCode::BAD_GATEWAY,
-                    Json(serde_json::json!({"error": format!("parsing daemon response: {e}")})),
+                    Json(serde_json::json!({"error": format!("reading daemon response: {e}")})),
                 )
                     .into_response(),
             }

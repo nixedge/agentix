@@ -12,3 +12,6 @@ notification_interval_secs = 60
 gmail_scan_interval_secs = 900
 event_reminder_lead_secs = 1800
 overdue_grace_secs = 60
+
+[voice]
+daemon_url = "http://ai.lan.disasm.us:11434"
