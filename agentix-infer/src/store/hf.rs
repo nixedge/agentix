@@ -56,7 +56,8 @@ fn hf_file_sha256(hf_ref: &HfRef) -> Result<String, InferError> {
 /// extension), list the repo's files and find the single GGUF whose name
 /// contains that tag (case-insensitive). Errors if zero or multiple match.
 fn resolve_filename(hf_ref: &HfRef) -> Result<String, InferError> {
-    if hf_ref.filename.to_lowercase().ends_with(".gguf") {
+    let lower = hf_ref.filename.to_lowercase();
+    if lower.ends_with(".gguf") || lower.ends_with(".bin") {
         return Ok(hf_ref.filename.clone());
     }
 
