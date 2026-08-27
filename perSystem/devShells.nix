@@ -37,6 +37,9 @@
         cmake
         ninja
         libclang.lib
+        # ALSA development libs for cpal (agentix-voice, agentix-whisper)
+        alsa-lib
+        alsa-lib.dev
         # PostgreSQL client (matches server version)
         postgresql_17
         # Ollama
@@ -67,7 +70,7 @@
         export LIBCLANG_PATH="${pkgs.libclang.lib}/lib"
         export CMAKE_GENERATOR="Ninja"
         export CMAKE_MAKE_PROGRAM="${pkgs.ninja}/bin/ninja"
-        export LD_LIBRARY_PATH="${pkgs.openssl.out}/lib:${pkgs.onnxruntime}/lib:${pkgs.libclang.lib}/lib:${pkgs.stdenv.cc.cc.lib}/lib:${cudaPackages.cuda_cudart}/lib:${cudaPackages.libcublas}/lib:$LD_LIBRARY_PATH"
+        export LD_LIBRARY_PATH="${pkgs.openssl.out}/lib:${pkgs.onnxruntime}/lib:${pkgs.libclang.lib}/lib:${pkgs.stdenv.cc.cc.lib}/lib:${cudaPackages.cuda_cudart}/lib:${cudaPackages.libcublas}/lib:${pkgs.alsa-lib}/lib:$LD_LIBRARY_PATH"
         export CUDA_HOME="${cudaPackages.cudatoolkit}"
         export CUDA_PATH="${cudaPackages.cudatoolkit}"
         export CMAKE_CUDA_COMPILER="${cudaPackages.cudatoolkit}/bin/nvcc"
