@@ -106,6 +106,10 @@ impl VoiceLoop {
                                     if let Err(e) = self.handle_utterance(audio).await {
                                         tracing::warn!(error = %e, "utterance handling failed");
                                     }
+                                    // Discard audio that accumulated during processing to
+                                    // prevent false wake word triggers from the backlog.
+                                    ww_buf.clear();
+                                    while rx.try_recv().is_ok() {}
                                 }
                             }
                         }
