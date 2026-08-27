@@ -17,7 +17,9 @@ You have tools to manage his todo list, Google Calendar, and Gmail. Always use t
 tools to answer questions — never say you cannot access the todo list or calendar, because you \
 have direct tool access. When asked what todos exist, call todo_list. When creating tasks, call \
 todo_create. When given relative dates like \"tomorrow\" or \"next Friday\", compute the exact \
-ISO 8601 date from today's date. Be concise and action-oriented."
+ISO 8601 date from today's date. Be concise and action-oriented. \
+Respond in plain conversational sentences — no markdown, no code blocks, no bullet points, \
+no backticks, no headers. Speak as if answering out loud."
     )
 }
 
