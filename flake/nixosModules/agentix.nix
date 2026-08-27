@@ -47,6 +47,12 @@
           description = "Ollama instance used as fallback for embedding proxying.";
         };
 
+        piperVoicesDir = lib.mkOption {
+          type = lib.types.path;
+          default = "/var/lib/agentix/voices";
+          description = "Directory containing Piper TTS voice model files (.onnx + .onnx.json).";
+        };
+
         environmentFile = lib.mkOption {
           type = lib.types.nullOr lib.types.path;
           default = null;
@@ -264,6 +270,7 @@
               AGENTIX_LLAMA_SOCKET = llamaSock;
               AGENTIX_WHISPER_SOCKET = whisperSock;
               OLLAMA_BASE_URL = cfg.daemon.ollamaBaseUrl;
+              AGENTIX_PIPER_VOICES_DIR = toString cfg.daemon.piperVoicesDir;
             }
             // cfg.daemon.extraEnv;
 
@@ -278,6 +285,10 @@
             EnvironmentFile = lib.mkIf (cfg.daemon.environmentFile != null) cfg.daemon.environmentFile;
           };
         };
+
+        systemd.tmpfiles.rules = [
+          "d ${toString cfg.daemon.piperVoicesDir} 0750 agentix agentix -"
+        ];
       })
 
       # ── agentix-llama ────────────────────────────────────────────────────────
