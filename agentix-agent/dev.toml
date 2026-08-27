@@ -15,8 +15,4 @@ overdue_grace_secs = 60
 
 [voice]
 daemon_url = "http://ai.lan.disasm.us:11434"
-
-[voice.tts]
-model_path = "/home/sam/.local/share/kokoro/kokoro-v1.0.int8.onnx"
-voices_dir = "/home/sam/.local/share/kokoro/voices.bin"
-voice = "af_heart"
+tts_voice = "en_US-lessac-medium"

@@ -7,7 +7,6 @@ use crate::{
     store::{GmailCursorStore, NotificationStore, SessionStore, TodoStore},
     tools::ntfy::NtfyClient,
 };
-use agentix_tts::TtsEngine;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
@@ -15,9 +14,9 @@ pub struct AppState {
     pub db: AgentDb,
     pub config: AgentConfig,
     pub ntfy: NtfyClient,
+    pub http: reqwest::Client,
     pub google_auth: Option<Arc<crate::google::auth::GoogleAuth>>,
     pub prometheus_handle: metrics_exporter_prometheus::PrometheusHandle,
-    pub tts_engine: Option<Arc<TtsEngine>>,
 }
 
 impl AppState {

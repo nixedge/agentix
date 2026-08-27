@@ -1,44 +1,22 @@
 use anyhow::Result;
-use std::sync::Arc;
 use tokio::sync::mpsc;
 
 use crate::audio::{play_f32, AudioRecorder};
 use crate::config::VoiceConfig;
 use crate::vad::{Vad, VadResult};
 use crate::wake::WakeDetector;
-use agentix_tts::TtsEngine;
 
 const SAMPLE_RATE: u32 = 16_000;
 
 pub struct VoiceLoop {
     config: VoiceConfig,
-    tts: Option<Arc<TtsEngine>>,
     client: reqwest::Client,
 }
 
 impl VoiceLoop {
     pub async fn new(config: VoiceConfig) -> Result<Self> {
-        let tts = match agentix_tts::TtsEngine::new(
-            &config.tts.model_path,
-            &config.tts.voices_dir,
-            &config.tts.voice,
-            config.tts.max_text_len,
-        )
-        .await
-        {
-            Ok(e) => {
-                tracing::info!(voice = %config.tts.voice, "TTS engine initialized");
-                Some(Arc::new(e))
-            }
-            Err(e) => {
-                tracing::warn!(error = %e, "TTS unavailable; responses will be text-only");
-                None
-            }
-        };
-
         Ok(Self {
             config,
-            tts,
             client: reqwest::Client::new(),
         })
     }
@@ -58,9 +36,7 @@ impl VoiceLoop {
         let mut vad = Vad::new(self.config.vad_threshold, self.config.vad_silence_ms);
         let mut recording_buf: Vec<f32> = Vec::new();
 
-        // State: are we currently recording after wake word?
         let mut awake = false;
-        // Accumulate samples into 1280-sample chunks for oww-rs
         let mut ww_buf: Vec<f32> = Vec::new();
 
         loop {
@@ -73,7 +49,6 @@ impl VoiceLoop {
                     let Some(chunk) = chunk else { break };
 
                     if !awake {
-                        // Feed samples into wake word detector in 1280-sample chunks
                         ww_buf.extend_from_slice(&chunk);
                         while ww_buf.len() >= WakeDetector::chunk_size() {
                             let oww_chunk: Vec<f32> =
@@ -88,7 +63,6 @@ impl VoiceLoop {
                             }
                         }
                     } else {
-                        // Recording: run VAD on each chunk
                         let vad_result = vad.process(&chunk);
                         match vad_result {
                             VadResult::Speaking | VadResult::Silence => {
@@ -106,8 +80,6 @@ impl VoiceLoop {
                                     if let Err(e) = self.handle_utterance(audio).await {
                                         tracing::warn!(error = %e, "utterance handling failed");
                                     }
-                                    // Discard audio that accumulated during processing to
-                                    // prevent false wake word triggers from the backlog.
                                     ww_buf.clear();
                                     while rx.try_recv().is_ok() {}
                                 }
@@ -121,7 +93,7 @@ impl VoiceLoop {
     }
 
     async fn handle_utterance(&self, samples: Vec<f32>) -> Result<()> {
-        let wav = agentix_tts::encode_wav(&samples, SAMPLE_RATE)?;
+        let wav = encode_wav(&samples, SAMPLE_RATE)?;
 
         let part = reqwest::multipart::Part::bytes(wav)
             .file_name("audio.wav")
@@ -177,55 +149,83 @@ impl VoiceLoop {
 
         tracing::info!(response = %response_text, "Agent response received");
 
-        if let Some(tts) = &self.tts {
-            let speakable = tts_clean(&response_text);
-            tracing::debug!(speakable = %speakable, "TTS input after cleaning");
-            let tts_arc = Arc::clone(tts);
-            let sr = tts_arc.sample_rate();
-            let result = tokio::task::spawn_blocking(move || {
-                // Run synthesis on a blocking thread so panics don't kill the async runtime.
-                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    tokio::runtime::Handle::current()
-                        .block_on(tts_arc.synthesize(&speakable))
-                }))
-            })
+        let speakable = tts_clean(&response_text);
+        tracing::debug!(speakable = %speakable, "TTS input after cleaning");
+
+        let tts_resp = self
+            .client
+            .post(format!("{daemon_url}/v1/audio/speech"))
+            .json(&serde_json::json!({
+                "input": speakable,
+                "model": self.config.tts_voice
+            }))
+            .send()
             .await?;
 
-            match result {
-                Ok(Ok(pcm)) => {
-                    tokio::task::spawn_blocking(move || {
-                        if let Err(e) = play_f32(pcm, sr) {
-                            tracing::warn!(error = %e, "playback failed");
-                        }
-                    })
-                    .await?;
-                }
-                Ok(Err(e)) => tracing::warn!(error = %e, "TTS synthesis failed"),
-                Err(_) => tracing::warn!("TTS synthesizer panicked — skipping audio"),
-            }
+        if !tts_resp.status().is_success() {
+            tracing::warn!(status = %tts_resp.status(), "TTS request failed");
+            return Ok(());
         }
+
+        let wav_bytes = tts_resp.bytes().await?;
+        let (pcm, sample_rate) = decode_wav(&wav_bytes)?;
+
+        tokio::task::spawn_blocking(move || {
+            if let Err(e) = play_f32(pcm, sample_rate) {
+                tracing::warn!(error = %e, "playback failed");
+            }
+        })
+        .await?;
 
         Ok(())
     }
 }
 
-/// Strip everything kokoro can't speak: markdown code fences, backticks,
-/// bracketed annotations, bullet markers, ISO dates, and bare times.
+fn encode_wav(samples: &[f32], sample_rate: u32) -> anyhow::Result<Vec<u8>> {
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let mut buf = Vec::new();
+    {
+        let mut writer = hound::WavWriter::new(std::io::Cursor::new(&mut buf), spec)?;
+        for &s in samples {
+            writer.write_sample((s.clamp(-1.0, 1.0) * 32767.0) as i16)?;
+        }
+        writer.finalize()?;
+    }
+    Ok(buf)
+}
+
+fn decode_wav(bytes: &[u8]) -> anyhow::Result<(Vec<f32>, u32)> {
+    let cursor = std::io::Cursor::new(bytes);
+    let mut reader = hound::WavReader::new(cursor)?;
+    let sample_rate = reader.spec().sample_rate;
+    let samples = match reader.spec().sample_format {
+        hound::SampleFormat::Int => reader
+            .samples::<i16>()
+            .map(|s| s.map(|v| v as f32 / 32768.0))
+            .collect::<std::result::Result<Vec<_>, _>>()?,
+        hound::SampleFormat::Float => reader
+            .samples::<f32>()
+            .collect::<std::result::Result<Vec<_>, _>>()?,
+    };
+    Ok((samples, sample_rate))
+}
+
 fn tts_clean(text: &str) -> String {
     let mut lines_out: Vec<&str> = Vec::new();
     let mut in_code_block = false;
 
     for line in text.lines() {
         let trimmed = line.trim();
-        // Toggle code fence state and skip the fence line itself.
         if trimmed.starts_with("```") {
             in_code_block = !in_code_block;
             continue;
         }
-        if in_code_block {
-            continue;
-        }
-        if trimmed.is_empty() {
+        if in_code_block || trimmed.is_empty() {
             continue;
         }
         lines_out.push(trimmed);
@@ -233,7 +233,6 @@ fn tts_clean(text: &str) -> String {
 
     let joined = lines_out.join(" ");
 
-    // Strip [...] and {...} blocks inline.
     let mut out = String::with_capacity(joined.len());
     let mut depth = 0usize;
     for ch in joined.chars() {
@@ -245,12 +244,9 @@ fn tts_clean(text: &str) -> String {
         }
     }
 
-    // Remove backticks, markdown bold/italic markers, leading list bullets.
     let out = out.replace('`', "").replace("**", "").replace("__", "");
-    let out = out
-        .split_whitespace()
+    out.split_whitespace()
         .filter(|w| {
-            // Drop ISO dates (2026-08-28), times (10:00), and lone dashes.
             let looks_like_date = w.len() == 10
                 && w.chars().filter(|c| *c == '-').count() == 2
                 && w.chars().all(|c| c.is_ascii_digit() || c == '-');
@@ -260,7 +256,5 @@ fn tts_clean(text: &str) -> String {
             !looks_like_date && !looks_like_time && *w != "-" && *w != "*"
         })
         .collect::<Vec<_>>()
-        .join(" ");
-
-    out
+        .join(" ")
 }

@@ -93,28 +93,6 @@ fn expand_config_path(p: PathBuf) -> PathBuf {
     p
 }
 
-async fn init_tts(config: &AgentConfig) -> Option<Arc<agentix_tts::TtsEngine>> {
-    let voice_cfg = config.voice.as_ref()?;
-    let tts_cfg = voice_cfg.tts.as_ref()?;
-    match agentix_tts::TtsEngine::new(
-        &tts_cfg.model_path,
-        &tts_cfg.voices_dir,
-        &tts_cfg.voice,
-        tts_cfg.max_text_len,
-    )
-    .await
-    {
-        Ok(engine) => {
-            tracing::info!(voice = %tts_cfg.voice, "TTS engine initialized");
-            Some(Arc::new(engine))
-        }
-        Err(e) => {
-            tracing::warn!(error = %e, "TTS init failed, running without TTS");
-            None
-        }
-    }
-}
-
 async fn init_google_auth(config: &AgentConfig) -> Option<Arc<GoogleAuth>> {
     let g = config.google.as_ref()?;
     match GoogleAuth::init(&g.credentials_path, &g.token_cache_path).await {
@@ -165,16 +143,15 @@ async fn run_daemon(config: AgentConfig) -> anyhow::Result<()> {
     let db = AgentDb::open(&config.db_path)?;
     let ntfy = NtfyClient::new(config.ntfy.url.clone(), config.ntfy.topic.clone());
     let google_auth = init_google_auth(&config).await;
-
-    let tts_engine = init_tts(&config).await;
+    let http = reqwest::Client::new();
 
     let state = Arc::new(scheduler::AppState {
         db,
         ntfy,
+        http,
         config: config.clone(),
         google_auth,
         prometheus_handle,
-        tts_engine,
     });
 
     let token = CancellationToken::new();

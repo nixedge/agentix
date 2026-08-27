@@ -13,7 +13,6 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
-agentix-tts = { path = "../agentix-tts" }
 agentix-api = { path = "../agentix-api" }
 cpal = "0.15"
 rubato = "0.15"

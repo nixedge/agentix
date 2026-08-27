@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct VoiceConfig {
@@ -9,7 +9,8 @@ pub struct VoiceConfig {
     pub vad_threshold: f32,
     #[serde(default = "default_vad_silence_ms")]
     pub vad_silence_ms: u64,
-    pub tts: TtsCfg,
+    #[serde(default = "default_tts_voice")]
+    pub tts_voice: String,
     pub wake_word: WakeWordConfig,
     pub session_id: Option<String>,
     #[serde(default = "default_stt_model")]
@@ -18,16 +19,6 @@ pub struct VoiceConfig {
 
 fn default_stt_model() -> String {
     "ggerganov/whisper.cpp:ggml-base.en-q5_1.bin".to_string()
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct TtsCfg {
-    pub model_path: PathBuf,
-    pub voices_dir: PathBuf,
-    #[serde(default = "default_voice")]
-    pub voice: String,
-    #[serde(default = "default_max_text")]
-    pub max_text_len: usize,
 }
 
 /// Wake word model configuration for oww-rs.
@@ -53,12 +44,10 @@ fn default_vad_threshold() -> f32 {
 fn default_vad_silence_ms() -> u64 {
     800
 }
-fn default_voice() -> String {
-    "af_heart".to_string()
+fn default_tts_voice() -> String {
+    "en_US-lessac-medium".to_string()
 }
-fn default_max_text() -> usize {
-    500
-}
+
 impl VoiceConfig {
     pub fn load(path: &Path) -> anyhow::Result<Self> {
         let raw = std::fs::read_to_string(path)

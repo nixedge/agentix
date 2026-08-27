@@ -20,7 +20,6 @@ version = "0.1.0"
 dependencies = [
  "agentix-api",
  "agentix-harness",
- "agentix-tts",
  "anyhow",
  "async-trait",
  "axum",
@@ -79,6 +78,7 @@ dependencies = [
  "agentix-router",
  "anyhow",
  "axum",
+ "hound",
  "hyper",
  "hyper-util",
  "reqwest",
@@ -245,7 +245,6 @@ name = "agentix-voice"
 version = "0.1.0"
 dependencies = [
  "agentix-api",
- "agentix-tts",
  "anyhow",
  "clap 4.6.6",
  "cpal 0.15.3",

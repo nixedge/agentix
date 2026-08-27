@@ -7,6 +7,8 @@ pub struct Config {
     pub ollama_base_url: String,
     pub llama_socket: PathBuf,
     pub whisper_socket: PathBuf,
+    pub piper_bin: PathBuf,
+    pub piper_voices_dir: PathBuf,
 
     #[allow(dead_code)] // reserved for future gateway auth
     pub agentix_api_key: Option<String>,
@@ -33,6 +35,12 @@ impl Config {
             whisper_socket: std::env::var("AGENTIX_WHISPER_SOCKET")
                 .map(PathBuf::from)
                 .unwrap_or_else(|_| PathBuf::from("/run/agentix/whisper.sock")),
+            piper_bin: std::env::var("AGENTIX_PIPER_BIN")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| PathBuf::from("piper")),
+            piper_voices_dir: std::env::var("AGENTIX_PIPER_VOICES_DIR")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| PathBuf::from("/var/lib/agentix/voices")),
             agentix_api_key: std::env::var("AGENTIX_API_KEY").ok(),
             anthropic_api_key: std::env::var("ANTHROPIC_API_KEY").ok(),
             openai_api_key: std::env::var("OPENAI_API_KEY").ok(),

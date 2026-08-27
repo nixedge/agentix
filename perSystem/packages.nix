@@ -290,7 +290,7 @@
     agentixAgentPkg = craneLib.buildPackage (commonArgs
       // {
         pname = "agentix-agent";
-        src = mkWorkspaceSrc ["agentix-agent" "agentix-harness" "agentix-api" "agentix-tts"];
+        src = mkWorkspaceSrc ["agentix-agent" "agentix-harness" "agentix-api"];
         cargoArtifacts = agentixAgentDeps;
         cargoExtraArgs = "--package agentix-agent";
       });
@@ -298,7 +298,7 @@
     agentixVoicePkg = craneLib.buildPackage (commonArgs
       // {
         pname = "agentix-voice";
-        src = mkWorkspaceSrc ["agentix-voice" "agentix-tts" "agentix-api"];
+        src = mkWorkspaceSrc ["agentix-voice" "agentix-api"];
         cargoArtifacts = agentixVoiceDeps;
         cargoExtraArgs = "--package agentix-voice";
       });
@@ -474,6 +474,8 @@
     # name: crane names derivations after the root crate (mcp-server-0.1.0),
     # so nix run .#agentix-daemon would try to exec 'mcp-server' without this.
     packages.agentix-daemon = pkgs.writeShellScriptBin "agentix-daemon" ''
+      export AGENTIX_PIPER_BIN="${pkgs.piper-tts}/bin/piper"
+      export AGENTIX_PIPER_VOICES_DIR="''${AGENTIX_PIPER_VOICES_DIR:-/var/lib/agentix/voices}"
       exec ${agentixDaemonPkg}/bin/agentix-daemon "$@"
     '';
 
