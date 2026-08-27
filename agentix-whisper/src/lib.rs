@@ -13,6 +13,7 @@ use agentix_infer::{
     Capability, CompletionRequest, InferError, ModelFormat, ModelInfo,
 };
 use std::{path::Path, sync::Arc};
+use tokio::sync::oneshot;
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
 // ── Backend ──────────────────────────────────────────────────────────────────
@@ -50,29 +51,100 @@ impl InferBackend for WhisperBackend {
                         InferError::Backend(format!("whisper context init failed: {e:?}"))
                     })?;
 
-            Ok(Arc::new(WhisperLoadedModel {
-                ctx: Arc::new(ctx),
-                size_bytes,
-            }) as Arc<dyn LoadedModel>)
+            let worker = WhisperWorker::new(ctx)?;
+
+            Ok(Arc::new(WhisperLoadedModel { worker, size_bytes }) as Arc<dyn LoadedModel>)
         })
         .await
         .map_err(|e| InferError::Backend(format!("spawn_blocking join error: {e}")))?
     }
 }
 
+// ── Worker thread ────────────────────────────────────────────────────────────
+
+struct WorkItem {
+    pcm: Vec<f32>,
+    reply: oneshot::Sender<Result<String, InferError>>,
+}
+
+/// Owns a `WhisperState` on a dedicated OS thread so state is created once and
+/// reused across requests, avoiding the per-request GPU allocation overhead.
+struct WhisperWorker {
+    tx: std::sync::mpsc::SyncSender<WorkItem>,
+}
+
+impl WhisperWorker {
+    fn new(ctx: WhisperContext) -> Result<Self, InferError> {
+        let (tx, rx) = std::sync::mpsc::sync_channel::<WorkItem>(4);
+
+        let mut state = ctx
+            .create_state()
+            .map_err(|e| InferError::Backend(format!("whisper state init failed: {e:?}")))?;
+
+        std::thread::Builder::new()
+            .name("whisper-worker".into())
+            .spawn(move || {
+                // ctx is moved here so it outlives state on this thread.
+                let _ctx = ctx;
+                while let Ok(work) = rx.recv() {
+                    let result = run_transcription(&mut state, &work.pcm);
+                    let _ = work.reply.send(result);
+                }
+            })
+            .map_err(|e| InferError::Backend(format!("whisper thread spawn failed: {e}")))?;
+
+        Ok(Self { tx })
+    }
+
+    async fn transcribe(&self, pcm: Vec<f32>) -> Result<String, InferError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.tx
+            .send(WorkItem { pcm, reply: reply_tx })
+            .map_err(|_| InferError::Backend("whisper worker channel closed".into()))?;
+        reply_rx
+            .await
+            .map_err(|_| InferError::Backend("whisper worker dropped".into()))?
+    }
+}
+
+fn run_transcription(
+    state: &mut whisper_rs::WhisperState,
+    pcm: &[f32],
+) -> Result<String, InferError> {
+    let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+    params.set_print_progress(false);
+    params.set_print_realtime(false);
+    params.set_print_timestamps(false);
+    params.set_print_special(false);
+    params.set_single_segment(false);
+
+    state
+        .full(params, pcm)
+        .map_err(|e| InferError::Transcription(format!("whisper full() failed: {e:?}")))?;
+
+    let n = state
+        .full_n_segments()
+        .map_err(|e| InferError::Transcription(format!("full_n_segments failed: {e:?}")))?;
+
+    let mut text = String::new();
+    for i in 0..n {
+        let seg = state
+            .full_get_segment_text(i)
+            .map_err(|e| InferError::Transcription(format!("segment {i} text failed: {e:?}")))?;
+        text.push_str(&seg);
+    }
+
+    Ok(text.trim().to_string())
+}
+
 // ── Loaded model ─────────────────────────────────────────────────────────────
 
 pub struct WhisperLoadedModel {
-    ctx: Arc<WhisperContext>,
+    worker: WhisperWorker,
     size_bytes: u64,
 }
 
-// SAFETY: WhisperContext implements Send + Sync via `unsafe impl` in whisper-rs,
-// justified by the upstream assertion that whisper_context is safe to share across
-// threads as long as only one thread creates inference state at a time.
-// We always create WhisperState inside spawn_blocking and drop it before returning.
 unsafe impl Send for WhisperLoadedModel {}
-// SAFETY: Same rationale — WhisperContext is safe to alias across threads.
 unsafe impl Sync for WhisperLoadedModel {}
 
 #[async_trait::async_trait]
@@ -110,42 +182,6 @@ impl LoadedModel for WhisperLoadedModel {
     }
 
     async fn transcribe(&self, audio_pcm: &[f32]) -> Result<String, InferError> {
-        let ctx = Arc::clone(&self.ctx);
-        let pcm = audio_pcm.to_vec();
-
-        tokio::task::spawn_blocking(move || {
-            // WhisperState is !Send and must stay inside this closure.
-            let mut state = ctx
-                .create_state()
-                .map_err(|e| InferError::Transcription(format!("state creation failed: {e:?}")))?;
-
-            // FullParams has lifetime parameters — create it here inside spawn_blocking.
-            let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
-            params.set_print_progress(false);
-            params.set_print_realtime(false);
-            params.set_print_timestamps(false);
-            params.set_print_special(false);
-            params.set_single_segment(false);
-
-            state
-                .full(params, &pcm)
-                .map_err(|e| InferError::Transcription(format!("whisper full() failed: {e:?}")))?;
-
-            let n = state
-                .full_n_segments()
-                .map_err(|e| InferError::Transcription(format!("full_n_segments failed: {e:?}")))?;
-
-            let mut text = String::new();
-            for i in 0..n {
-                let seg = state.full_get_segment_text(i).map_err(|e| {
-                    InferError::Transcription(format!("segment {i} text failed: {e:?}"))
-                })?;
-                text.push_str(&seg);
-            }
-
-            Ok(text.trim().to_string())
-        })
-        .await
-        .map_err(|e| InferError::Transcription(format!("spawn_blocking join error: {e}")))?
+        self.worker.transcribe(audio_pcm.to_vec()).await
     }
 }
