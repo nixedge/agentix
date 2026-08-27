@@ -5,6 +5,7 @@ mod openai_proxy;
 mod proxy;
 mod speech_handler;
 mod transcription_handler;
+mod voices_handler;
 
 use crate::config::Config;
 use agentix_router::{RouteTarget, Router as ModelRouter};
@@ -65,6 +66,9 @@ pub fn router(model_router: Arc<ModelRouter>, config: Config) -> anyhow::Result<
         )
         // Text-to-speech (OpenAI-compatible) — Piper TTS subprocess
         .route("/v1/audio/speech", post(speech_handler::handler))
+        // Piper voice model management
+        .route("/v1/audio/voices", get(voices_handler::list_handler))
+        .route("/v1/audio/voices", post(voices_handler::pull_handler))
         // Ollama-compatible model management endpoints — proxied to agentix-llama
         .route("/api/pull", post(ollama_manage::pull_handler))
         .route("/api/delete", delete(ollama_manage::delete_handler))
