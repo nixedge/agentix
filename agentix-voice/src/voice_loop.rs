@@ -80,8 +80,12 @@ impl VoiceLoop {
                                     if let Err(e) = self.handle_utterance(audio).await {
                                         tracing::warn!(error = %e, "utterance handling failed");
                                     }
-                                    ww_buf.clear();
+                                    // Drain audio buffered during processing, then wait for
+                                    // speaker echo to clear the mic before re-arming wake word.
                                     while rx.try_recv().is_ok() {}
+                                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                                    while rx.try_recv().is_ok() {}
+                                    ww_buf.clear();
                                 }
                             }
                         }
