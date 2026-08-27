@@ -110,7 +110,16 @@
       doCheck = false;
     };
 
-    cargoArtifacts = craneLib.buildDepsOnly (commonArgs // { pname = "agentix-workspace"; });
+    # Per-package dep artifacts — each only compiles the external crates that
+    # package actually needs, so changes to one package don't invalidate others.
+    agentixDaemonDeps   = craneLib.buildDepsOnly (commonArgs // { pname = "agentix-daemon-deps";     src = depsOnlySrc; cargoExtraArgs = "--package agentix-daemon"; });
+    agentixWhisperDeps  = craneLib.buildDepsOnly (commonArgs // { pname = "agentix-whisper-deps";    src = depsOnlySrc; cargoExtraArgs = "--package agentix-whisper"; });
+    agentixAxDeps       = craneLib.buildDepsOnly (commonArgs // { pname = "agentix-ax-deps";         src = depsOnlySrc; cargoExtraArgs = "--package agentix-ax"; });
+    agentixMcpDeps      = craneLib.buildDepsOnly (commonArgs // { pname = "agentix-mcp-deps";        src = depsOnlySrc; cargoExtraArgs = "--package agentix-mcp-server"; });
+    agentixIndexerDeps  = craneLib.buildDepsOnly (commonArgs // { pname = "agentix-indexer-deps";    src = depsOnlySrc; cargoExtraArgs = "--package agentix-indexer"; });
+    agentixAgentDeps    = craneLib.buildDepsOnly (commonArgs // { pname = "agentix-agent-deps";      src = depsOnlySrc; cargoExtraArgs = "--package agentix-agent"; });
+    agentixVoiceDeps    = craneLib.buildDepsOnly (commonArgs // { pname = "agentix-voice-deps";      src = depsOnlySrc; cargoExtraArgs = "--package agentix-voice"; });
+    agentixJailsDeps    = craneLib.buildDepsOnly (commonArgs // { pname = "agentix-jails-deps";      src = depsOnlySrc; cargoExtraArgs = "--package agentix-jails"; });
 
     # Pinned whisper.cpp tiny English model (~75 MB) for whisper integration tests.
     agentixTestWhisperModel = pkgs.fetchurl {
@@ -152,11 +161,11 @@
       RUSTFLAGS = "-L ${cudaPackages.cudatoolkit}/lib -L ${cudaPackages.cudatoolkit}/lib/stubs -L ${cudaPackages.cuda_cudart}/lib -L ${libcublasStatic}/lib";
     };
 
-    # Separate cargoArtifacts for the CUDA-enabled build; CPU build reuses
-    # commonArgs cargoArtifacts since feature flags change the compiled output.
-    cudaCargoArtifacts = lib.optionalAttrs withCuda {
-      value = craneLib.buildDepsOnly (commonArgs // cudaArgs // { pname = "agentix-workspace"; });
-    };
+    agentixLlamaDeps = craneLib.buildDepsOnly (commonArgs // cudaArgs // {
+      pname = "agentix-llama-deps";
+      src = depsOnlySrc;
+      cargoExtraArgs = "--package agentix-llama" + lib.optionalString withCuda " --features cuda";
+    });
 
     # Stub commands for each workspace member — written when the member is NOT in the
     # build's keepCrates list.  $out is the shell variable set by pkgs.runCommand.
@@ -226,7 +235,7 @@
       // {
         pname = "agentix-daemon";
         src = mkWorkspaceSrc ["agentix-daemon" "agentix-api" "agentix-router"];
-        inherit cargoArtifacts;
+        cargoArtifacts = agentixDaemonDeps;
         cargoExtraArgs = "--package agentix-daemon";
       });
 
@@ -234,7 +243,7 @@
       // {
         pname = "agentix-whisper";
         src = mkWorkspaceSrc ["agentix-whisper" "agentix-api" "agentix-infer"];
-        inherit cargoArtifacts;
+        cargoArtifacts = agentixWhisperDeps;
         cargoExtraArgs = "--package agentix-whisper";
       });
 
@@ -244,7 +253,7 @@
       // {
         pname = "agentix-llama";
         src = mkWorkspaceSrc ["agentix-llama" "agentix-api" "agentix-infer"];
-        cargoArtifacts = if withCuda then cudaCargoArtifacts.value else cargoArtifacts;
+        cargoArtifacts = agentixLlamaDeps;
         cargoExtraArgs =
           "--package agentix-llama"
           + lib.optionalString withCuda " --features cuda";
@@ -255,7 +264,7 @@
       // {
         pname = "agentix-ax";
         src = mkWorkspaceSrc ["agentix-ax" "agentix-harness"];
-        inherit cargoArtifacts;
+        cargoArtifacts = agentixAxDeps;
         cargoExtraArgs = "--package agentix-ax";
       });
 
@@ -263,7 +272,7 @@
       // {
         pname = "agentix-mcp-server";
         src = mkWorkspaceSrc ["agentix-mcp-server" "agentix-search" "agentix-indexer"];
-        inherit cargoArtifacts;
+        cargoArtifacts = agentixMcpDeps;
         cargoExtraArgs = "--package agentix-mcp-server";
       });
 
@@ -271,18 +280,18 @@
       // {
         pname = "agentix-indexer";
         src = mkWorkspaceSrc ["agentix-indexer"];
-        inherit cargoArtifacts;
+        cargoArtifacts = agentixIndexerDeps;
         cargoExtraArgs = "--package agentix-indexer";
       });
 
     # All jail binaries live in the agentix-jails workspace member, so each
     # jail package uses mkWorkspaceSrc ["agentix-jails"] with a --bin selector.
-    # All four packages share one source derivation (Nix deduplicates).
+    # All four share one source and one dep derivation (Nix deduplicates).
     agentixAgentPkg = craneLib.buildPackage (commonArgs
       // {
         pname = "agentix-agent";
         src = mkWorkspaceSrc ["agentix-agent" "agentix-harness" "agentix-api" "agentix-tts"];
-        inherit cargoArtifacts;
+        cargoArtifacts = agentixAgentDeps;
         cargoExtraArgs = "--package agentix-agent";
       });
 
@@ -290,7 +299,7 @@
       // {
         pname = "agentix-voice";
         src = mkWorkspaceSrc ["agentix-voice" "agentix-tts" "agentix-api"];
-        inherit cargoArtifacts;
+        cargoArtifacts = agentixVoiceDeps;
         cargoExtraArgs = "--package agentix-voice";
       });
 
@@ -300,7 +309,7 @@
       // {
         pname = "claude-jail";
         src = jailsSrc;
-        inherit cargoArtifacts;
+        cargoArtifacts = agentixJailsDeps;
         cargoExtraArgs = "--bin claude-jail";
       });
 
@@ -308,7 +317,7 @@
       // {
         pname = "gh-jail-client";
         src = jailsSrc;
-        inherit cargoArtifacts;
+        cargoArtifacts = agentixJailsDeps;
         cargoExtraArgs = "--bin gh-jail-client";
         # Deploy as 'gh' so it shadows the real gh inside the jail.
         postInstall = ''
@@ -320,7 +329,7 @@
       // {
         pname = "gh-jail-server";
         src = jailsSrc;
-        inherit cargoArtifacts;
+        cargoArtifacts = agentixJailsDeps;
         cargoExtraArgs = "--bin gh-jail-server";
       });
 
@@ -328,7 +337,7 @@
       // {
         pname = "ax-jail";
         src = jailsSrc;
-        inherit cargoArtifacts;
+        cargoArtifacts = agentixJailsDeps;
         cargoExtraArgs = "--bin ax-jail";
       });
 
