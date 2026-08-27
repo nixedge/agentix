@@ -179,9 +179,20 @@ impl VoiceLoop {
 
         if let Some(tts) = &self.tts {
             let speakable = tts_clean(&response_text);
-            match tts.synthesize(&speakable).await {
-                Ok(pcm) => {
-                    let sr = tts.sample_rate();
+            tracing::debug!(speakable = %speakable, "TTS input after cleaning");
+            let tts_arc = Arc::clone(tts);
+            let sr = tts_arc.sample_rate();
+            let result = tokio::task::spawn_blocking(move || {
+                // Run synthesis on a blocking thread so panics don't kill the async runtime.
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    tokio::runtime::Handle::current()
+                        .block_on(tts_arc.synthesize(&speakable))
+                }))
+            })
+            .await?;
+
+            match result {
+                Ok(Ok(pcm)) => {
                     tokio::task::spawn_blocking(move || {
                         if let Err(e) = play_f32(pcm, sr) {
                             tracing::warn!(error = %e, "playback failed");
@@ -189,9 +200,8 @@ impl VoiceLoop {
                     })
                     .await?;
                 }
-                Err(e) => {
-                    tracing::warn!(error = %e, "TTS synthesis failed");
-                }
+                Ok(Err(e)) => tracing::warn!(error = %e, "TTS synthesis failed"),
+                Err(_) => tracing::warn!("TTS synthesizer panicked — skipping audio"),
             }
         }
 
@@ -199,26 +209,58 @@ impl VoiceLoop {
     }
 }
 
-/// Strip content that kokoro can't pronounce: bracketed annotations like
-/// `[After checking the calendar]`, markdown, and leading/trailing whitespace.
+/// Strip everything kokoro can't speak: markdown code fences, backticks,
+/// bracketed annotations, bullet markers, ISO dates, and bare times.
 fn tts_clean(text: &str) -> String {
-    // Remove [...] blocks (tool-use annotations, markdown links, etc.)
-    let mut out = String::with_capacity(text.len());
+    let mut lines_out: Vec<&str> = Vec::new();
+    let mut in_code_block = false;
+
+    for line in text.lines() {
+        let trimmed = line.trim();
+        // Toggle code fence state and skip the fence line itself.
+        if trimmed.starts_with("```") {
+            in_code_block = !in_code_block;
+            continue;
+        }
+        if in_code_block {
+            continue;
+        }
+        if trimmed.is_empty() {
+            continue;
+        }
+        lines_out.push(trimmed);
+    }
+
+    let joined = lines_out.join(" ");
+
+    // Strip [...] and {...} blocks inline.
+    let mut out = String::with_capacity(joined.len());
     let mut depth = 0usize;
-    for ch in text.chars() {
+    for ch in joined.chars() {
         match ch {
-            '[' => depth += 1,
-            ']' => depth = depth.saturating_sub(1),
+            '[' | '{' => depth += 1,
+            ']' | '}' => depth = depth.saturating_sub(1),
             _ if depth == 0 => out.push(ch),
             _ => {}
         }
     }
-    // Collapse excess whitespace left by removed blocks
+
+    // Remove backticks, markdown bold/italic markers, leading list bullets.
+    let out = out.replace('`', "").replace("**", "").replace("__", "");
     let out = out
-        .lines()
-        .map(str::trim)
-        .filter(|l| !l.is_empty())
+        .split_whitespace()
+        .filter(|w| {
+            // Drop ISO dates (2026-08-28), times (10:00), and lone dashes.
+            let looks_like_date = w.len() == 10
+                && w.chars().filter(|c| *c == '-').count() == 2
+                && w.chars().all(|c| c.is_ascii_digit() || c == '-');
+            let looks_like_time = w.len() <= 8
+                && w.chars().filter(|c| *c == ':').count() == 1
+                && w.chars().all(|c| c.is_ascii_digit() || c == ':');
+            !looks_like_date && !looks_like_time && *w != "-" && *w != "*"
+        })
         .collect::<Vec<_>>()
         .join(" ");
+
     out
 }
