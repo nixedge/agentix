@@ -1,6 +1,6 @@
 # agentix Development Guidelines
 
-Auto-generated from feature plans and updated manually. Last updated: 2026-08-20
+Auto-generated from feature plans and updated manually. Last updated: 2026-08-22
 
 ## Active Technologies
 - Rust edition 2021, Rust 1.80+ (via fenix stable toolchain in Nix)
@@ -11,8 +11,9 @@ Auto-generated from feature plans and updated manually. Last updated: 2026-08-20
 - tokio, axum, sqlx, rmcp, ratatui
 - PostgreSQL 17 + pg_search (BM25) + pgvector (HNSW)
 - Nix flakes (build + services)
-- Rust 2021, Rust 1.80+ (fenix stable via Nix) + `llama-cpp-2 = "0.1"` (add `common` feature), `axum 0.8`, `agentix-api`, `agentix-infer` (013-grammar-responses-api)
-- N/A (stateless per request) (013-grammar-responses-api)
+- sled 0.34 embedded key-value store (agentix-agent: todos, notifications, gmail cursor, sessions)
+- Rust 2021 (workspace standard, fenix stable toolchain) (016-voice-loop)
+- N/A — voice turns are ephemeral; config in existing TOML files (016-voice-loop)
 
 ## Project Structure
 
@@ -28,6 +29,7 @@ agentix-ax/          # TUI agent binary (Ratatui, links harness)
 agentix-search/      # PostgreSQL search library (BM25 + vector + reranking)
 agentix-indexer/     # Repo ingestion pipeline (tree-sitter + embed); bin: ingest
 agentix-mcp-server/  # MCP stdio server exposing search tools; bin: mcp-server
+agentix-agent/       # Home assistant daemon (todos, calendar, gmail, ntfy, chat UI); Port 8765
 src/                 # Jail binaries (claude-jail, ax-jail, gh-jail-*)
 ```
 
@@ -87,6 +89,7 @@ Key constraints:
 <!-- MANUAL ADDITIONS END -->
 
 ## Recent Changes
-- 013-grammar-responses-api: Added Rust 2021, Rust 1.80+ (fenix stable via Nix) + `llama-cpp-2 = "0.1"` (add `common` feature), `axum 0.8`, `agentix-api`, `agentix-infer`
-- 011-source-filters: Per-package scoped source trees (mkWorkspaceSrc); jail binaries moved to `agentix-jails` workspace member; root Cargo.toml is now workspace-only
-- 007-cargo-cleanup: Decomposed workspace — llama-cpp-2 isolated in `agentix-llama`; new crates: `agentix-search`, `agentix-indexer`, `agentix-mcp-server`; root crate renamed to `agentix-jails`; pure-Rust GGUF metadata parser added to `agentix-infer`
+- 016-voice-loop: Added Rust 2021 (workspace standard, fenix stable toolchain)
+- 014-home-agent: agentix-agent home assistant daemon — todos (sled), ntfy.sh push, Google Calendar/Gmail, mobile chat UI, Prometheus metrics, NixOS service module
+<<<<<<< HEAD
+- 013-grammar-responses-api: Added grammar enforcement and /v1/responses endpoint; `llama-cpp-2` common feature, `axum 0.8`, `agentix-api`, `agentix-infer`

@@ -10,7 +10,7 @@
     llamaSock = "${socketDir}/llama.sock";
     whisperSock = "${socketDir}/whisper.sock";
 
-    anyEnabled = cfg.daemon.enable || cfg.llama.enable || cfg.whisper.enable;
+    anyEnabled = cfg.daemon.enable || cfg.llama.enable || cfg.whisper.enable || cfg.agent.enable;
   in {
     options.services.agentix = {
       socketDir = lib.mkOption {
@@ -131,6 +131,52 @@
           type = lib.types.attrsOf lib.types.str;
           default = {};
           description = "Additional environment variables passed verbatim to agentix-llama.";
+        };
+      };
+
+      # ── agentix-agent home assistant ────────────────────────────────────────
+
+      agent = {
+        enable = lib.mkEnableOption "agentix-agent home assistant daemon";
+
+        package = lib.mkOption {
+          type = lib.types.package;
+          description = "The agentix-agent package to use.";
+        };
+
+        configFile = lib.mkOption {
+          type = lib.types.path;
+          description = ''
+            Path to the agent.toml configuration file.  Secrets (Google OAuth
+            tokens, ntfy topic) should be stored outside the Nix store.
+          '';
+        };
+
+        user = lib.mkOption {
+          type = lib.types.str;
+          default = "agentix-agent";
+          description = "User account under which agentix-agent runs.";
+        };
+
+        group = lib.mkOption {
+          type = lib.types.str;
+          default = "agentix-agent";
+          description = "Group under which agentix-agent runs.";
+        };
+
+        environmentFile = lib.mkOption {
+          type = lib.types.nullOr lib.types.path;
+          default = null;
+          description = ''
+            Optional file containing secret environment variables passed to
+            agentix-agent at runtime.  Compatible with sops-nix / agenix.
+          '';
+        };
+
+        extraEnv = lib.mkOption {
+          type = lib.types.attrsOf lib.types.str;
+          default = {};
+          description = "Additional environment variables passed verbatim to agentix-agent.";
         };
       };
 
@@ -323,6 +369,42 @@
         systemd.tmpfiles.rules = lib.optionals (toString cfg.whisper.modelsDir != "/var/lib/agentix/models") [
           "d ${toString cfg.whisper.modelsDir} 0750 agentix agentix -"
         ];
+      })
+
+      # ── agentix-agent ────────────────────────────────────────────────────────
+      (lib.mkIf cfg.agent.enable {
+        users.users.${cfg.agent.user} = lib.mkDefault {
+          isSystemUser = true;
+          group = cfg.agent.group;
+          home = "/var/lib/agentix-agent";
+          description = "agentix-agent home assistant service user";
+        };
+
+        users.groups.${cfg.agent.group} = lib.mkDefault {};
+
+        systemd.tmpfiles.rules = [
+          "d /var/lib/agentix-agent 0750 ${cfg.agent.user} ${cfg.agent.group} -"
+        ];
+
+        systemd.services.agentix-agent = {
+          description = "agentix-agent home assistant daemon";
+          wantedBy = ["multi-user.target"];
+          after = ["network.target"];
+
+          environment = cfg.agent.extraEnv;
+
+          serviceConfig = {
+            ExecStart = "${cfg.agent.package}/bin/agentix-agent --config ${cfg.agent.configFile} daemon";
+            Restart = "on-failure";
+            RestartSec = "5s";
+            User = cfg.agent.user;
+            Group = cfg.agent.group;
+            WorkingDirectory = "/var/lib/agentix-agent";
+            StateDirectory = "agentix-agent";
+            StateDirectoryMode = "0750";
+            EnvironmentFile = lib.mkIf (cfg.agent.environmentFile != null) cfg.agent.environmentFile;
+          };
+        };
       })
     ];
   };

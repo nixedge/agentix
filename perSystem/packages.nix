@@ -33,6 +33,9 @@
       ../agentix-whisper/Cargo.toml
       ../agentix-mcp-server/Cargo.toml
       ../agentix-jails/Cargo.toml
+      ../agentix-agent/Cargo.toml
+      ../agentix-tts/Cargo.toml
+      ../agentix-voice/Cargo.toml
     ];
 
     depsOnlySrc = let
@@ -41,6 +44,7 @@
         fileset = lib.fileset.unions (
           allManifests
           ++ lib.optional (lib.pathExists ../Cargo.lock) ../Cargo.lock
+          ++ lib.optional (lib.pathExists ../patches) ../patches
         );
       };
     in
@@ -78,6 +82,12 @@
         cp ${stubMain} $out/agentix-jails/src/ax_jail/main.rs
         cp ${stubMain} $out/agentix-jails/src/gh_proxy/client.rs
         cp ${stubMain} $out/agentix-jails/src/gh_proxy/server.rs
+        mkdir -p $out/agentix-agent/src
+        cp ${stubMain} $out/agentix-agent/src/main.rs
+        mkdir -p $out/agentix-tts/src
+        cp ${stubLib} $out/agentix-tts/src/lib.rs
+        mkdir -p $out/agentix-voice/src
+        cp ${stubMain} $out/agentix-voice/src/main.rs
       '';
 
     # agentix-infer depends on llama-cpp-2 which drives a C++ build via cmake.
@@ -86,12 +96,17 @@
     commonArgs = {
       src = depsOnlySrc;
       strictDeps = true;
-      nativeBuildInputs = [pkgs.pkg-config pkgs.autoPatchelfHook pkgs.clang pkgs.cmake pkgs.ninja];
-      buildInputs = [pkgs.onnxruntime pkgs.openssl pkgs.libclang.lib pkgs.stdenv.cc.cc.lib];
+      nativeBuildInputs = [pkgs.pkg-config pkgs.autoPatchelfHook pkgs.clang pkgs.cmake pkgs.ninja pkgs.alsa-lib.dev];
+      buildInputs = [pkgs.onnxruntime pkgs.openssl pkgs.libclang.lib pkgs.stdenv.cc.cc.lib pkgs.alsa-lib];
       ORT_DYLIB_PATH = "${pkgs.onnxruntime}/lib/libonnxruntime.so";
+      ORT_LIB_LOCATION = "${pkgs.onnxruntime}/lib";
+      ORT_PREFER_DYNAMIC_LINK = "1";
       LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
       CMAKE_GENERATOR = "Ninja";
       CMAKE_MAKE_PROGRAM = "${pkgs.ninja}/bin/ninja";
+      # ort-sys build scripts (rc.13+) link against libssl dynamically; make it
+      # findable at build-script runtime without patching the intermediate binary.
+      LD_LIBRARY_PATH = "${pkgs.openssl.out}/lib:${pkgs.onnxruntime}/lib:${pkgs.stdenv.cc.cc.lib}/lib";
       doCheck = false;
     };
 
@@ -172,6 +187,9 @@
       agentix-mcp-server = "mkdir -p $out/agentix-mcp-server/src; cp ${stubMain} $out/agentix-mcp-server/src/main.rs";
       # agentix-jails has four bins spread across nested subdirs.
       agentix-jails      = "mkdir -p $out/agentix-jails/src/jail $out/agentix-jails/src/ax_jail $out/agentix-jails/src/gh_proxy; cp ${stubMain} $out/agentix-jails/src/jail/main.rs; cp ${stubMain} $out/agentix-jails/src/ax_jail/main.rs; cp ${stubMain} $out/agentix-jails/src/gh_proxy/client.rs; cp ${stubMain} $out/agentix-jails/src/gh_proxy/server.rs";
+      agentix-agent      = "mkdir -p $out/agentix-agent/src; cp ${stubMain} $out/agentix-agent/src/main.rs";
+      agentix-tts        = "mkdir -p $out/agentix-tts/src;   cp ${stubLib}  $out/agentix-tts/src/lib.rs";
+      agentix-voice      = "mkdir -p $out/agentix-voice/src; cp ${stubMain} $out/agentix-voice/src/main.rs";
     };
 
     # Scoped source tree for a workspace binary package.  keepCrates must include
@@ -188,6 +206,7 @@
             allManifests
             ++ realDirs
             ++ lib.optional (lib.pathExists ../Cargo.lock) ../Cargo.lock
+            ++ lib.optional (lib.pathExists ../patches) ../patches
           );
         };
         stubLines = lib.concatStringsSep "\n" (
@@ -268,6 +287,22 @@
     # All jail binaries live in the agentix-jails workspace member, so each
     # jail package uses mkWorkspaceSrc ["agentix-jails"] with a --bin selector.
     # All four share one source and one dep derivation (Nix deduplicates).
+    agentixAgentPkg = craneLib.buildPackage (commonArgs
+      // {
+        pname = "agentix-agent";
+        src = mkWorkspaceSrc ["agentix-agent" "agentix-harness" "agentix-api" "agentix-tts"];
+        cargoArtifacts = agentixAgentDeps;
+        cargoExtraArgs = "--package agentix-agent";
+      });
+
+    agentixVoicePkg = craneLib.buildPackage (commonArgs
+      // {
+        pname = "agentix-voice";
+        src = mkWorkspaceSrc ["agentix-voice" "agentix-tts" "agentix-api"];
+        cargoArtifacts = agentixVoiceDeps;
+        cargoExtraArgs = "--package agentix-voice";
+      });
+
     jailsSrc = mkWorkspaceSrc ["agentix-jails"];
 
     claudeJailUnwrapped = craneLib.buildPackage (commonArgs
@@ -419,6 +454,10 @@
       ];
     };
   in {
+    packages.agentix-agent = agentixAgentPkg;
+
+    packages.agentix-voice = agentixVoicePkg;
+
     packages.agentix-whisper = agentixWhisperPkg;
 
     packages.agentix-llama = pkgs.writeShellScriptBin "agentix-llama" ''

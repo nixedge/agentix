@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agentix</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: system-ui, sans-serif; background: #1a1a1a; color: #e0e0e0; display: flex; flex-direction: column; height: 100dvh; }
+#messages { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.msg { max-width: 85%; padding: 10px 14px; border-radius: 16px; line-height: 1.5; word-break: break-word; white-space: pre-wrap; }
+.msg.user { align-self: flex-end; background: #2563eb; color: #fff; border-bottom-right-radius: 4px; }
+.msg.assistant { align-self: flex-start; background: #2a2a2a; border: 1px solid #333; border-bottom-left-radius: 4px; }
+.msg.system { align-self: center; color: #888; font-size: 0.8rem; background: none; }
+#input-area { display: flex; padding: 10px; gap: 8px; border-top: 1px solid #333; background: #1a1a1a; }
+#text-input { flex: 1; background: #2a2a2a; border: 1px solid #444; border-radius: 20px; padding: 10px 16px; color: #e0e0e0; font-size: 1rem; resize: none; max-height: 120px; outline: none; }
+#text-input:focus { border-color: #2563eb; }
+button { background: #2563eb; color: #fff; border: none; border-radius: 50%; width: 44px; height: 44px; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 1.2rem; transition: background 0.15s; }
+button:hover { background: #1d4ed8; }
+button:disabled { background: #444; cursor: default; }
+#mic-btn { background: #374151; }
+#mic-btn.recording { background: #e53e3e; animation: pulse 1s infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+.speak-btn { background: none; border: none; color: #888; cursor: pointer; font-size: 0.9rem; padding: 2px 6px; border-radius: 8px; width: auto; height: auto; flex-shrink: 0; }
+.speak-btn:hover { color: #e0e0e0; background: #333; }
+</style>
+</head>
+<body>
+<div id="messages"></div>
+<div id="input-area">
+  <textarea id="text-input" rows="1" placeholder="Message..." autocomplete="off"></textarea>
+  <button id="mic-btn" title="Voice input">🎤</button>
+  <button id="send-btn" title="Send">➤</button>
+</div>
+<script>
+const messagesEl = document.getElementById('messages');
+const textInput = document.getElementById('text-input');
+const sendBtn = document.getElementById('send-btn');
+const micBtn = document.getElementById('mic-btn');
+
+function getSession() {
+  const m = document.cookie.match(/(?:^|; )session=([^;]+)/);
+  if (m) return m[1];
+  const id = crypto.randomUUID();
+  document.cookie = `session=${id}; path=/; max-age=2592000; SameSite=Lax`;
+  return id;
+}
+
+const sessionId = getSession();
+
+let ttsAvailable = false;
+
+function addMessage(role, text) {
+  const div = document.createElement('div');
+  div.className = `msg ${role}`;
+  div.textContent = text;
+  if (role === 'assistant') {
+    const btn = document.createElement('button');
+    btn.className = 'speak-btn';
+    btn.title = 'Read aloud';
+    btn.textContent = '🔊';
+    if (!ttsAvailable) btn.style.display = 'none';
+    btn.addEventListener('click', () => speakMessage(text, btn));
+    div.appendChild(btn);
+  }
+  messagesEl.appendChild(div);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  return div;
+}
+
+async function sendText(text) {
+  if (!text.trim()) return;
+  addMessage('user', text);
+  textInput.value = '';
+  textInput.style.height = '';
+  sendBtn.disabled = true;
+
+  const placeholder = addMessage('assistant', '…');
+  try {
+    const resp = await fetch('/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Session-Id': sessionId },
+      body: JSON.stringify({ message: text }),
+    });
+    const data = await resp.json();
+    placeholder.textContent = data.reply ?? data.error ?? '(empty response)';
+  } catch (e) {
+    placeholder.textContent = `Error: ${e.message}`;
+    placeholder.className = 'msg system';
+  } finally {
+    sendBtn.disabled = false;
+  }
+}
+
+sendBtn.addEventListener('click', () => sendText(textInput.value));
+textInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendText(textInput.value); }
+});
+textInput.addEventListener('input', () => {
+  textInput.style.height = 'auto';
+  textInput.style.height = Math.min(textInput.scrollHeight, 120) + 'px';
+});
+
+const recorder = { stream: null, mediaRecorder: null, chunks: [] };
+
+async function startRecording() {
+  recorder.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+    ? 'audio/webm;codecs=opus'
+    : MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : '';
+  recorder.mediaRecorder = new MediaRecorder(recorder.stream, mimeType ? { mimeType } : {});
+  recorder.chunks = [];
+  recorder.mediaRecorder.addEventListener('dataavailable', e => {
+    if (e.data.size > 0) recorder.chunks.push(e.data);
+  });
+  recorder.mediaRecorder.addEventListener('stop', async () => {
+    micBtn.classList.remove('recording');
+    recorder.stream.getTracks().forEach(t => t.stop());
+    const blob = new Blob(recorder.chunks, { type: recorder.mediaRecorder.mimeType || 'audio/webm' });
+    await sendAudio(blob);
+  });
+  recorder.mediaRecorder.start();
+  micBtn.classList.add('recording');
+}
+
+async function stopRecording() {
+  if (recorder.mediaRecorder && recorder.mediaRecorder.state === 'recording') {
+    recorder.mediaRecorder.stop();
+  }
+}
+
+micBtn.addEventListener('click', async () => {
+  if (recorder.mediaRecorder && recorder.mediaRecorder.state === 'recording') {
+    stopRecording();
+  } else {
+    try {
+      await startRecording();
+    } catch (e) {
+      addMessage('system', `Microphone error: ${e.message}`);
+    }
+  }
+});
+
+async function sendAudio(blob) {
+  const form = new FormData();
+  form.append('file', blob, 'recording.webm');
+  try {
+    const resp = await fetch('/api/voice/transcribe', {
+      method: 'POST',
+      headers: { 'X-Session-Id': sessionId },
+      body: form,
+    });
+    const data = await resp.json();
+    const text = data.text ?? data.transcript ?? '';
+    if (text) {
+      textInput.value = text;
+      sendText(text);
+    } else {
+      addMessage('system', data.error ?? 'Transcription returned empty text');
+    }
+  } catch (e) {
+    addMessage('system', `Voice error: ${e.message}`);
+  }
+}
+
+async function speakMessage(text, btn) {
+  try {
+    const resp = await fetch('/api/voice/synthesize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    if (resp.status === 503) {
+      ttsAvailable = false;
+      document.querySelectorAll('.speak-btn').forEach(b => b.style.display = 'none');
+      return;
+    }
+    if (!resp.ok) return;
+    const url = URL.createObjectURL(await resp.blob());
+    const audio = new Audio(url);
+    audio.addEventListener('ended', () => URL.revokeObjectURL(url));
+    audio.play();
+  } catch (e) {
+    console.warn('TTS error:', e);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    micBtn.style.display = 'none';
+  }
+
+  try {
+    const probe = await fetch('/api/voice/synthesize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: '' }),
+    });
+    ttsAvailable = probe.status !== 503;
+  } catch (_) {
+    ttsAvailable = false;
+  }
+  if (!ttsAvailable) {
+    document.querySelectorAll('.speak-btn').forEach(b => b.style.display = 'none');
+  }
+});
+</script>
+</body>
+</html>
