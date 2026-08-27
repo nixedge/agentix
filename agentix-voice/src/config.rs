@@ -12,6 +12,12 @@ pub struct VoiceConfig {
     pub tts: TtsCfg,
     pub wake_word: WakeWordConfig,
     pub session_id: Option<String>,
+    #[serde(default = "default_stt_model")]
+    pub stt_model: String,
+}
+
+fn default_stt_model() -> String {
+    "ggerganov/whisper.cpp:ggml-base.en-q5_1.bin".to_string()
 }
 
 #[derive(Debug, Clone, Deserialize)]

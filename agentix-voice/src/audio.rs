@@ -100,6 +100,13 @@ pub fn play_f32(samples: Vec<f32>, sample_rate: u32) -> Result<()> {
             .into(),
     };
 
+    tracing::info!(
+        samples = samples.len(),
+        sample_rate,
+        channels = config.channels,
+        "starting audio playback"
+    );
+
     let pos = Arc::new(Mutex::new(0usize));
     let samples = Arc::new(samples);
     let done = Arc::new(std::sync::atomic::AtomicBool::new(false));

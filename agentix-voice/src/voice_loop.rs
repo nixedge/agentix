@@ -122,7 +122,9 @@ impl VoiceLoop {
         let part = reqwest::multipart::Part::bytes(wav)
             .file_name("audio.wav")
             .mime_str("audio/wav")?;
-        let form = reqwest::multipart::Form::new().part("file", part);
+        let form = reqwest::multipart::Form::new()
+            .part("file", part)
+            .text("model", self.config.stt_model.clone());
 
         let daemon_url = &self.config.daemon_url;
         let resp = self
@@ -152,15 +154,13 @@ impl VoiceLoop {
         let chat_resp = self
             .client
             .post(format!("{agent_url}/chat"))
-            .json(&serde_json::json!({
-                "message": text,
-                "session_id": session_id
-            }))
+            .header("x-session-id", &session_id)
+            .json(&serde_json::json!({ "message": text }))
             .send()
             .await?;
 
         let chat_body: serde_json::Value = chat_resp.json().await?;
-        let response_text = chat_body["response"]
+        let response_text = chat_body["reply"]
             .as_str()
             .unwrap_or("")
             .trim()
@@ -174,7 +174,8 @@ impl VoiceLoop {
         tracing::info!(response = %response_text, "Agent response received");
 
         if let Some(tts) = &self.tts {
-            match tts.synthesize(&response_text).await {
+            let speakable = tts_clean(&response_text);
+            match tts.synthesize(&speakable).await {
                 Ok(pcm) => {
                     let sr = tts.sample_rate();
                     tokio::task::spawn_blocking(move || {
@@ -192,4 +193,28 @@ impl VoiceLoop {
 
         Ok(())
     }
+}
+
+/// Strip content that kokoro can't pronounce: bracketed annotations like
+/// `[After checking the calendar]`, markdown, and leading/trailing whitespace.
+fn tts_clean(text: &str) -> String {
+    // Remove [...] blocks (tool-use annotations, markdown links, etc.)
+    let mut out = String::with_capacity(text.len());
+    let mut depth = 0usize;
+    for ch in text.chars() {
+        match ch {
+            '[' => depth += 1,
+            ']' => depth = depth.saturating_sub(1),
+            _ if depth == 0 => out.push(ch),
+            _ => {}
+        }
+    }
+    // Collapse excess whitespace left by removed blocks
+    let out = out
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+    out
 }
