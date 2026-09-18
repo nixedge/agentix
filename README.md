@@ -128,6 +128,75 @@ else (indexing, MCP registration, Claude integration) is identical.
 
 ---
 
+## Using llama.cpp instead of Ollama
+
+Ollama is the default embedding backend. To use llama.cpp instead — e.g. you already run
+`llama-server` for other tools — set `LLAMACPP_HOST` and leave `OLLAMA_HOST` unset. **`OLLAMA_HOST`
+takes priority if both are set.**
+
+### Option A: bundled llama.cpp server
+
+```bash
+nix develop .#llama-cpp   # separate dev shell; auto-sets LLAMACPP_HOST=http://127.0.0.1:8080
+nix run .#dev-llama       # PostgreSQL + a llama-server dedicated to embeddings, on :8080
+```
+
+### Option B: point at a llama-server you already run
+
+```bash
+nix run .#postgres                           # PostgreSQL only, no bundled embedding server
+export LLAMACPP_HOST=http://127.0.0.1:8080    # your server
+unset OLLAMA_HOST
+```
+
+Your server must expose an OpenAI-compatible `/v1/embeddings` endpoint and serve a model that
+emits **1536-dimensional** vectors — the schema is fixed at `VECTOR(1536)`, and
+`jina-code-embeddings-1.5b` (the default) satisfies that. Ingest and query must use the *same*
+model; re-index with `--force` if you switch models later.
+
+### If your llama-server runs in router mode
+
+Newer `llama-server` builds support a multi-model **router mode** (`--models-preset` /
+`--models-dir`), spawning per-model backends on demand and proxying requests by the `model`
+field. Router mode has **no live API to register a model on demand** — despite what its docs
+imply, `POST /models/load` and sending an arbitrary `hf-repo:quant` string as `model` both fail
+with `model not found`; every unimplemented management endpoint (`/models/load`, `POST
+/v1/models`, `/docs`) silently returns the server's generic static-file 404, not a real error.
+You must add a preset for an embedding-capable model ahead of time and restart the router:
+
+```ini
+# wherever your router's --models-preset points, e.g. ~/.config/llama/presets.ini
+[jina-code-embeddings-1.5b]
+alias = jina-code-embeddings-1.5b
+embedding = on
+pooling = last
+ctx-size = 0
+n-gpu-layers = 999
+hf-repo = jinaai/jina-code-embeddings-1.5b-GGUF
+hf-file = jina-code-embeddings-1.5b-Q8_0.gguf
+```
+
+`pooling = last` is required — this model's GGUF doesn't declare a pooling type, so llama.cpp
+defaults to `none` (per-token embeddings), which the OpenAI-compatible `/v1/embeddings` endpoint
+rejects with `Pooling type 'none' is not OAI compatible`. jina-code-embeddings-1.5b's model card
+specifies **last-token pooling**; a different embedding model may need `mean` or `cls` instead —
+check its model card.
+
+The preset name above matches the default `EMBED_MODEL`, so no override is needed. Restart the
+router (e.g. `systemctl restart --user llama-server.service`) to pick it up — it loads presets
+at startup only.
+
+### Running agentic-nix inside a container
+
+If `mcp-server`/`ingest` run inside a container (Docker, Podman) while `llama-server` runs on the
+host, `host.containers.internal` may not resolve to a reachable address — it depends on the
+container's network mode. With Podman's `pasta` networking in particular, use the actual gateway
+IP instead (the `-g` address from your `--network pasta:...` args, e.g. `10.171.0.1`) rather than
+the hostname. If another tool on the host already reaches the same server successfully, check
+what host/IP its config uses — that's the fastest way to find the right address.
+
+---
+
 ## First-time setup
 
 ### 1. Clone and enter the dev shell
@@ -514,8 +583,9 @@ All variables have sensible defaults; override as needed.
 | Variable | Default | Description |
 |---|---|---|
 | `PG_DSN` | `postgresql://127.0.0.1:5432/codebase` | PostgreSQL connection string |
-| `OLLAMA_HOST` | `http://127.0.0.1:11434` | Ollama API base URL |
-| `EMBED_MODEL` | `hf.co/jinaai/jina-code-embeddings-1.5b-GGUF:Q8_0` | Embedding model |
+| `OLLAMA_HOST` | `http://127.0.0.1:11434` | Ollama API base URL. Takes priority over `LLAMACPP_HOST` if both are set |
+| `LLAMACPP_HOST` | *(empty — disabled)* | llama.cpp `/v1/embeddings` base URL. Only used when `OLLAMA_HOST` is unset — see [Using llama.cpp instead of Ollama](#using-llamacpp-instead-of-ollama) |
+| `EMBED_MODEL` | `hf.co/jinaai/jina-code-embeddings-1.5b-GGUF:Q8_0` (Ollama) / `jina-code-embeddings-1.5b` (llama.cpp) | Embedding model |
 | `RERANK_MODEL` | *(empty — disabled)* | Set to a fastembed cross-encoder to enable reranking |
 | `GITHUB_TOKEN` | *(empty)* | GitHub personal access token (raises rate limit to 5000/hr) |
 
@@ -526,6 +596,8 @@ All variables have sensible defaults; override as needed.
 ```bash
 # Services
 nix run .#dev                          # start PostgreSQL + Ollama
+nix run .#dev-llama                    # start PostgreSQL + a dedicated llama-server
+nix run .#postgres                     # start PostgreSQL only (bring your own embedding server)
 
 # Binaries
 just build                             # build mcp-server + ingest
@@ -550,9 +622,17 @@ just migrate                           # apply schema.sql (safe to re-run)
 
 ## Troubleshooting
 
-**"Embedding failed (is Ollama running?)"**
-The MCP server can't reach Ollama. Make sure `nix run .#dev` is running, or check that
-`OLLAMA_HOST` points to the right address.
+**"Embedding failed"**
+The MCP server can't reach the embedding backend. Make sure `nix run .#dev` (Ollama) or
+`nix run .#dev-llama` (llama.cpp) is running, or check that `OLLAMA_HOST`/`LLAMACPP_HOST` points
+to the right address. If running inside a container, see
+[Running agentic-nix inside a container](#running-agentic-nix-inside-a-container).
+
+**"llama.cpp server returned error status" / "model '...' not found"**
+Your `llama-server` is running in **router mode** and doesn't have an embedding-capable model
+registered. See [If your llama-server runs in router mode](#if-your-llama-server-runs-in-router-mode)
+— you need to add a preset and restart the router; there's no way to load a model on demand
+via the API.
 
 **"Database error: connection refused"**
 PostgreSQL isn't running. Start it with `nix run .#dev`. Data lives in `./data/pg/` —

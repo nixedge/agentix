@@ -94,7 +94,7 @@ async fn main() -> Result<()> {
             let pool = sqlx::PgPool::connect(&dsn).await?;
             let query_vec = embed::embed(&query)
                 .await
-                .map_err(|e| anyhow::anyhow!("Embedding failed (is Ollama running?): {e}"))?;
+                .map_err(|e| anyhow::anyhow!("Embedding failed: {e}"))?;
             let rows = db::hybrid_search(
                 &pool,
                 &query,

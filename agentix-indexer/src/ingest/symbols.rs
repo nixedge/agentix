@@ -41,9 +41,24 @@ pub fn extract_symbols(source: &str, language: &str) -> Vec<Symbol> {
 fn make_parser(lang: tree_sitter::Language) -> Option<tree_sitter::Parser> {
     let mut parser = tree_sitter::Parser::new();
     parser.set_language(&lang).ok()?;
-    #[allow(deprecated)] // parse_with_options requires restructuring; timeout still needed
-    parser.set_timeout_micros(5_000_000); // 5 s — bail on pathological inputs (e.g. long hex-escape strings)
     Some(parser)
+}
+
+// 5 s - bail on pathological inputs (e.g. long hex-escape strings)
+const PARSE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+fn timed_parse(parser: &mut tree_sitter::Parser, source: &[u8]) -> Option<tree_sitter::Tree> {
+    let deadline = std::time::Instant::now() + PARSE_TIMEOUT;
+    // tree-sitter cancels the parse when the progress callback returns `true`, so return
+    // `true` only once the deadline has passed (and `false` to keep parsing).
+    let mut cb = |_: &tree_sitter::ParseState| std::time::Instant::now() >= deadline;
+    let options = tree_sitter::ParseOptions::new().progress_callback(&mut cb);
+    let len = source.len();
+    parser.parse_with_options(
+        &mut |i, _| if i < len { &source[i..] } else { &[] },
+        None,
+        Some(options),
+    )
 }
 
 fn node_name<'a>(node: &tree_sitter::Node<'a>, source: &'a [u8]) -> Option<String> {
@@ -98,7 +113,7 @@ fn extract_ts_symbols(source: &[u8], lines: &[&str]) -> Vec<Symbol> {
         Some(p) => p,
         None => return vec![],
     };
-    let tree = match parser.parse(source, None) {
+    let tree = match timed_parse(&mut parser, source) {
         Some(t) => t,
         None => return vec![],
     };
@@ -195,7 +210,7 @@ fn extract_py_symbols(source: &[u8], lines: &[&str]) -> Vec<Symbol> {
         Some(p) => p,
         None => return vec![],
     };
-    let tree = match parser.parse(source, None) {
+    let tree = match timed_parse(&mut parser, source) {
         Some(t) => t,
         None => return vec![],
     };
@@ -344,7 +359,7 @@ fn extract_rust_symbols(source: &[u8], lines: &[&str]) -> Vec<Symbol> {
         Some(p) => p,
         None => return vec![],
     };
-    let tree = match parser.parse(source, None) {
+    let tree = match timed_parse(&mut parser, source) {
         Some(t) => t,
         None => return vec![],
     };
@@ -500,7 +515,7 @@ fn extract_haskell_symbols(source: &[u8], lines: &[&str]) -> Vec<Symbol> {
         Some(p) => p,
         None => return vec![],
     };
-    let tree = match parser.parse(source, None) {
+    let tree = match timed_parse(&mut parser, source) {
         Some(t) => t,
         None => return vec![],
     };
@@ -573,7 +588,7 @@ fn extract_latex_symbols(source: &[u8], lines: &[&str]) -> Vec<Symbol> {
         Some(p) => p,
         None => return vec![],
     };
-    let tree = match parser.parse(source, None) {
+    let tree = match timed_parse(&mut parser, source) {
         Some(t) => t,
         None => return vec![],
     };
@@ -750,7 +765,7 @@ fn extract_nix_symbols(source: &[u8], lines: &[&str]) -> Vec<Symbol> {
         Some(p) => p,
         None => return vec![],
     };
-    let tree = match parser.parse(source, None) {
+    let tree = match timed_parse(&mut parser, source) {
         Some(t) => t,
         None => return vec![],
     };
@@ -1010,7 +1025,7 @@ fn extract_c_symbols(source: &[u8], lines: &[&str]) -> Vec<Symbol> {
         Some(p) => p,
         None => return vec![],
     };
-    let tree = match parser.parse(source, None) {
+    let tree = match timed_parse(&mut parser, source) {
         Some(t) => t,
         None => return vec![],
     };
@@ -1028,7 +1043,7 @@ fn extract_cpp_symbols(source: &[u8], lines: &[&str]) -> Vec<Symbol> {
         Some(p) => p,
         None => return vec![],
     };
-    let tree = match parser.parse(source, None) {
+    let tree = match timed_parse(&mut parser, source) {
         Some(t) => t,
         None => return vec![],
     };
@@ -1252,7 +1267,7 @@ fn extract_java_symbols(source: &[u8], lines: &[&str]) -> Vec<Symbol> {
         Some(p) => p,
         None => return vec![],
     };
-    let tree = match parser.parse(source, None) {
+    let tree = match timed_parse(&mut parser, source) {
         Some(t) => t,
         None => return vec![],
     };
@@ -1351,7 +1366,7 @@ fn extract_kotlin_symbols(source: &[u8], lines: &[&str]) -> Vec<Symbol> {
         Some(p) => p,
         None => return vec![],
     };
-    let tree = match parser.parse(source, None) {
+    let tree = match timed_parse(&mut parser, source) {
         Some(t) => t,
         None => return vec![],
     };

@@ -2,6 +2,7 @@
 -- Safe to run on an existing database: all statements use IF NOT EXISTS / IF NOT EXISTS guards.
 
 CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS pg_search;
 
 -- ── Code chunks ───────────────────────────────────────────────────────────────
 

@@ -10,8 +10,11 @@ use agentix_indexer::ingest::{
 };
 
 /// Returns a warning string if the Ollama embed model is loaded on CPU (size_vram == 0).
-/// Empty string if GPU is in use or the check fails.
+/// Empty string if GPU is in use, the check fails, or the llama.cpp backend is active.
 async fn gpu_warning() -> String {
+    if embed::llamacpp_host().is_some() {
+        return String::new();
+    }
     let host = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "http://127.0.0.1:11434".into());
     let Ok(resp) = reqwest::get(format!("{host}/api/ps")).await else {
         return String::new();
@@ -170,7 +173,7 @@ impl CodeSearchServer {
             Ok(v) => v,
             Err(e) => {
                 return Ok(CallToolResult::success(vec![Content::text(format!(
-                    "Embedding failed (is Ollama running?): {e}"
+                    "Embedding failed: {e}"
                 ))]));
             }
         };
@@ -293,7 +296,7 @@ impl CodeSearchServer {
             Ok(v) => v,
             Err(e) => {
                 return Ok(CallToolResult::success(vec![Content::text(format!(
-                    "Embedding failed (is Ollama running?): {e}"
+                    "Embedding failed: {e}"
                 ))]));
             }
         };
@@ -343,7 +346,7 @@ impl CodeSearchServer {
             Ok(v) => v,
             Err(e) => {
                 return Ok(CallToolResult::success(vec![Content::text(format!(
-                    "Embedding failed (is Ollama running?): {e}"
+                    "Embedding failed: {e}"
                 ))]));
             }
         };
@@ -509,7 +512,7 @@ impl CodeSearchServer {
         }
         if let Err(e) = ensure_embed_model().await {
             return Ok(CallToolResult::success(vec![Content::text(format!(
-                "Cannot reach Ollama embed model: {e}"
+                "Cannot reach embed model: {e}"
             ))]));
         }
         let result = match subcommand {

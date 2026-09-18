@@ -29,6 +29,7 @@ pub async fn ingest_github(
 
     let http = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
+        .user_agent(concat!("agentix-indexer/", env!("CARGO_PKG_VERSION")))
         .build()?;
 
     let do_all = streams.is_empty() || streams.iter().any(|s| s == "all");
