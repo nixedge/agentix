@@ -19,8 +19,10 @@ button { background: #2563eb; color: #fff; border: none; border-radius: 50%; wid
 button:hover { background: #1d4ed8; }
 button:disabled { background: #444; cursor: default; }
 #mic-btn { background: #374151; }
-#mic-btn.recording { background: #dc2626; animation: pulse 1s infinite; }
-@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.6; } }
+#mic-btn.recording { background: #e53e3e; animation: pulse 1s infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+.speak-btn { background: none; border: none; color: #888; cursor: pointer; font-size: 0.9rem; padding: 2px 6px; border-radius: 8px; width: auto; height: auto; flex-shrink: 0; }
+.speak-btn:hover { color: #e0e0e0; background: #333; }
 </style>
 </head>
 <body>
@@ -46,10 +48,21 @@ function getSession() {
 
 const sessionId = getSession();
 
+let ttsAvailable = false;
+
 function addMessage(role, text) {
   const div = document.createElement('div');
   div.className = `msg ${role}`;
   div.textContent = text;
+  if (role === 'assistant') {
+    const btn = document.createElement('button');
+    btn.className = 'speak-btn';
+    btn.title = 'Read aloud';
+    btn.textContent = '🔊';
+    if (!ttsAvailable) btn.style.display = 'none';
+    btn.addEventListener('click', () => speakMessage(text, btn));
+    div.appendChild(btn);
+  }
   messagesEl.appendChild(div);
   messagesEl.scrollTop = messagesEl.scrollHeight;
   return div;
@@ -88,53 +101,109 @@ textInput.addEventListener('input', () => {
   textInput.style.height = Math.min(textInput.scrollHeight, 120) + 'px';
 });
 
-let mediaRecorder = null;
-let audioChunks = [];
+const recorder = { stream: null, mediaRecorder: null, chunks: [] };
+
+async function startRecording() {
+  recorder.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+    ? 'audio/webm;codecs=opus'
+    : MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : '';
+  recorder.mediaRecorder = new MediaRecorder(recorder.stream, mimeType ? { mimeType } : {});
+  recorder.chunks = [];
+  recorder.mediaRecorder.addEventListener('dataavailable', e => {
+    if (e.data.size > 0) recorder.chunks.push(e.data);
+  });
+  recorder.mediaRecorder.addEventListener('stop', async () => {
+    micBtn.classList.remove('recording');
+    recorder.stream.getTracks().forEach(t => t.stop());
+    const blob = new Blob(recorder.chunks, { type: recorder.mediaRecorder.mimeType || 'audio/webm' });
+    await sendAudio(blob);
+  });
+  recorder.mediaRecorder.start();
+  micBtn.classList.add('recording');
+}
+
+async function stopRecording() {
+  if (recorder.mediaRecorder && recorder.mediaRecorder.state === 'recording') {
+    recorder.mediaRecorder.stop();
+  }
+}
 
 micBtn.addEventListener('click', async () => {
-  if (mediaRecorder && mediaRecorder.state === 'recording') {
-    mediaRecorder.stop();
-    return;
-  }
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-      ? 'audio/webm;codecs=opus'
-      : MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : '';
-    mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
-    audioChunks = [];
-    mediaRecorder.addEventListener('dataavailable', e => { if (e.data.size > 0) audioChunks.push(e.data); });
-    mediaRecorder.addEventListener('stop', async () => {
-      micBtn.classList.remove('recording');
-      stream.getTracks().forEach(t => t.stop());
-      const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
-      await sendAudio(blob);
-    });
-    mediaRecorder.start();
-    micBtn.classList.add('recording');
-  } catch (e) {
-    addMessage('system', `Microphone error: ${e.message}`);
+  if (recorder.mediaRecorder && recorder.mediaRecorder.state === 'recording') {
+    stopRecording();
+  } else {
+    try {
+      await startRecording();
+    } catch (e) {
+      addMessage('system', `Microphone error: ${e.message}`);
+    }
   }
 });
 
 async function sendAudio(blob) {
-  const placeholder = addMessage('assistant', '…');
   const form = new FormData();
-  form.append('audio', blob, 'recording.webm');
+  form.append('file', blob, 'recording.webm');
   try {
-    const resp = await fetch('/chat/voice', {
+    const resp = await fetch('/api/voice/transcribe', {
       method: 'POST',
       headers: { 'X-Session-Id': sessionId },
       body: form,
     });
     const data = await resp.json();
-    if (data.transcript) addMessage('user', `[voice] ${data.transcript}`);
-    placeholder.textContent = data.reply ?? data.error ?? '(empty)';
+    const text = data.text ?? data.transcript ?? '';
+    if (text) {
+      textInput.value = text;
+      sendText(text);
+    } else {
+      addMessage('system', data.error ?? 'Transcription returned empty text');
+    }
   } catch (e) {
-    placeholder.textContent = `Error: ${e.message}`;
-    placeholder.className = 'msg system';
+    addMessage('system', `Voice error: ${e.message}`);
   }
 }
+
+async function speakMessage(text, btn) {
+  try {
+    const resp = await fetch('/api/voice/synthesize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    if (resp.status === 503) {
+      ttsAvailable = false;
+      document.querySelectorAll('.speak-btn').forEach(b => b.style.display = 'none');
+      return;
+    }
+    if (!resp.ok) return;
+    const url = URL.createObjectURL(await resp.blob());
+    const audio = new Audio(url);
+    audio.addEventListener('ended', () => URL.revokeObjectURL(url));
+    audio.play();
+  } catch (e) {
+    console.warn('TTS error:', e);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    micBtn.style.display = 'none';
+  }
+
+  try {
+    const probe = await fetch('/api/voice/synthesize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: '' }),
+    });
+    ttsAvailable = probe.status !== 503;
+  } catch (_) {
+    ttsAvailable = false;
+  }
+  if (!ttsAvailable) {
+    document.querySelectorAll('.speak-btn').forEach(b => b.style.display = 'none');
+  }
+});
 </script>
 </body>
 </html>

@@ -223,6 +223,7 @@ mod tests {
                 topic: "test".to_owned(),
             },
             google: None,
+            voice: None,
             scheduler: SchedulerConfig {
                 notification_interval_secs: 300,
                 gmail_scan_interval_secs: 900,
@@ -236,6 +237,7 @@ mod tests {
             ntfy: NtfyClient::new("http://localhost".into(), "test".into()),
             google_auth: None,
             prometheus_handle: test_prometheus(),
+            tts_engine: None,
         })
     }
 
@@ -261,9 +263,13 @@ mod tests {
         let resp = app.oneshot(req).await.expect("oneshot");
         assert_eq!(resp.status(), StatusCode::OK);
 
-        let body = resp.into_body().collect().await.expect("collect").to_bytes();
-        let json: serde_json::Value =
-            serde_json::from_slice(&body).expect("parse response body");
+        let body = resp
+            .into_body()
+            .collect()
+            .await
+            .expect("collect")
+            .to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&body).expect("parse response body");
         assert_eq!(json["reply"].as_str(), Some("Hello there!"));
         assert!(
             json["session_id"].as_str().is_some(),

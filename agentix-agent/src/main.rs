@@ -5,6 +5,7 @@ mod http;
 mod scheduler;
 mod store;
 mod tools;
+mod voice;
 
 use anyhow::Context;
 use clap::{Parser, Subcommand};
@@ -142,10 +143,12 @@ async fn run_daemon(config: AgentConfig) -> anyhow::Result<()> {
     let db = AgentDb::open(&config.db_path)?;
     let ntfy = NtfyClient::new(config.ntfy.url.clone(), config.ntfy.topic.clone());
     let google_auth = init_google_auth(&config).await;
+    let http = reqwest::Client::new();
 
     let state = Arc::new(scheduler::AppState {
         db,
         ntfy,
+        http,
         config: config.clone(),
         google_auth,
         prometheus_handle,

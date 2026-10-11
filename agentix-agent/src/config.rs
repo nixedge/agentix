@@ -11,6 +11,22 @@ pub struct AgentConfig {
     pub ntfy: NtfyConfig,
     pub google: Option<GoogleConfig>,
     pub scheduler: SchedulerConfig,
+    pub voice: Option<VoiceAgentConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct VoiceAgentConfig {
+    #[serde(default = "default_daemon_url")]
+    pub daemon_url: String,
+    #[serde(default = "default_tts_voice")]
+    pub tts_voice: String,
+}
+
+fn default_daemon_url() -> String {
+    "http://127.0.0.1:8766".to_string()
+}
+fn default_tts_voice() -> String {
+    "en_US-lessac-medium".to_string()
 }
 
 #[derive(Debug, Clone, Deserialize)]

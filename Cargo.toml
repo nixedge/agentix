@@ -13,6 +13,8 @@ members = [
   "agentix-mcp-server",
   "agentix-jails",
   "agentix-agent",
+  "agentix-tts",
+  "agentix-voice",
 ]
 resolver = "2"
 
@@ -22,3 +24,9 @@ version = "0.1.0"
 [workspace.lints.clippy]
 unwrap_used = "deny"
 expect_used = "deny"
+
+[patch.crates-io]
+# kokoro-tts 0.3.3 uses ort::execution_providers::CUDAExecutionProvider (rc.9 API)
+# but our workspace uses ort =2.0.0-rc.13 where it was renamed to ort::ep::CUDA.
+# This local patch updates the two call sites.
+kokoro-tts = { path = "patches/kokoro-tts" }

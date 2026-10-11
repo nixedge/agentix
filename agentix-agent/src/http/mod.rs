@@ -11,7 +11,7 @@ use axum::{
 };
 use std::sync::Arc;
 
-use crate::scheduler::AppState;
+use crate::{scheduler::AppState, voice};
 
 pub fn router(state: Arc<AppState>) -> Router {
     Router::new()
@@ -24,6 +24,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/todos", post(todos::create_todo))
         .route("/todos/{id}", patch(todos::update_todo))
         .route("/voice/stream", post(voice_stream_stub))
+        .nest("/api/voice", voice::routes())
         .with_state(state)
 }
 

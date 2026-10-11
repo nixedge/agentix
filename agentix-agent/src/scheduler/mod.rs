@@ -14,6 +14,7 @@ pub struct AppState {
     pub db: AgentDb,
     pub config: AgentConfig,
     pub ntfy: NtfyClient,
+    pub http: reqwest::Client,
     pub google_auth: Option<Arc<crate::google::auth::GoogleAuth>>,
     pub prometheus_handle: metrics_exporter_prometheus::PrometheusHandle,
 }
