@@ -72,6 +72,7 @@ dependencies = [
  "agentix-router",
  "anyhow",
  "axum",
+ "hound",
  "hyper",
  "hyper-util",
  "reqwest",
@@ -6176,3 +6177,10 @@ checksum = "27bc9d5b815bc103f142aa054f561d9187d191692ec7c2d1e2b4737f8dbd7296"
 dependencies = [
  "zune-core",
 ]
+
+[[package]]
+name = "hound"
+version = "3.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "62adaabb884c94955b19907d60019f4e145d091c75345379e70d1ee696f7854f"
+
