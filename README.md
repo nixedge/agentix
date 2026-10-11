@@ -281,6 +281,45 @@ check that the services are running (`nix run .#dev`) and the binary path is cor
 
 ---
 
+## codex-jail
+
+`codex-jail` runs Codex with the same Nix, worktree and GitHub proxy
+integration as the Claude launcher. The host runs the real GitHub CLI; the
+jail's `gh` is the socket client, with no host GitHub credentials mounted.
+
+```bash
+nix run .#codex-jail -- --dangerous
+nix run .#codex-jail -- --repo owner/another-repo --write
+nix run .#codex-jail -- --no-github-auth -- exec "Inspect this project"
+```
+
+GitHub remotes supply the default repository list; `--repo OWNER/REPO`
+adds entries, and `--all-repos` explicitly removes that restriction.
+Without GitHub remotes or explicit repository selection, the proxy is disabled.
+`--write` enables the shared proxy's mutating API/release operations.
+`--no-github-auth` skips the proxy. The packaged client remains installed,
+but cannot operate without its socket.
+
+`--allow-ssh` explicitly forwards the host SSH agent; it is off by default.
+`--debug` reports launcher arguments while redacting environment values and
+omitting the Codex prompt. `--ro`, `--rw`, and `--all-worktrees` control
+additional mounts. Codex arguments follow a separate `--`.
+
+The jail uses an isolated global Git config with the host's name/email,
+signing disabled, and GitHub SSH remotes rewritten to HTTPS. It does not
+import host credential helpers. Private Git-over-HTTPS authentication is
+not provided: the shared proxy blocks `gh auth`, so it cannot serve as
+a Git credential helper. Explicit SSH URLs can use `--allow-ssh`.
+The shared proxy's existing policy is unchanged by the Codex integration.
+
+Launcher regression tests use the real proxy server and client with fixture
+executables for bubblewrap and upstream GitHub access:
+
+```bash
+nix develop --command cargo test -p agentix-jails --bin codex-jail --test codex_jail
+nix build .#codex-jail
+```
+
 ## claude-jail
 
 `claude-jail` runs Claude Code inside a [bubblewrap](https://github.com/containers/bubblewrap)

@@ -407,6 +407,7 @@
         inputs'.llm-agents.packages.codex
         pkgs.nix
         pkgs.git
+        ghJailClientPkg
         pkgs.curl
         pkgs.bash
         pkgs.python3
@@ -417,6 +418,7 @@
         pkgs.gnugrep
         pkgs.ripgrep
         pkgs.gnused
+        pkgs.openssh
         agentixIndexerPkg
         agentixMcpServerPkg
       ];
@@ -496,6 +498,8 @@
     packages.codex-jail = pkgs.writeShellScriptBin "codex-jail" ''
       export CODEX_JAIL_BIN_DIR="${codexJailBinDir}/bin"
       export CODEX_JAIL_BWRAP="${pkgs.bubblewrap}/bin/bwrap"
+      export CODEX_JAIL_GH_SERVER="${ghJailServerPkg}/bin/gh-jail-server"
+      export PATH="${pkgs.gh}/bin:${pkgs.git}/bin:$PATH"
       export NIX_SSL_CERT_FILE="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
       export NIX_CONFIG="extra-experimental-features = nix-command flakes"
       exec ${codexJailUnwrapped}/bin/codex-jail "$@"

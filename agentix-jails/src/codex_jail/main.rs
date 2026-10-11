@@ -1,11 +1,11 @@
 use anyhow::{Context, Result};
 use clap::Parser;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
-use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::{env, fs};
+use std::time::{Duration, Instant};
+use std::{env, fs, thread};
 
 #[derive(Parser)]
 #[command(
@@ -30,9 +30,135 @@ struct Args {
     #[arg(long = "dangerous")]
     dangerous: bool,
 
+    /// Grant write (push/merge/release) access via the gh proxy.
+    #[arg(long = "write")]
+    write: bool,
+
+    /// Additional GitHub repos (owner/repo) the proxy is allowed to access.
+    /// The cwd's origin remote is always included automatically. Repeatable.
+    #[arg(long = "repo", value_name = "OWNER/REPO")]
+    allowed_repos: Vec<String>,
+
+    /// Allow the gh proxy to access any GitHub repo (no allowlist).
+    /// By default only repos found in git remotes (plus any --repo flags) are allowed.
+    #[arg(long = "all-repos")]
+    all_repos: bool,
+
+    /// Skip starting the gh proxy (no gh available inside the jail).
+    #[arg(long = "no-github-auth")]
+    no_github_auth: bool,
+
+    /// Forward the host SSH agent socket into the jail.
+    /// WARNING: this lets Codex sign arbitrary SSH operations with your keys.
+    /// Never combine with --dangerous.
+    #[arg(long = "allow-ssh")]
+    allow_ssh: bool,
+
+    /// Print each command before running it and print bwrap arguments with environment values redacted.
+    #[arg(long = "debug")]
+    debug: bool,
+
     /// Arguments passed directly to codex (e.g. "Fix the tests")
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     codex_args: Vec<String>,
+}
+
+struct GhProxy {
+    socket_path: PathBuf,
+    child: std::process::Child,
+}
+
+impl GhProxy {
+    /// Spawn `gh-jail-server` and wait for the socket to become available.
+    fn start(
+        socket_path: PathBuf,
+        write_mode: bool,
+        allowed_repos: &[String],
+        debug: bool,
+    ) -> Result<Self> {
+        let server_bin =
+            env::var("CODEX_JAIL_GH_SERVER").unwrap_or_else(|_| "gh-jail-server".into());
+
+        let mut cmd = Command::new(&server_bin);
+        cmd.arg("--socket").arg(&socket_path);
+        if write_mode {
+            cmd.arg("--write");
+        }
+        for repo in allowed_repos {
+            cmd.arg("--repo").arg(repo);
+        }
+        if debug {
+            eprintln!("[debug] starting gh proxy: {cmd:?}");
+        }
+
+        let child = cmd
+            .spawn()
+            .with_context(|| format!("spawning {server_bin}"))?;
+
+        let mut proxy = Self { socket_path, child };
+
+        // Poll until the socket file appears (up to 5 s).
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline {
+            if let Some(status) = proxy.child.try_wait()? {
+                anyhow::bail!("gh-jail-server exited during startup: {status}");
+            }
+            if proxy.socket_path.exists() {
+                return Ok(proxy);
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+
+        anyhow::bail!(
+            "gh-jail-server did not create socket at {} within 5 s",
+            proxy.socket_path.display()
+        );
+    }
+}
+
+impl Drop for GhProxy {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+        let _ = fs::remove_file(&self.socket_path);
+    }
+}
+
+// ── Synthetic git config ──────────────────────────────────────────────────────
+
+fn write_synthetic_gitconfig(dir: &Path) -> Result<PathBuf> {
+    let name = git_global_config("user.name").unwrap_or_else(|| "Codex".into());
+    let email = git_global_config("user.email").unwrap_or_else(|| "codex@localhost".into());
+
+    let path = dir.join("gitconfig");
+    for (key, value) in [
+        ("user.name", name.as_str()),
+        ("user.email", email.as_str()),
+        ("commit.gpgsign", "false"),
+        ("tag.gpgsign", "false"),
+        ("url.https://github.com/.insteadOf", "git@github.com:"),
+    ] {
+        let status = Command::new("git")
+            .arg("config")
+            .arg("--file")
+            .arg(&path)
+            .args([key, value])
+            .status()
+            .context("writing synthetic gitconfig")?;
+        anyhow::ensure!(status.success(), "could not set {key} in jail gitconfig");
+    }
+    Ok(path)
+}
+
+fn git_global_config(key: &str) -> Option<String> {
+    Command::new("git")
+        .args(["config", "--global", key])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
 }
 
 fn main() -> Result<()> {
@@ -54,6 +180,61 @@ fn main() -> Result<()> {
         HashMap::new()
     };
 
+    let gitconfig_dir = tempfile::Builder::new()
+        .prefix("codex-jail-git-")
+        .tempdir()
+        .context("creating gitconfig tempdir")?;
+    let gitconfig_host_path = write_synthetic_gitconfig(gitconfig_dir.path())?;
+
+    // Build the allowed-repos list: all GitHub remotes + any explicit --repo flags.
+    // When --all-repos is set, pass an empty list so the server allows everything.
+    let allowed_repos: Vec<String> = if args.all_repos {
+        Vec::new()
+    } else {
+        let mut seen: HashSet<String> = HashSet::new();
+        let mut repos: Vec<String> = Vec::new();
+        for repo in github_repos_from_all_remotes(&cwd) {
+            if seen.insert(repo.clone()) {
+                repos.push(repo);
+            }
+        }
+        for repo in &args.allowed_repos {
+            if seen.insert(repo.clone()) {
+                repos.push(repo.clone());
+            }
+        }
+        repos
+    };
+
+    // Start the gh proxy server (unless opted out).
+    // The TempDir is kept in the tuple so it lives until gh_proxy drops (after bwrap exits).
+    let gh_proxy: Option<(GhProxy, tempfile::TempDir)> = if args.no_github_auth {
+        None
+    } else if allowed_repos.is_empty() && !args.all_repos {
+        eprintln!("codex-jail: no GitHub remotes found; use --repo OWNER/REPO or --all-repos to enable the proxy");
+        None
+    } else {
+        let socket_dir = tempfile::Builder::new()
+            .prefix("codex-jail-gh-")
+            .tempdir()
+            .context("creating gh socket tempdir")?;
+        let socket_path = socket_dir.path().join("gh.sock");
+        match GhProxy::start(socket_path, args.write, &allowed_repos, args.debug) {
+            Ok(proxy) => {
+                eprintln!(
+                    "codex-jail: gh proxy listening at {}",
+                    proxy.socket_path.display()
+                );
+                Some((proxy, socket_dir))
+            }
+            Err(e) => {
+                eprintln!("codex-jail: warning: could not start gh proxy: {e}");
+                eprintln!("codex-jail: gh will not be available inside the jail");
+                None
+            }
+        }
+    };
+
     let mut b: Vec<OsString> = Vec::new();
 
     push(&mut b, &["--unshare-all", "--share-net"]);
@@ -61,6 +242,12 @@ fn main() -> Result<()> {
     push(&mut b, &["--proc", "/proc"]);
     push(&mut b, &["--dev", "/dev"]);
     push(&mut b, &["--tmpfs", "/tmp"]);
+    bind(
+        &mut b,
+        "--ro-bind",
+        &gitconfig_host_path,
+        Path::new("/tmp/gitconfig"),
+    );
 
     push(&mut b, &["--ro-bind", "/nix", "/nix"]);
 
@@ -115,23 +302,6 @@ fn main() -> Result<()> {
         ],
     );
 
-    ro_bind_if_exists(
-        &mut b,
-        &home.join(".gitconfig").to_string_lossy(),
-        &home.join(".gitconfig").to_string_lossy(),
-    );
-
-    let git_cfg_dir = home.join(".config").join("git");
-    if git_cfg_dir.exists() {
-        push(&mut b, &["--dir", &home.join(".config").to_string_lossy()]);
-        bind(
-            &mut b,
-            "--ro-bind",
-            &git_cfg_dir,
-            &home.join(".config").join("git"),
-        );
-    }
-
     let known_hosts = home.join(".ssh").join("known_hosts");
     if known_hosts.exists() {
         push(&mut b, &["--dir", &home.join(".ssh").to_string_lossy()]);
@@ -154,6 +324,28 @@ fn main() -> Result<()> {
         fs::create_dir_all(&dot_agents).context("creating ~/.agents")?;
     }
     bind(&mut b, "--bind", &dot_agents, &home.join(".agents"));
+
+    if args.allow_ssh {
+        eprintln!("codex-jail: WARNING: --allow-ssh forwards your SSH agent into the jail.");
+        eprintln!("codex-jail: Codex can sign arbitrary SSH operations with your keys.");
+        if args.dangerous {
+            eprintln!("codex-jail: WARNING: combining --allow-ssh with --dangerous is strongly discouraged.");
+        }
+        if let Ok(sock) = env::var("SSH_AUTH_SOCK") {
+            let sock_path = PathBuf::from(&sock);
+            if sock_path.exists() {
+                bind(&mut b, "--bind", &sock_path, &sock_path);
+            }
+        }
+    }
+
+    // Bind the gh proxy socket directory so the socket is reachable inside.
+    if let Some((ref proxy, _)) = gh_proxy {
+        let Some(sock_dir) = proxy.socket_path.parent() else {
+            anyhow::bail!("gh proxy socket path has no parent directory");
+        };
+        bind(&mut b, "--bind", sock_dir, sock_dir);
+    }
 
     let git_ctx = detect_git_worktree(&cwd);
 
@@ -292,10 +484,28 @@ fn main() -> Result<()> {
     }
 
     for (k, v) in &direnv_env {
-        if k == "PATH" {
+        if matches!(
+            k.as_str(),
+            "PATH" | "SSH_AUTH_SOCK" | "GH_PROXY_SOCKET" | "GIT_CONFIG_GLOBAL"
+        ) {
             continue;
         }
         setenv(&mut b, k, v);
+    }
+
+    setenv(&mut b, "GIT_CONFIG_GLOBAL", "/tmp/gitconfig");
+
+    // Expose the proxy socket path — no token needed inside the jail.
+    if let Some((ref proxy, _)) = gh_proxy {
+        setenv(
+            &mut b,
+            "GH_PROXY_SOCKET",
+            &proxy.socket_path.to_string_lossy(),
+        );
+    }
+
+    if args.allow_ssh {
+        passthrough(&mut b, "SSH_AUTH_SOCK");
     }
 
     setenv(&mut b, "TMPDIR", "/tmp");
@@ -314,8 +524,29 @@ fn main() -> Result<()> {
         b.push(a.into());
     }
 
-    let err = Command::new(&bwrap_path).args(&b).exec();
-    Err(anyhow::anyhow!("exec {bwrap_path}: {err}"))
+    if args.debug {
+        eprintln!("[debug] bwrap: {bwrap_path}");
+        let mut i = 0;
+        while i < b.len() {
+            if b[i] == "--setenv" && i + 2 < b.len() {
+                eprintln!("[debug] --setenv {:?} <redacted>", b[i + 1]);
+                i += 3;
+            } else if b[i] == "--" {
+                eprintln!("[debug] codex arguments omitted");
+                break;
+            } else {
+                eprintln!("[debug] {:?}", b[i]);
+                i += 1;
+            }
+        }
+    }
+    let status = Command::new(&bwrap_path)
+        .args(&b)
+        .status()
+        .with_context(|| format!("running {bwrap_path}"))?;
+    drop(gh_proxy);
+    drop(gitconfig_dir);
+    std::process::exit(status.code().unwrap_or(1));
 }
 
 fn push(b: &mut Vec<OsString>, args: &[&str]) {
@@ -393,4 +624,132 @@ fn capture_direnv_env(dir: &Path) -> Result<HashMap<String, String>> {
         .into_iter()
         .filter_map(|(k, v)| v.map(|v| (k, v)))
         .collect())
+}
+
+fn parse_github_slug(url: &str) -> Option<String> {
+    let slug = if let Some(rest) = url.strip_prefix("git@github.com:") {
+        rest
+    } else if let Some(rest) = url.strip_prefix("https://github.com/") {
+        rest
+    } else {
+        return None;
+    };
+    Some(slug.trim_end_matches(".git").to_string())
+}
+
+/// Enumerate all git remotes in `cwd` and return the GitHub `owner/repo` slug for each
+/// one that points at GitHub. Non-GitHub remotes are silently skipped. Duplicates are
+/// removed. Returns an empty Vec if the directory is not a git repo or git fails.
+fn github_repos_from_all_remotes(cwd: &Path) -> Vec<String> {
+    let names_out = Command::new("git")
+        .args(["-C", &cwd.to_string_lossy(), "remote"])
+        .output();
+    let names_out = match names_out {
+        Ok(o) if o.status.success() => o,
+        _ => return Vec::new(),
+    };
+    let names = std::str::from_utf8(&names_out.stdout)
+        .unwrap_or("")
+        .lines()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>();
+
+    let mut seen = HashSet::new();
+    let mut repos = Vec::new();
+    for name in names {
+        let url_out = Command::new("git")
+            .args(["-C", &cwd.to_string_lossy(), "remote", "get-url", name])
+            .output();
+        let url = match url_out {
+            Ok(o) if o.status.success() => o.stdout,
+            _ => continue,
+        };
+        let url_str = std::str::from_utf8(&url).unwrap_or("").trim().to_string();
+        if let Some(slug) = parse_github_slug(&url_str) {
+            if seen.insert(slug.clone()) {
+                repos.push(slug);
+            }
+        }
+    }
+    repos
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_github_slug;
+
+    // T005: positive cases — SSH and HTTPS GitHub URLs
+    #[test]
+    fn parse_ssh_with_git_suffix() {
+        assert_eq!(
+            parse_github_slug("git@github.com:user/repo.git"),
+            Some("user/repo".into())
+        );
+    }
+
+    #[test]
+    fn parse_ssh_without_git_suffix() {
+        assert_eq!(
+            parse_github_slug("git@github.com:user/repo"),
+            Some("user/repo".into())
+        );
+    }
+
+    #[test]
+    fn parse_https_with_git_suffix() {
+        assert_eq!(
+            parse_github_slug("https://github.com/user/repo.git"),
+            Some("user/repo".into())
+        );
+    }
+
+    #[test]
+    fn parse_https_without_git_suffix() {
+        assert_eq!(
+            parse_github_slug("https://github.com/user/repo"),
+            Some("user/repo".into())
+        );
+    }
+
+    // T006: negative cases — non-GitHub URLs return None without panicking
+    #[test]
+    fn parse_gitlab_ssh_returns_none() {
+        assert_eq!(parse_github_slug("git@gitlab.com:user/repo.git"), None);
+    }
+
+    #[test]
+    fn parse_non_github_https_returns_none() {
+        assert_eq!(parse_github_slug("https://example.com/repo.git"), None);
+    }
+
+    #[test]
+    fn parse_malformed_returns_none() {
+        assert_eq!(parse_github_slug("not-a-url"), None);
+    }
+
+    #[test]
+    fn parse_empty_returns_none() {
+        assert_eq!(parse_github_slug(""), None);
+    }
+
+    // T007: deduplication — same slug from SSH and HTTPS appears only once
+    #[test]
+    fn dedup_same_slug_different_url_forms() {
+        let urls = [
+            "git@github.com:org/repo.git",
+            "https://github.com/org/repo.git",
+            "git@github.com:org/repo",
+        ];
+        let mut seen = std::collections::HashSet::new();
+        let mut repos: Vec<String> = Vec::new();
+        for url in &urls {
+            if let Some(slug) = parse_github_slug(url) {
+                if seen.insert(slug.clone()) {
+                    repos.push(slug);
+                }
+            }
+        }
+        assert_eq!(repos, vec!["org/repo".to_string()]);
+    }
 }
