@@ -33,6 +33,7 @@
       ../agentix-whisper/Cargo.toml
       ../agentix-mcp-server/Cargo.toml
       ../agentix-jails/Cargo.toml
+      ../agentix-agent/Cargo.toml
     ];
 
     depsOnlySrc = let
@@ -78,6 +79,8 @@
         cp ${stubMain} $out/agentix-jails/src/ax_jail/main.rs
         cp ${stubMain} $out/agentix-jails/src/gh_proxy/client.rs
         cp ${stubMain} $out/agentix-jails/src/gh_proxy/server.rs
+        mkdir -p $out/agentix-agent/src
+        cp ${stubMain} $out/agentix-agent/src/main.rs
       '';
 
     # agentix-infer depends on llama-cpp-2 which drives a C++ build via cmake.
@@ -103,7 +106,6 @@
     agentixMcpDeps      = craneLib.buildDepsOnly (commonArgs // { pname = "agentix-mcp-deps";        src = depsOnlySrc; cargoExtraArgs = "--package agentix-mcp-server"; });
     agentixIndexerDeps  = craneLib.buildDepsOnly (commonArgs // { pname = "agentix-indexer-deps";    src = depsOnlySrc; cargoExtraArgs = "--package agentix-indexer"; });
     agentixAgentDeps    = craneLib.buildDepsOnly (commonArgs // { pname = "agentix-agent-deps";      src = depsOnlySrc; cargoExtraArgs = "--package agentix-agent"; });
-    agentixVoiceDeps    = craneLib.buildDepsOnly (commonArgs // { pname = "agentix-voice-deps";      src = depsOnlySrc; cargoExtraArgs = "--package agentix-voice"; });
     agentixJailsDeps    = craneLib.buildDepsOnly (commonArgs // { pname = "agentix-jails-deps";      src = depsOnlySrc; cargoExtraArgs = "--package agentix-jails"; });
 
     # Pinned whisper.cpp tiny English model (~75 MB) for whisper integration tests.
@@ -172,6 +174,7 @@
       agentix-mcp-server = "mkdir -p $out/agentix-mcp-server/src; cp ${stubMain} $out/agentix-mcp-server/src/main.rs";
       # agentix-jails has four bins spread across nested subdirs.
       agentix-jails      = "mkdir -p $out/agentix-jails/src/jail $out/agentix-jails/src/ax_jail $out/agentix-jails/src/gh_proxy; cp ${stubMain} $out/agentix-jails/src/jail/main.rs; cp ${stubMain} $out/agentix-jails/src/ax_jail/main.rs; cp ${stubMain} $out/agentix-jails/src/gh_proxy/client.rs; cp ${stubMain} $out/agentix-jails/src/gh_proxy/server.rs";
+      agentix-agent      = "mkdir -p $out/agentix-agent/src; cp ${stubMain} $out/agentix-agent/src/main.rs";
     };
 
     # Scoped source tree for a workspace binary package.  keepCrates must include
@@ -268,6 +271,14 @@
     # All jail binaries live in the agentix-jails workspace member, so each
     # jail package uses mkWorkspaceSrc ["agentix-jails"] with a --bin selector.
     # All four share one source and one dep derivation (Nix deduplicates).
+    agentixAgentPkg = craneLib.buildPackage (commonArgs
+      // {
+        pname = "agentix-agent";
+        src = mkWorkspaceSrc ["agentix-agent" "agentix-harness" "agentix-api"];
+        cargoArtifacts = agentixAgentDeps;
+        cargoExtraArgs = "--package agentix-agent";
+      });
+
     jailsSrc = mkWorkspaceSrc ["agentix-jails"];
 
     claudeJailUnwrapped = craneLib.buildPackage (commonArgs
@@ -451,6 +462,8 @@
       ];
     };
   in {
+    packages.agentix-agent = agentixAgentPkg;
+
     packages.agentix-whisper = agentixWhisperPkg;
 
     packages.agentix-llama = pkgs.writeShellScriptBin "agentix-llama" ''
