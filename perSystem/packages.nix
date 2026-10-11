@@ -306,6 +306,14 @@
         cargoExtraArgs = "--bin ax-jail";
       });
 
+    codexJailUnwrapped = craneLib.buildPackage (commonArgs
+      // {
+        pname = "codex-jail";
+        src = jailsSrc;
+        cargoArtifacts = agentixJailsDeps;
+        cargoExtraArgs = "--bin codex-jail";
+      });
+
     axJailSanityCheck = pkgs.writeShellScriptBin "ax-jail-check" ''
       #!/usr/bin/env bash
       set -euo pipefail
@@ -392,6 +400,28 @@
       ];
     };
 
+    codexJailBinDir = pkgs.buildEnv {
+      name = "codex-jail-tools";
+      pathsToLink = ["/bin"];
+      paths = [
+        inputs'.llm-agents.packages.codex
+        pkgs.nix
+        pkgs.git
+        pkgs.curl
+        pkgs.bash
+        pkgs.python3
+        pkgs.direnv
+        pkgs.coreutils
+        pkgs.findutils
+        pkgs.jq
+        pkgs.gnugrep
+        pkgs.ripgrep
+        pkgs.gnused
+        agentixIndexerPkg
+        agentixMcpServerPkg
+      ];
+    };
+
     # Merged ~/bin for the jail. buildEnv with pathsToLink=["/bin"] handles
     # multi-binary packages (coreutils, findutils) correctly; all symlinks
     # point into /nix/store which is bind-mounted read-only inside the jail.
@@ -461,6 +491,14 @@
       export NIX_SSL_CERT_FILE="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
       export NIX_CONFIG="extra-experimental-features = nix-command flakes"
       exec ${axJailUnwrapped}/bin/ax-jail "$@"
+    '';
+
+    packages.codex-jail = pkgs.writeShellScriptBin "codex-jail" ''
+      export CODEX_JAIL_BIN_DIR="${codexJailBinDir}/bin"
+      export CODEX_JAIL_BWRAP="${pkgs.bubblewrap}/bin/bwrap"
+      export NIX_SSL_CERT_FILE="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+      export NIX_CONFIG="extra-experimental-features = nix-command flakes"
+      exec ${codexJailUnwrapped}/bin/codex-jail "$@"
     '';
   };
 }
