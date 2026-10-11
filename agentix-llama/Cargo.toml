@@ -18,7 +18,9 @@ workspace = true
 cuda = ["llama-cpp-2/cuda"]
 
 [dependencies]
-agentix-api = { path = "../agentix-api" }
+minijinja.workspace = true
+serde = { version = "1", features = ["derive"] }
+agentix-api = { path = "../agentix-api", version = "0.2" }
 agentix-infer = { path = "../agentix-infer" }
 llama-cpp-2 = { version = "0.1", features = ["common"] }
 uuid = { version = "1", features = ["v4"] }
@@ -34,6 +36,7 @@ serde_json = "1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [dev-dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream"] }
 agentix-infer = { path = "../agentix-infer" }
 tokio = { version = "1", features = ["full"] }
 tempfile = "3"

@@ -15,9 +15,19 @@ pub struct ToolCall {
 /// Object-safe: works in `Vec<Box<dyn Tool>>`.
 #[async_trait]
 pub trait Tool: Send + Sync {
+    fn needs_approval(&self) -> bool {
+        true
+    }
     fn name(&self) -> &str;
     fn description(&self) -> &str;
     /// JSON Schema object (`"type": "object"` with `"properties"`) for the function parameters.
     fn parameters(&self) -> serde_json::Value;
     async fn call(&self, args: serde_json::Value) -> Result<String>;
+    async fn call_in_context(
+        &self,
+        args: serde_json::Value,
+        _context: agentix_api::agent::InvocationContext,
+    ) -> Result<String> {
+        self.call(args).await
+    }
 }

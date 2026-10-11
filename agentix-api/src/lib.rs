@@ -1,5 +1,10 @@
 use serde::{Deserialize, Serialize};
 
+pub mod agent;
+pub mod models;
+pub mod orchestration;
+pub mod wire;
+
 // ── response_format types ─────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

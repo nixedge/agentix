@@ -12,10 +12,20 @@ path = "src/lib.rs"
 workspace = true
 
 [dependencies]
-tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "sync"] }
+agentix-api = { path = "../agentix-api", version = "0.2" }
+uuid = { version = "1", features = ["v4"] }
+sha2 = "0.10"
+agentix-codex-patch.workspace = true
+codex-utils-pty.workspace = true
+codex-file-search.workspace = true
+codex-execpolicy.workspace = true
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "sync", "time"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1"
 tracing = "0.1"
 async-trait = "0.1"
+
+[dev-dependencies]
+tempfile = "3"

@@ -9,6 +9,7 @@ pub struct Config {
     pub whisper_socket: PathBuf,
     pub piper_bin: PathBuf,
     pub piper_voices_dir: PathBuf,
+    pub allow_cloud_escalation: bool,
 
     #[allow(dead_code)] // reserved for future gateway auth
     pub agentix_api_key: Option<String>,
@@ -22,6 +23,8 @@ pub struct Config {
 impl Config {
     pub fn from_env() -> Self {
         Self {
+            allow_cloud_escalation: std::env::var("AGENTIX_ALLOW_CLOUD_ESCALATION").as_deref()
+                == Ok("1"),
             gateway_host: std::env::var("AGENTIX_GATEWAY_HOST").unwrap_or_else(|_| "[::]".into()),
             gateway_port: std::env::var("AGENTIX_GATEWAY_PORT")
                 .ok()

@@ -11,6 +11,8 @@
 //!   AGENTIX_VRAM_LIMIT_BYTES  Hard VRAM cap in bytes (optional)
 //!   AGENTIX_MAX_LOADED_MODELS Max models in memory simultaneously (default 2)
 
+mod worker_tools;
+
 use agentix_api::{
     ResponseFormatType, ResponseInputContent, ResponseOutputContent, ResponseOutputMessage,
     ResponsesRequest, ResponsesResponse,
@@ -106,14 +108,14 @@ async fn main() -> anyhow::Result<()> {
 
     for model in parse_model_list("AGENTIX_LLAMA_MODELS") {
         info!(model = %model, "preloading model");
-        match engine.pull(&model).await {
-            Ok(_) => {}
+        let installed = match engine.pull(&model).await {
+            Ok(info) => info.name,
             Err(e) => {
                 tracing::warn!(model = %model, err = %e, "preload pull failed — skipping");
                 continue;
             }
-        }
-        if let Err(e) = engine.warmup(&model).await {
+        };
+        if let Err(e) = engine.warmup(&installed).await {
             tracing::warn!(model = %model, err = %e, "preload warmup failed");
         }
     }
@@ -134,6 +136,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/pull", post(pull_handler))
         .route("/api/delete", delete(delete_handler))
         .route("/control/shutdown", post(shutdown_handler))
+        .route("/control/readiness", post(readiness_handler))
+        .route("/control/models", get(catalog_handler))
+        .route("/control/tokenize", post(tokenize_handler))
+        .layer(axum::extract::DefaultBodyLimit::max(1024 * 1024))
         .with_state(state);
 
     let _ = std::fs::remove_file(&socket_path);
@@ -170,6 +176,20 @@ async fn chat_completions_handler(
                 .into_response()
         }
     };
+
+    let raw: serde_json::Value = match serde_json::from_slice(&body) {
+        Ok(value) => value,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    if raw.get("tools").is_some()
+        || raw["messages"].as_array().is_some_and(|messages| {
+            messages
+                .iter()
+                .any(|m| m.get("tool_calls").is_some() || m["role"] == "tool")
+        })
+    {
+        return worker_tools::complete(&state, &resolved, raw).await;
+    }
 
     let mut messages = Vec::with_capacity(api_req.messages.len());
     for m in &api_req.messages {
@@ -268,7 +288,7 @@ async fn chat_completions_handler(
                 Ok(c) => c,
                 Err(e) => {
                     return Ok::<_, std::convert::Infallible>(
-                        format!("data: {{\"error\":\"{e}\"}}\n\n"),
+                        format!("data: {}\n\n",serde_json::json!({"error":{"code":"generation_failed","message":e.to_string()}})),
                     );
                 }
             };
@@ -419,6 +439,106 @@ async fn models_handler(State(state): State<AppState>) -> Response {
     Json(serde_json::json!({"object": "list", "data": models})).into_response()
 }
 
+async fn catalog_handler(
+    State(state): State<AppState>,
+    axum::extract::Query(query): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Response {
+    use agentix_api::{
+        models::*,
+        wire::{Sha256, Text, V1},
+    };
+    let limit = match query.get("limit").map(|s| s.parse::<usize>()).transpose() {
+        Ok(limit) if (1..=100).contains(&limit.unwrap_or(100)) => limit.unwrap_or(100),
+        _ => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    let mut models = state.engine.list().await;
+    models.sort_by(|a, b| a.name.cmp(&b.name));
+    if let Some(cursor) = query.get("cursor") {
+        models.retain(|m| &m.name > cursor);
+    }
+    let more = models.len() > limit;
+    let mut items = Vec::new();
+    for m in models.into_iter().take(limit) {
+        let Some(digest) = state.engine.model_digest(&m.name).await else {
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        };
+        let details = state.engine.model_details(&m.name);
+        let resident = match state.engine.residency(&m.name) {
+            agentix_infer::pool::Residency::Cold => Residency::Unloaded,
+            agentix_infer::pool::Residency::Idle => Residency::Ready,
+            agentix_infer::pool::Residency::Busy => Residency::Busy,
+        };
+        let record = (|| -> anyhow::Result<ModelRecord> {
+            Ok(ModelRecord {
+                id: Text::new(&m.name)?,
+                display_name: Text::new(&m.name)?,
+                aliases: vec![],
+                sha256: Sha256::new(digest)?,
+                byte_size: std::num::NonZeroU64::new(m.size_bytes)
+                    .ok_or_else(|| anyhow::anyhow!("empty model"))?,
+                source: None,
+                format: Text::new(format!("{:?}", m.format))?,
+                architecture: Text::new(m.architecture)?,
+                context_limit: details.map(|d| d.1).unwrap_or(m.context_length),
+                capabilities: m
+                    .capabilities
+                    .iter()
+                    .map(|c| match c {
+                        agentix_infer::Capability::Completion => ModelCapability::Completion,
+                        agentix_infer::Capability::Embedding => ModelCapability::Embedding,
+                        agentix_infer::Capability::Vision => ModelCapability::Vision,
+                        agentix_infer::Capability::Transcription => ModelCapability::Transcription,
+                    })
+                    .chain(
+                        details
+                            .is_some_and(|d| d.0)
+                            .then_some(ModelCapability::ToolCalls),
+                    )
+                    .collect(),
+                coding_support: match details {
+                    Some((true, _)) => CodingSupport::Supported {
+                        profile: Text::new("qwen-tool-calls")?,
+                    },
+                    Some((false, _)) => CodingSupport::Unsupported {
+                        reason: Text::new("This model has no supported coding template")?,
+                    },
+                    None if !m
+                        .capabilities
+                        .contains(&agentix_infer::Capability::Completion) =>
+                    {
+                        CodingSupport::Unsupported {
+                            reason: Text::new("This is not a text completion model")?,
+                        }
+                    }
+                    None => CodingSupport::Unknown,
+                },
+                installed: true,
+                resident,
+            })
+        })();
+        match record {
+            Ok(record) => items.push(record),
+            Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        }
+    }
+    let next_cursor = if more {
+        items
+            .last()
+            .map(|m| Text::new(m.id.as_str()))
+            .transpose()
+            .ok()
+            .flatten()
+    } else {
+        None
+    };
+    Json(ModelCatalog {
+        schema_version: V1,
+        items,
+        next_cursor,
+    })
+    .into_response()
+}
+
 async fn tags_handler(State(state): State<AppState>) -> Response {
     let models: Vec<serde_json::Value> = state
         .engine
@@ -478,23 +598,73 @@ async fn shutdown_handler(State(state): State<AppState>) -> Response {
     }
 }
 
+async fn readiness_handler(State(state): State<AppState>, body: axum::body::Bytes) -> Response {
+    use agentix_api::models::{ModelReadiness, ReadinessRequest, Residency};
+    let request: ReadinessRequest = match agentix_api::wire::decode_request(&body) {
+        Ok(request) => request,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    let Some(model) = resolve_model(&state.engine, request.model_id.as_str()).await else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    if request.load && state.engine.residency(&model) == agentix_infer::pool::Residency::Cold {
+        if let Err(error) = state.engine.warmup(&model).await {
+            return worker_tools::error(error);
+        }
+    }
+    let residency = match state.engine.residency(&model) {
+        agentix_infer::pool::Residency::Cold => Residency::Unloaded,
+        agentix_infer::pool::Residency::Idle => Residency::Ready,
+        agentix_infer::pool::Residency::Busy => Residency::Busy,
+    };
+    let (coding_supported, context_limit) =
+        state.engine.model_details(&model).unwrap_or((false, 0));
+    Json(ModelReadiness {
+        schema_version: agentix_api::wire::V1,
+        model_id: request.model_id,
+        residency,
+        coding_supported,
+        context_limit,
+    })
+    .into_response()
+}
+
+async fn tokenize_handler(State(state): State<AppState>, body: axum::body::Bytes) -> Response {
+    let request: agentix_api::models::TokenizeRequest =
+        match agentix_api::wire::decode_request(&body) {
+            Ok(request) => request,
+            Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+        };
+    let Some(model) = resolve_model(&state.engine, request.model_id.as_str()).await else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    match state.engine.tokenize(&model, request.text.as_str()).await {
+        Ok(tokens) => Json(agentix_api::models::TokenCount {
+            count: tokens.len() as u64,
+            context_limit: state.engine.model_details(&model).map(|d| d.1).unwrap_or(0),
+        })
+        .into_response(),
+        Err(error) => worker_tools::error(error),
+    }
+}
+
 async fn resolve_model(engine: &InferEngine, requested: &str) -> Option<String> {
+    let requested = requested.strip_prefix("local/").unwrap_or(requested);
     if engine.info(requested).is_some() {
         return Some(requested.to_string());
     }
     let normalized = requested.replace(':', "/");
+    let mut matched = None;
     for info in engine.list().await {
         let stored = &info.name;
-        if stored.ends_with(&normalized) || stored.ends_with(requested) {
-            return Some(stored.clone());
-        }
-        if let Some(short) = stored.rsplit('/').next() {
-            if short == requested || short == normalized {
-                return Some(stored.clone());
+        if stored == &normalized || stored.ends_with(&format!("/{normalized}")) {
+            if matched.is_some() {
+                return None;
             }
+            matched = Some(stored.clone());
         }
     }
-    None
+    matched
 }
 
 fn collect_inputs(value: &serde_json::Value) -> Vec<String> {

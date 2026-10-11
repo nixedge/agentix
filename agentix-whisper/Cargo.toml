@@ -18,7 +18,7 @@ workspace = true
 cuda = []
 
 [dependencies]
-agentix-api = { path = "../agentix-api" }
+agentix-api = { path = "../agentix-api", version = "0.2" }
 agentix-infer = { path = "../agentix-infer" }
 whisper-rs = "0.14"
 symphonia = { version = "0.5", features = ["mp3", "aac", "isomp4", "wav", "flac", "ogg", "vorbis"] }

@@ -188,16 +188,18 @@ mod tests {
         }
     }
 
-    fn gateway_reply(content: &str) -> serde_json::Value {
-        serde_json::json!({
+    fn gateway_reply(content: &str) -> String {
+        let chunk = serde_json::json!({
             "choices": [{
+                "index": 0,
                 "finish_reason": "stop",
-                "message": {
+                "delta": {
                     "role": "assistant",
                     "content": content
                 }
             }]
-        })
+        });
+        format!("data: {chunk}\n\ndata: [DONE]\n\n")
     }
 
     fn test_prometheus() -> metrics_exporter_prometheus::PrometheusHandle {
@@ -237,8 +239,45 @@ mod tests {
             ntfy: NtfyClient::new("http://localhost".into(), "test".into()),
             google_auth: None,
             prometheus_handle: test_prometheus(),
-            tts_engine: None,
+            http: reqwest::Client::new(),
         })
+    }
+
+    #[tokio::test]
+    async fn configured_home_tools_execute_without_coding_approval_ui() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(|request: &wiremock::Request| {
+                let body: serde_json::Value = serde_json::from_slice(&request.body).expect("request JSON");
+                let messages = body["messages"].as_array().expect("messages");
+                assert_eq!(messages[0]["role"], "system");
+                let response = if messages.iter().any(|message| message["role"] == "tool") {
+                    gateway_reply("Created the task.")
+                } else {
+                    let chunk = serde_json::json!({"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"create-task","type":"function","function":{"name":"todo_create","arguments":"{\"title\":\"Voice regression task\"}"}}]},"finish_reason":"tool_calls"}]});
+                    format!("data: {chunk}\n\ndata: [DONE]\n\n")
+                };
+                ResponseTemplate::new(200).set_body_raw(response, "text/event-stream")
+            })
+            .expect(2)
+            .mount(&server)
+            .await;
+        let state = make_state(&server.uri()).await;
+        let agent = crate::tools::build_agent_loop(&server.uri(), "test-model", &state);
+        let output = agent
+            .run("Create a task")
+            .await
+            .expect("home assistant turn");
+        assert_eq!(output.answer, "Created the task.");
+        assert_eq!(output.tool_calls_made, 1);
+        let todos = state
+            .todo_store()
+            .list(false, None, 10)
+            .await
+            .expect("list todos");
+        assert_eq!(todos.len(), 1);
+        assert_eq!(todos[0].title, "Voice regression task");
     }
 
     #[tokio::test]
@@ -246,7 +285,10 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/v1/chat/completions"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(gateway_reply("Hello there!")))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_raw(gateway_reply("Hello there!"), "text/event-stream"),
+            )
             .mount(&server)
             .await;
 
@@ -282,7 +324,10 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/v1/chat/completions"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(gateway_reply("Got it.")))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_raw(gateway_reply("Got it."), "text/event-stream"),
+            )
             .mount(&server)
             .await;
 

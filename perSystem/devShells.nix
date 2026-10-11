@@ -55,7 +55,9 @@
         inputs'.llm-agents.packages.ck
         # Claude Code usage analytics
         inputs'.llm-agents.packages.ccusage
-        config.packages.ax-jail
+        # Entering the shell must not build ax from the lockfile being edited.
+        # Build/run the launcher explicitly with nix build/run .#ax-jail.
+        bubblewrap
         # CUDA toolkit for building agentix-daemon with --features cuda
         # cuda_cudart: libcudart_static.a is in the default output
         # libcublas: libcublas_static.a is in a separate 'static' output
@@ -85,6 +87,12 @@
         export PATH="$_CARGO_WRAP_DIR:$PATH"
         # Fixture GGUF for integration tests — pinned FOD derivation, no network needed
         export AGENTIX_TEST_MODEL_PATH="${fixture-model}"
+        export AGENTIX_TEST_GENERATION_MODEL_PATH="${config.packages.agentix-test-generation-model}"
+        export AX_TEST_SHELL="${pkgs.bash}/bin/bash"
+        export AX_TEST_GIT="${pkgs.git}/bin/git"
+        export AX_TEST_BWRAP="${pkgs.bubblewrap}/bin/bwrap"
+        export AX_TEST_NIX="${pkgs.nix}/bin/nix"
+        export AX_TEST_PATH="${pkgs.coreutils}/bin"
         echo "Agentic RAG Stack"
         echo ""
         echo "Services:"

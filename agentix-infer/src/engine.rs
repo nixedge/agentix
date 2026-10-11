@@ -4,6 +4,7 @@ use crate::{
     store::ModelStore,
     CompletionRequest, InferConfig, InferError, ModelInfo,
 };
+use futures::StreamExt;
 use std::sync::{Arc, RwLock};
 
 struct EngineInner {
@@ -68,6 +69,21 @@ impl InferEngine {
         self.store().info(name)
     }
 
+    pub async fn model_digest(&self, name: &str) -> Option<String> {
+        let store = self.store();
+        let name = name.to_owned();
+        tokio::task::spawn_blocking(move || {
+            let path = store.resolve(&name)?;
+            path.file_name()?
+                .to_str()?
+                .strip_prefix("sha256-")
+                .map(str::to_owned)
+        })
+        .await
+        .ok()
+        .flatten()
+    }
+
     /// Returns the names of all registered backends (e.g. `["llamacpp"]`).
     pub fn backend_names(&self) -> Vec<&'static str> {
         self.inner
@@ -102,12 +118,44 @@ impl InferEngine {
     ) -> Result<CompletionStream, InferError> {
         self.check_capability(model, crate::Capability::Completion)?;
         let guard = self.acquire(model).await?;
-        guard.complete(req).await
+        let stream = guard.complete(req).await?;
+        Ok(Box::pin(futures::stream::unfold(
+            (stream, guard),
+            |(mut stream, guard)| async move { stream.next().await.map(|item| (item, (stream, guard))) },
+        )))
     }
 
     pub async fn tokenize(&self, model: &str, text: &str) -> Result<Vec<i32>, InferError> {
         let guard = self.acquire(model).await?;
         guard.tokenize(text).await
+    }
+
+    pub async fn complete_tools(
+        &self,
+        model: &str,
+        request: crate::exchange::ToolCompletionRequest,
+        cancel: crate::exchange::Cancellation,
+    ) -> Result<crate::backend::ToolCompletionStream, InferError> {
+        request.validate()?;
+        if cancel.is_cancelled() {
+            return Err(InferError::Cancelled);
+        }
+        self.check_capability(model, crate::Capability::Completion)?;
+        let guard = self.acquire(model).await?;
+        if cancel.is_cancelled() {
+            return Err(InferError::Cancelled);
+        }
+        let stream = guard.complete_tools(request, cancel.clone()).await?;
+        let cancel_on_drop = CancelOnDrop(cancel);
+        Ok(Box::pin(futures::stream::unfold(
+            (stream, guard, cancel_on_drop),
+            |(mut stream, guard, cancel)| async move {
+                stream
+                    .next()
+                    .await
+                    .map(|item| (item, (stream, guard, cancel)))
+            },
+        )))
     }
 
     /// Transcribe 16 kHz mono f32 PCM audio to text using the specified model.
@@ -122,6 +170,22 @@ impl InferEngine {
     pub async fn warmup(&self, model: &str) -> Result<(), InferError> {
         let _guard = self.acquire(model).await?;
         Ok(())
+    }
+
+    pub fn residency(&self, model: &str) -> crate::pool::Residency {
+        self.inner.pool.residency(model)
+    }
+
+    pub fn capacity(&self) -> crate::pool::PoolCapacity {
+        self.inner.pool.capacity()
+    }
+
+    pub fn model_details(&self, model: &str) -> Option<(bool, u32)> {
+        self.inner.pool.model_details(model)
+    }
+
+    pub async fn coding_supported(&self, model: &str) -> Result<bool, InferError> {
+        Ok(self.acquire(model).await?.coding_supported())
     }
 
     // ── Internal ─────────────────────────────────────────────────────────────
@@ -142,33 +206,14 @@ impl InferEngine {
     }
 
     async fn acquire(&self, model: &str) -> Result<crate::pool::ModelGuard, InferError> {
-        // Fast path: model already warm in the pool.
+        let _loading = self.inner.pool.lock_loading(model).await;
         if let Some(guard) = self.inner.pool.acquire_idle(model) {
             return Ok(guard);
         }
-
-        // Serialise concurrent loads for the same model key (T027).
-        // If another task is already loading this model, wait for it to finish
-        // and then retry the idle pool — the loader will have placed the model
-        // there before calling finish_loading.
-        if self.inner.pool.wait_if_loading(model).await {
-            // Another load just finished; try the idle pool again.
-            if let Some(guard) = self.inner.pool.acquire_idle(model) {
-                return Ok(guard);
-            }
-            // Unlikely but possible: the loaded model was immediately evicted.
-            // Fall through to attempt our own load below.
+        if self.inner.pool.residency(model) == crate::pool::Residency::Busy {
+            return Err(InferError::ModelBusy(model.to_string()));
         }
-
-        // Register ourselves as the loader for this key.
-        let notify = self.inner.pool.begin_loading(model);
-
-        let result = self.load_model(model).await;
-
-        // Always clear the loading sentinel, even on error.
-        self.inner.pool.finish_loading(model, notify);
-
-        result
+        self.load_model(model).await
     }
 
     async fn load_model(&self, model: &str) -> Result<crate::pool::ModelGuard, InferError> {
@@ -207,5 +252,13 @@ impl InferEngine {
         let vram = loaded.vram_bytes();
 
         self.inner.pool.store_loaded(model, loaded, vram)
+    }
+}
+
+struct CancelOnDrop(crate::exchange::Cancellation);
+
+impl Drop for CancelOnDrop {
+    fn drop(&mut self) {
+        self.0.cancel();
     }
 }

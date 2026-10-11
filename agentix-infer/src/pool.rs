@@ -1,22 +1,43 @@
 use crate::{backend::LoadedModel, InferError};
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, Weak},
     time::Instant,
 };
-use tokio::sync::Notify;
+use tokio::sync::{Mutex as AsyncMutex, OwnedMutexGuard};
 
 struct PoolSlot {
     loaded: Arc<dyn LoadedModel>,
     last_used: Instant,
+    busy: bool,
 }
 
-type ReleaseFn = Box<dyn FnOnce(Arc<dyn LoadedModel>) + Send>;
+impl PoolSlot {
+    fn is_busy(&self) -> bool {
+        self.busy || self.loaded.is_busy()
+    }
+}
 
-/// Returned to callers; releases the model back to the pool on drop.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Residency {
+    Cold,
+    Idle,
+    Busy,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PoolCapacity {
+    pub resident_models: usize,
+    pub active_models: usize,
+    pub resident_bytes: u64,
+    pub max_models: usize,
+    pub limit_bytes: Option<u64>,
+}
+
 pub struct ModelGuard {
     loaded: Arc<dyn LoadedModel>,
-    on_release: Option<ReleaseFn>,
+    state: Arc<Mutex<HashMap<String, PoolSlot>>>,
+    name: String,
 }
 
 impl std::ops::Deref for ModelGuard {
@@ -28,70 +49,17 @@ impl std::ops::Deref for ModelGuard {
 
 impl Drop for ModelGuard {
     fn drop(&mut self) {
-        if let Some(f) = self.on_release.take() {
-            f(Arc::clone(&self.loaded));
+        let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(slot) = state.get_mut(&self.name) {
+            slot.busy = false;
+            slot.last_used = Instant::now();
         }
-    }
-}
-
-struct PoolState {
-    idle: HashMap<String, Vec<PoolSlot>>,
-}
-
-impl PoolState {
-    fn total_vram(&self) -> u64 {
-        self.idle
-            .values()
-            .flat_map(|v| v.iter())
-            .map(|s| s.loaded.vram_bytes())
-            .sum()
-    }
-
-    /// Evict the idle slot with the oldest last_used timestamp.
-    fn evict_lru(&mut self) {
-        let mut oldest: Option<(String, usize)> = None;
-
-        for (name, slots) in &self.idle {
-            for (i, slot) in slots.iter().enumerate() {
-                let is_older = oldest
-                    .as_ref()
-                    .and_then(|(n, idx)| self.idle.get(n).and_then(|v| v.get(*idx)))
-                    .map(|s| slot.last_used < s.last_used)
-                    .unwrap_or(true);
-                if is_older {
-                    oldest = Some((name.clone(), i));
-                }
-            }
-        }
-
-        if let Some((name, idx)) = oldest {
-            if let Some(slots) = self.idle.get_mut(&name) {
-                let vram_freed = slots.get(idx).map(|s| s.loaded.vram_bytes()).unwrap_or(0);
-                slots.remove(idx);
-                if slots.is_empty() {
-                    self.idle.remove(&name);
-                }
-                tracing::info!(
-                    model = %name,
-                    vram_freed_bytes = vram_freed,
-                    "evicted LRU model from pool",
-                );
-            }
-        }
-    }
-
-    fn total_idle_count(&self) -> usize {
-        self.idle.values().map(|v| v.len()).sum()
     }
 }
 
 pub struct ContextPool {
-    state: Arc<Mutex<PoolState>>,
-    /// Guards concurrent loads for the same model key.
-    /// When a thread begins loading a model it inserts a Notify here; other
-    /// threads that want the same model wait on that Notify instead of
-    /// starting a duplicate load (T027).
-    loading: Arc<Mutex<HashMap<String, Arc<Notify>>>>,
+    state: Arc<Mutex<HashMap<String, PoolSlot>>>,
+    loading: Mutex<HashMap<String, Weak<AsyncMutex<()>>>>,
     vram_limit: Option<u64>,
     max_loaded_models: usize,
 }
@@ -99,123 +67,140 @@ pub struct ContextPool {
 impl ContextPool {
     pub fn new(vram_limit: Option<u64>, max_loaded_models: usize) -> Self {
         Self {
-            state: Arc::new(Mutex::new(PoolState {
-                idle: HashMap::new(),
-            })),
-            loading: Arc::new(Mutex::new(HashMap::new())),
+            state: Arc::new(Mutex::new(HashMap::new())),
+            loading: Mutex::new(HashMap::new()),
             vram_limit,
             max_loaded_models,
         }
     }
 
-    /// If another caller is already loading `name`, wait for it to finish and
-    /// return `true` (the caller should then retry `acquire_idle`).
-    /// If no load is in progress, register `name` as loading and return `false`.
-    pub async fn wait_if_loading(&self, name: &str) -> bool {
-        let notify = {
-            let map = self.loading.lock().unwrap_or_else(|p| p.into_inner());
-            map.get(name).cloned()
+    // An owned mutex guard clears serialization even if loading is cancelled.
+    // Weak entries avoid retaining every model name ever requested.
+    pub async fn lock_loading(&self, name: &str) -> OwnedMutexGuard<()> {
+        let lock = {
+            let mut loading = self.loading.lock().unwrap_or_else(|p| p.into_inner());
+            loading.retain(|_, lock| lock.strong_count() > 0);
+            match loading.get(name).and_then(Weak::upgrade) {
+                Some(lock) => lock,
+                None => {
+                    let lock = Arc::new(AsyncMutex::new(()));
+                    loading.insert(name.to_string(), Arc::downgrade(&lock));
+                    lock
+                }
+            }
         };
-        if let Some(notify) = notify {
-            notify.notified().await;
-            true
-        } else {
-            false
+        lock.lock_owned().await
+    }
+
+    pub fn residency(&self, name: &str) -> Residency {
+        let state = self.state.lock().unwrap_or_else(|p| p.into_inner());
+        match state.get(name) {
+            None => Residency::Cold,
+            Some(slot) if slot.is_busy() => Residency::Busy,
+            Some(_) => Residency::Idle,
         }
     }
 
-    /// Mark `name` as currently loading. Call `finish_loading` when done.
-    pub fn begin_loading(&self, name: &str) -> Arc<Notify> {
-        let notify = Arc::new(Notify::new());
-        self.loading
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .insert(name.to_string(), Arc::clone(&notify));
-        notify
+    pub fn capacity(&self) -> PoolCapacity {
+        let state = self.state.lock().unwrap_or_else(|p| p.into_inner());
+        PoolCapacity {
+            resident_models: state.len(),
+            active_models: state.values().filter(|slot| slot.is_busy()).count(),
+            resident_bytes: state.values().fold(0u64, |sum, slot| {
+                sum.saturating_add(slot.loaded.vram_bytes())
+            }),
+            max_models: self.max_loaded_models,
+            limit_bytes: self.vram_limit,
+        }
     }
 
-    /// Remove the loading sentinel and wake all waiters.
-    pub fn finish_loading(&self, name: &str, notify: Arc<Notify>) {
-        self.loading
+    pub fn model_details(&self, name: &str) -> Option<(bool, u32)> {
+        self.state
             .lock()
             .unwrap_or_else(|p| p.into_inner())
-            .remove(name);
-        notify.notify_waiters();
+            .get(name)
+            .map(|slot| (slot.loaded.coding_supported(), slot.loaded.context_limit()))
     }
 
-    /// Try to get an idle instance for `name` without loading.
     pub fn acquire_idle(&self, name: &str) -> Option<ModelGuard> {
-        let mut state = self.state.lock().ok()?;
-        let slots = state.idle.get_mut(name)?;
-        if slots.is_empty() {
+        let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
+        let slot = state.get_mut(name)?;
+        if slot.is_busy() {
             return None;
         }
-        let slot = slots.pop()?;
-        drop(state);
-
-        let state_arc = Arc::clone(&self.state);
-        let name_owned = name.to_string();
-        Some(ModelGuard {
-            loaded: slot.loaded,
-            on_release: Some(Box::new(move |model| {
-                if let Ok(mut s) = state_arc.lock() {
-                    s.idle.entry(name_owned).or_default().push(PoolSlot {
-                        loaded: model,
-                        last_used: Instant::now(),
-                    });
-                }
-            })),
-        })
+        slot.busy = true;
+        Some(self.guard(name, Arc::clone(&slot.loaded)))
     }
 
-    /// Register a freshly loaded model and return a guard for immediate use.
-    /// Evicts idle models if VRAM budget or slot count is exceeded.
+    fn guard(&self, name: &str, loaded: Arc<dyn LoadedModel>) -> ModelGuard {
+        ModelGuard {
+            loaded,
+            state: Arc::clone(&self.state),
+            name: name.to_string(),
+        }
+    }
+
     pub fn store_loaded(
         &self,
         name: &str,
         loaded: Arc<dyn LoadedModel>,
         needed_vram: u64,
     ) -> Result<ModelGuard, InferError> {
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| InferError::Backend("pool lock poisoned".to_string()))?;
-
-        // Enforce VRAM limit
-        if let Some(limit) = self.vram_limit {
-            while state.total_vram() + needed_vram > limit {
-                if state.total_idle_count() == 0 {
-                    return Err(InferError::VramExhausted {
-                        model: name.to_string(),
-                        required_bytes: needed_vram,
-                    });
-                }
-                state.evict_lru();
-            }
+        let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
+        if state.contains_key(name) {
+            return Err(InferError::ModelBusy(name.to_string()));
         }
-
-        // Enforce slot count
-        while state.total_idle_count() >= self.max_loaded_models {
-            if state.total_idle_count() == 0 {
+        // Check feasibility before evicting anything; rejected admission must
+        // preserve the previous warm model selection.
+        let needed_vram = needed_vram.max(loaded.vram_bytes());
+        let active = state.values().filter(|slot| slot.is_busy());
+        let active_bytes: u128 = active
+            .clone()
+            .map(|s| u128::from(s.loaded.vram_bytes()))
+            .sum();
+        if active.count() >= self.max_loaded_models {
+            return Err(InferError::CapacityExhausted);
+        }
+        if self
+            .vram_limit
+            .is_some_and(|limit| active_bytes + u128::from(needed_vram) > u128::from(limit))
+        {
+            return Err(InferError::VramExhausted {
+                model: name.to_string(),
+                required_bytes: needed_vram,
+            });
+        }
+        loop {
+            let bytes: u128 = state
+                .values()
+                .map(|s| u128::from(s.loaded.vram_bytes()))
+                .sum();
+            let over_bytes = self
+                .vram_limit
+                .is_some_and(|limit| bytes + u128::from(needed_vram) > u128::from(limit));
+            if state.len() < self.max_loaded_models && !over_bytes {
                 break;
             }
-            state.evict_lru();
-        }
-
-        drop(state);
-
-        let state_arc = Arc::clone(&self.state);
-        let name_owned = name.to_string();
-        Ok(ModelGuard {
-            loaded,
-            on_release: Some(Box::new(move |model| {
-                if let Ok(mut s) = state_arc.lock() {
-                    s.idle.entry(name_owned).or_default().push(PoolSlot {
-                        loaded: model,
-                        last_used: Instant::now(),
-                    });
+            let oldest = state
+                .iter()
+                .filter(|(_, slot)| !slot.is_busy())
+                .min_by_key(|(_, slot)| slot.last_used)
+                .map(|(name, _)| name.clone());
+            match oldest {
+                Some(name) => {
+                    state.remove(&name);
                 }
-            })),
-        })
+                None => return Err(InferError::CapacityExhausted),
+            }
+        }
+        state.insert(
+            name.to_string(),
+            PoolSlot {
+                loaded: Arc::clone(&loaded),
+                last_used: Instant::now(),
+                busy: true,
+            },
+        );
+        Ok(self.guard(name, loaded))
     }
 }

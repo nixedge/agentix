@@ -1,20 +1,33 @@
+use crate::approval::{ApprovalBroker, ApprovalRequired, Cancellation, Cancelled};
 use anyhow::Result;
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, info, warn};
 
+#[derive(Clone)]
+pub struct TurnControl {
+    pub cancel: Cancellation,
+    pub approvals: Option<ApprovalBroker>,
+    pub session_id: uuid::Uuid,
+    pub cwd: PathBuf,
+}
+
 use crate::{
-    client::GatewayClient,
+    client::{ChatBackend, GatewayClient},
     event::AgentEvent,
     policy::EscalationPolicy,
+    session::{TurnMachine, TurnState, TurnStep},
     stagnation::StagnationDetector,
     tool::{Tool, ToolCall},
 };
 
 const STAGNATION_MESSAGE: &str =
     "You have retrieved similar information multiple times without making progress. \
-     You must now either: (1) call ask_cloud with a specific question you cannot \
-     answer from available sources, or (2) provide your final answer based on \
-     current evidence. Do not continue searching.";
+     Provide a final answer from the available evidence and explain what remains \
+     unresolved. Do not request further tool calls.";
 
 const BUDGET_MESSAGE: &str =
     "You have reached your tool call budget. Provide your best final answer \
@@ -50,6 +63,8 @@ pub struct AgentLoop {
     tools: Vec<Box<dyn Tool>>,
     policy: EscalationPolicy,
     system_prompt: Option<String>,
+    control: Option<TurnControl>,
+    history: Arc<Mutex<Vec<serde_json::Value>>>,
 }
 
 impl AgentLoop {
@@ -60,6 +75,8 @@ impl AgentLoop {
             tools: vec![],
             policy: EscalationPolicy::default(),
             system_prompt: None,
+            control: None,
+            history: Arc::new(Mutex::new(vec![])),
         }
     }
 
@@ -75,6 +92,15 @@ impl AgentLoop {
 
     pub fn with_system_prompt(mut self, prompt: impl Into<String>) -> Self {
         self.system_prompt = Some(prompt.into());
+        self
+    }
+
+    pub fn with_control(mut self, control: TurnControl) -> Self {
+        self.control = Some(control);
+        self
+    }
+    pub fn with_history(mut self, history: Arc<Mutex<Vec<serde_json::Value>>>) -> Self {
+        self.history = history;
         self
     }
 
@@ -94,143 +120,358 @@ impl AgentLoop {
         self.run_impl(prompt, Some(&tx)).await
     }
 
+    pub async fn run_with_backend(
+        &self,
+        prompt: &str,
+        backend: &dyn ChatBackend,
+    ) -> Result<AgentOutput> {
+        self.run_backend(prompt, backend, None).await
+    }
+
     async fn run_impl(
         &self,
         prompt: &str,
         event_tx: Option<&UnboundedSender<AgentEvent>>,
     ) -> Result<AgentOutput> {
         let client = GatewayClient::new(&self.gateway_url)?;
-        let tool_refs: Vec<&dyn Tool> = self.tools.iter().map(|t| t.as_ref()).collect();
+        self.run_backend(prompt, &client, event_tx).await
+    }
 
-        let mut messages: Vec<serde_json::Value> = {
-            let mut m = Vec::new();
-            if let Some(ref sys) = self.system_prompt {
-                m.push(serde_json::json!({"role": "system", "content": sys}));
+    async fn run_backend(
+        &self,
+        prompt: &str,
+        backend: &dyn ChatBackend,
+        event_tx: Option<&UnboundedSender<AgentEvent>>,
+    ) -> Result<AgentOutput> {
+        let mut machine = TurnMachine::new(self.policy.max_tool_calls);
+        machine.step(TurnStep::Begin)?;
+        let mut messages = self
+            .history
+            .lock()
+            .map_err(|_| anyhow::anyhow!("history lock poisoned"))?
+            .clone();
+        if let Some(system_prompt) = &self.system_prompt {
+            let message = serde_json::json!({"role":"system","content":system_prompt});
+            if messages
+                .first()
+                .is_some_and(|message| message["role"] == "system")
+            {
+                messages[0] = message;
+            } else {
+                messages.insert(0, message);
             }
-            m.push(serde_json::json!({"role": "user", "content": prompt}));
-            m
-        };
+        }
+        messages.push(serde_json::json!({"role":"user","content":prompt}));
+        let result = self
+            .run_turn(&mut messages, backend, event_tx, &mut machine)
+            .await;
+        if let Err(error) = &result {
+            if machine.state().is_active() {
+                if error.downcast_ref::<Cancelled>().is_some() {
+                    machine.step(TurnStep::Cancel)?;
+                    machine.step(TurnStep::Stopped)?;
+                } else {
+                    machine.step(TurnStep::Fail)?;
+                }
+            }
+        }
+        if let Ok(output) = &result {
+            messages.push(serde_json::json!({"role":"assistant","content":output.answer}));
+        }
+        *self
+            .history
+            .lock()
+            .map_err(|_| anyhow::anyhow!("history lock poisoned"))? = messages;
+        result
+    }
 
-        let mut tool_calls_made: usize = 0;
-        let mut escalations: usize = 0;
-        let mut interventions: usize = 0;
-
+    async fn run_turn(
+        &self,
+        messages: &mut Vec<serde_json::Value>,
+        backend: &dyn ChatBackend,
+        event_tx: Option<&UnboundedSender<AgentEvent>>,
+        machine: &mut TurnMachine,
+    ) -> Result<AgentOutput> {
+        let tool_refs: Vec<&dyn Tool> = self.tools.iter().map(|t| t.as_ref()).collect();
+        let turn_id = uuid::Uuid::new_v4();
+        let session_id = self
+            .control
+            .as_ref()
+            .map(|c| c.session_id)
+            .unwrap_or_else(uuid::Uuid::new_v4);
+        emit(
+            event_tx,
+            AgentEvent::TurnStarted {
+                session_id,
+                turn_id,
+                model: self.local_model.clone(),
+            },
+        );
+        let mut escalations = 0;
+        let mut interventions = 0;
         let mut stagnation = StagnationDetector::new(
             self.policy.stagnation_window,
             self.policy.stagnation_min_matches,
         );
+        machine.step(TurnStep::Prepared { compact: false })?;
 
+        let mut rounds = 0usize;
         loop {
-            if tool_calls_made >= self.policy.max_tool_calls {
-                info!(budget = self.policy.max_tool_calls, "tool budget exhausted");
-                emit(event_tx, AgentEvent::BudgetExhausted);
-                messages.push(serde_json::json!({"role": "user", "content": BUDGET_MESSAGE}));
-
-                let resp = client.chat(&self.local_model, &messages, &[]).await?;
+            if rounds >= self.policy.max_tool_calls.saturating_add(2) {
+                anyhow::bail!("generation round budget exhausted");
+            }
+            rounds += 1;
+            if machine.state() == TurnState::Finalizing {
+                if machine.remaining() == 0 {
+                    emit(event_tx, AgentEvent::BudgetExhausted);
+                    messages.push(serde_json::json!({"role": "user", "content": BUDGET_MESSAGE}));
+                }
+                let response = self
+                    .model_response(backend, messages, &[], event_tx)
+                    .await?;
+                if !response.tool_calls.is_empty() || response.finish_reason != "stop" {
+                    anyhow::bail!("tool-free finalization did not produce a complete answer");
+                }
+                machine.step(TurnStep::Finish)?;
                 return Ok(AgentOutput {
-                    answer: resp.content.unwrap_or_else(|| "(no final answer)".into()),
-                    tool_calls_made,
+                    answer: response.content.unwrap_or_default(),
+                    tool_calls_made: machine.used(),
                     escalations,
                     interventions,
                 });
             }
 
-            debug!(tool_calls_made, "calling local model");
-            let resp = client
-                .chat(&self.local_model, &messages, &tool_refs)
+            debug!(tool_calls_made = machine.used(), "calling local model");
+            let response = self
+                .model_response(backend, messages, &tool_refs, event_tx)
                 .await?;
-
-            if resp.tool_calls.is_empty() {
-                let answer = resp.content.unwrap_or_else(|| "(no content)".into());
+            if response.tool_calls.is_empty() {
+                if response.finish_reason != "stop" {
+                    anyhow::bail!("model response ended without a complete answer");
+                }
+                machine.step(TurnStep::Finish)?;
                 info!(
-                    tool_calls_made,
+                    tool_calls_made = machine.used(),
                     escalations, interventions, "agent loop complete"
                 );
                 return Ok(AgentOutput {
-                    answer,
-                    tool_calls_made,
+                    answer: response.content.unwrap_or_default(),
+                    tool_calls_made: machine.used(),
                     escalations,
                     interventions,
                 });
             }
+            if response.finish_reason != "tool_calls"
+                || response
+                    .tool_calls
+                    .iter()
+                    .any(|call| !call.arguments.is_object())
+            {
+                anyhow::bail!("incomplete or malformed tool-call batch");
+            }
+            machine.step(TurnStep::ToolBatch(
+                response
+                    .tool_calls
+                    .iter()
+                    .map(|call| call.id.clone())
+                    .collect(),
+            ))?;
+            machine.step(TurnStep::CallsValidated)?;
+            messages.push(build_assistant_message(
+                &response.content,
+                &response.tool_calls,
+            ));
 
-            messages.push(build_assistant_message(&resp.content, &resp.tool_calls));
-
-            for tc in &resp.tool_calls {
-                if tool_calls_made >= self.policy.max_tool_calls {
-                    break;
+            for call in &response.tool_calls {
+                if self
+                    .control
+                    .as_ref()
+                    .is_some_and(|control| control.cancel.is_cancelled())
+                {
+                    machine.step(TurnStep::Cancel)?;
+                    resolve_pending(machine, messages, "Cancelled before execution")?;
+                    machine.step(TurnStep::Stopped)?;
+                    return Err(Cancelled.into());
                 }
-
-                tool_calls_made += 1;
-
-                // Emit a distinguished event for cloud escalations.
-                if tc.name == "ask_cloud" {
-                    escalations += 1;
-                    let question_preview = tc.arguments["specific_question"]
-                        .as_str()
-                        .unwrap_or("")
-                        .chars()
-                        .take(80)
-                        .collect::<String>();
-                    emit(event_tx, AgentEvent::CloudEscalation { question_preview });
-                } else {
-                    let args_preview = serde_json::to_string(&tc.arguments)
-                        .unwrap_or_default()
-                        .chars()
-                        .take(80)
-                        .collect::<String>();
-                    emit(
-                        event_tx,
-                        AgentEvent::ToolCallStarted {
-                            name: tc.name.clone(),
-                            args_preview,
+                if machine.remaining() > 0
+                    && find_tool(&self.tools, &call.name).is_some_and(|tool| tool.needs_approval())
+                {
+                    machine.step(TurnStep::NeedApproval)?;
+                    let decision = match (&self.control, event_tx) {
+                        (Some(control), Some(events)) => match &control.approvals {
+                            Some(broker) => {
+                                let request = crate::approval::scoped_request(
+                                    agentix_api::agent::InvocationContext {
+                                        session_id: control.session_id,
+                                        turn_id,
+                                        invocation_id: agentix_api::wire::Text::new(
+                                            call.id.clone(),
+                                        )?,
+                                    },
+                                    &call.name,
+                                    &control.cwd,
+                                    &call.arguments,
+                                )?;
+                                broker.request(request, events, &control.cancel).await
+                            }
+                            None => Err(ApprovalRequired.into()),
                         },
-                    );
-                }
-
-                debug!(tool = %tc.name, "executing tool");
-                let result = match find_tool(&self.tools, &tc.name) {
-                    Some(tool) => match tool.call(tc.arguments.clone()).await {
-                        Ok(s) => s,
-                        Err(e) => {
-                            warn!(tool = %tc.name, error = %e, "tool execution failed");
-                            format!("Tool error: {e}")
+                        _ => Err(ApprovalRequired.into()),
+                    };
+                    match decision {
+                        Ok(agentix_api::agent::ApprovalDecision::Allow) => {
+                            machine.step(TurnStep::ApprovalGranted)?;
                         }
-                    },
-                    None => {
-                        warn!(tool = %tc.name, "unknown tool requested");
-                        format!("Unknown tool: {}", tc.name)
+                        Ok(agentix_api::agent::ApprovalDecision::Deny) => {
+                            machine.step(TurnStep::ToolSkipped(call.id.clone()))?;
+                            messages.push(serde_json::json!({"role":"tool","tool_call_id":call.id,"content":"Denied by user; no action executed."}));
+                            emit(
+                                event_tx,
+                                AgentEvent::ToolCallCompleted {
+                                    invocation_id: call.id.clone(),
+                                    success: false,
+                                    truncated_bytes: 0,
+                                    name: call.name.clone(),
+                                    result_preview: "Denied; no action executed".into(),
+                                },
+                            );
+                            continue;
+                        }
+                        Err(error) => {
+                            resolve_pending(
+                                machine,
+                                messages,
+                                "Approval unavailable or cancelled; no action executed",
+                            )?;
+                            return Err(error);
+                        }
                     }
+                }
+                let result = if machine.remaining() == 0 {
+                    machine.step(TurnStep::ToolSkipped(call.id.clone()))?;
+                    "Tool skipped: call budget exhausted; no action executed.".to_string()
+                } else {
+                    machine.step(TurnStep::StartTool(call.id.clone()))?;
+                    if call.name == "ask_cloud" {
+                        escalations += 1;
+                        let question_preview = call.arguments["specific_question"]
+                            .as_str()
+                            .unwrap_or("")
+                            .chars()
+                            .take(80)
+                            .collect();
+                        emit(event_tx, AgentEvent::CloudEscalation { question_preview });
+                    }
+                    {
+                        let args_preview = serde_json::to_string(&call.arguments)?
+                            .chars()
+                            .take(80)
+                            .collect();
+                        emit(
+                            event_tx,
+                            AgentEvent::ToolCallStarted {
+                                invocation_id: call.id.clone(),
+                                name: call.name.clone(),
+                                args_preview,
+                            },
+                        );
+                    }
+                    let result = match find_tool(&self.tools, &call.name) {
+                        Some(tool) => match tool
+                            .call_in_context(
+                                call.arguments.clone(),
+                                agentix_api::agent::InvocationContext {
+                                    session_id,
+                                    turn_id,
+                                    invocation_id: agentix_api::wire::Text::new(call.id.clone())?,
+                                },
+                            )
+                            .await
+                        {
+                            Ok(result) => result,
+                            Err(error) => {
+                                warn!(tool = %call.name, error = %error, "tool execution failed");
+                                format!("Tool error: {error}")
+                            }
+                        },
+                        None => format!("Unknown tool: {}", call.name),
+                    };
+                    machine.step(TurnStep::ToolResolved(call.id.clone()))?;
+                    stagnation.push(&result);
+                    result
                 };
-
-                let result_preview = result.chars().take(120).collect::<String>();
                 emit(
                     event_tx,
                     AgentEvent::ToolCallCompleted {
-                        name: tc.name.clone(),
-                        result_preview,
+                        invocation_id: call.id.clone(),
+                        success: !result.starts_with("Tool error:")
+                            && !result.starts_with("Unknown tool:")
+                            && !result.starts_with("Tool skipped:"),
+                        truncated_bytes: result.len().saturating_sub(
+                            result
+                                .chars()
+                                .take(16384)
+                                .map(char::len_utf8)
+                                .sum::<usize>(),
+                        ) as u64,
+                        name: call.name.clone(),
+                        result_preview: result.chars().take(16384).collect(),
                     },
                 );
-
-                stagnation.push(&result);
                 messages.push(serde_json::json!({
-                    "role": "tool",
-                    "tool_call_id": tc.id,
-                    "content": result,
+                    "role": "tool", "tool_call_id": call.id, "content": result,
                 }));
             }
-
-            if stagnation.is_stagnant() {
+            if self
+                .control
+                .as_ref()
+                .is_some_and(|control| control.cancel.is_cancelled())
+            {
+                machine.step(TurnStep::Cancel)?;
+                machine.step(TurnStep::Stopped)?;
+                return Err(Cancelled.into());
+            }
+            machine.step(TurnStep::Evaluate {
+                stagnant: stagnation.is_stagnant(),
+            })?;
+            if machine.state() == TurnState::AwaitingApproval {
                 interventions += 1;
-                warn!(interventions, "stagnation detected, injecting intervention");
                 emit(event_tx, AgentEvent::StagnationDetected);
-                messages.push(serde_json::json!({
-                    "role": "user",
-                    "content": STAGNATION_MESSAGE,
-                }));
+                messages.push(serde_json::json!({"role": "user", "content": STAGNATION_MESSAGE}));
+                // The legacy runner has no intervention UI; finish once without tools.
+                // The session controller may instead resume after explicit user input.
+                machine.step(TurnStep::Finalize)?;
             }
         }
     }
+
+    async fn model_response(
+        &self,
+        backend: &dyn ChatBackend,
+        messages: &[serde_json::Value],
+        tools: &[&dyn Tool],
+        events: Option<&UnboundedSender<AgentEvent>>,
+    ) -> Result<crate::client::ChatResponse> {
+        let response = backend.complete_with_events(&self.local_model, messages, tools, events);
+        match &self.control {
+            Some(control) => {
+                tokio::select! { _=control.cancel.cancelled()=>Err(Cancelled.into()), result=response=>result }
+            }
+            None => response.await,
+        }
+    }
+}
+
+fn resolve_pending(
+    machine: &mut TurnMachine,
+    messages: &mut Vec<serde_json::Value>,
+    reason: &str,
+) -> Result<()> {
+    while let Some(id) = machine.next_call().map(str::to_string) {
+        machine.step(TurnStep::ToolSkipped(id.clone()))?;
+        messages.push(serde_json::json!({"role":"tool","tool_call_id":id,"content":reason}));
+    }
+    Ok(())
 }
 
 fn emit(tx: Option<&UnboundedSender<AgentEvent>>, event: AgentEvent) {

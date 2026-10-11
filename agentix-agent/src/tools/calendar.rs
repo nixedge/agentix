@@ -12,6 +12,11 @@ pub struct CalendarCreateEventTool(pub Arc<CalendarClient>);
 
 #[async_trait]
 impl Tool for CalendarListEventsTool {
+    // Home-assistant tools retain their existing service-level authorization.
+    fn needs_approval(&self) -> bool {
+        false
+    }
+
     fn name(&self) -> &str {
         "calendar_list_events"
     }
@@ -48,6 +53,11 @@ impl Tool for CalendarListEventsTool {
 
 #[async_trait]
 impl Tool for CalendarCreateEventTool {
+    // Home-assistant tools retain their existing service-level authorization.
+    fn needs_approval(&self) -> bool {
+        false
+    }
+
     fn name(&self) -> &str {
         "calendar_create_event"
     }

@@ -2,6 +2,21 @@ use std::path::PathBuf;
 
 #[derive(Debug, thiserror::Error)]
 pub enum InferError {
+    #[error("invalid tool exchange: {0}")]
+    InvalidToolExchange(&'static str),
+
+    #[error("backend does not support typed tool completion")]
+    ToolCompletionUnsupported,
+
+    #[error("inference request cancelled")]
+    Cancelled,
+
+    #[error("model is already in use: {0}")]
+    ModelBusy(String),
+
+    #[error("model capacity is occupied by active requests")]
+    CapacityExhausted,
+
     #[error("model not found: {0}")]
     ModelNotFound(String),
 

@@ -36,6 +36,7 @@
       ../agentix-agent/Cargo.toml
       ../agentix-tts/Cargo.toml
       ../agentix-voice/Cargo.toml
+      ../vendor/codex-apply-patch/Cargo.toml
     ];
 
     depsOnlySrc = let
@@ -52,6 +53,8 @@
         cp -rT ${cargoFiles} $out
         chmod -R u+w $out
         # Workspace member stubs
+        mkdir -p $out/vendor/codex-apply-patch/src
+        cp ${stubLib} $out/vendor/codex-apply-patch/src/lib.rs
         mkdir -p $out/agentix-api/src
         cp ${stubLib} $out/agentix-api/src/lib.rs
         mkdir -p $out/agentix-router/src
@@ -172,6 +175,7 @@
     # Stub shell commands for each workspace member.  Each command is self-contained
     # (creates its own subdirs) so agentix-jails' nested layout works without special-casing.
     memberStubs = {
+      "vendor/codex-apply-patch" = "mkdir -p $out/vendor/codex-apply-patch/src; cp ${stubLib} $out/vendor/codex-apply-patch/src/lib.rs";
       agentix-api        = "mkdir -p $out/agentix-api/src;        cp ${stubLib}  $out/agentix-api/src/lib.rs";
       agentix-router     = "mkdir -p $out/agentix-router/src;     cp ${stubLib}  $out/agentix-router/src/lib.rs";
       agentix-daemon     = "mkdir -p $out/agentix-daemon/src;     cp ${stubMain} $out/agentix-daemon/src/main.rs";
@@ -205,6 +209,7 @@
           fileset = lib.fileset.unions (
             allManifests
             ++ realDirs
+            ++ [../licenses]
             ++ lib.optional (lib.pathExists ../Cargo.lock) ../Cargo.lock
             ++ lib.optional (lib.pathExists ../patches) ../patches
           );
@@ -234,6 +239,7 @@
     agentixDaemonPkg = craneLib.buildPackage (commonArgs
       // {
         pname = "agentix-daemon";
+        version = "0.2.0";
         src = mkWorkspaceSrc ["agentix-daemon" "agentix-api" "agentix-router"];
         cargoArtifacts = agentixDaemonDeps;
         cargoExtraArgs = "--package agentix-daemon";
@@ -263,9 +269,13 @@
     axPkg = craneLib.buildPackage (commonArgs
       // {
         pname = "agentix-ax";
-        src = mkWorkspaceSrc ["agentix-ax" "agentix-harness"];
+        src = mkWorkspaceSrc ["agentix-ax" "agentix-api" "agentix-harness" "vendor/codex-apply-patch"];
         cargoArtifacts = agentixAxDeps;
         cargoExtraArgs = "--package agentix-ax";
+        postInstall = ''
+          mkdir -p $out/share/doc/agentix-ax/licenses
+          cp licenses/* $out/share/doc/agentix-ax/licenses/
+        '';
       });
 
     agentixMcpServerPkg = craneLib.buildPackage (commonArgs
@@ -290,7 +300,7 @@
     agentixAgentPkg = craneLib.buildPackage (commonArgs
       // {
         pname = "agentix-agent";
-        src = mkWorkspaceSrc ["agentix-agent" "agentix-harness" "agentix-api"];
+        src = mkWorkspaceSrc ["agentix-agent" "agentix-harness" "agentix-api" "vendor/codex-apply-patch"];
         cargoArtifacts = agentixAgentDeps;
         cargoExtraArgs = "--package agentix-agent";
       });
@@ -489,6 +499,12 @@
     packages.agentix-agent = agentixAgentPkg;
 
     packages.agentix-voice = agentixVoicePkg;
+    packages.agentix-test-generation-model = pkgs.fetchurl {
+      name = "stories15M-q4_0.gguf";
+      url = "https://huggingface.co/ggml-org/tiny-llamas/resolve/99dd1a73db5a37100bd4ae633f4cfce6560e1567/stories15M-q4_0.gguf";
+      hash = "sha256-YVGxkp1/WqM4XZ3e8zk+VVh8ClXeZhViMivFHf2pOgQ=";
+      meta.license = lib.licenses.mit;
+    };
 
     packages.agentix-whisper = agentixWhisperPkg;
 

@@ -6,6 +6,13 @@ use std::sync::Arc;
 pub type CompletionStream =
     Pin<Box<dyn futures::stream::Stream<Item = Result<CompletionChunk, InferError>> + Send>>;
 
+pub type ToolCompletionStream = Pin<
+    Box<
+        dyn futures::stream::Stream<Item = Result<crate::exchange::ToolCompletionEvent, InferError>>
+            + Send,
+    >,
+>;
+
 /// A backend capable of loading model blobs into memory.
 #[async_trait::async_trait]
 pub trait InferBackend: Send + Sync {
@@ -26,6 +33,25 @@ pub trait InferBackend: Send + Sync {
 /// A warm, in-memory model instance held by the ContextPool.
 #[async_trait::async_trait]
 pub trait LoadedModel: Send + Sync {
+    fn is_busy(&self) -> bool {
+        false
+    }
+
+    fn coding_supported(&self) -> bool {
+        false
+    }
+    fn context_limit(&self) -> u32 {
+        0
+    }
+
+    async fn complete_tools(
+        &self,
+        _request: crate::exchange::ToolCompletionRequest,
+        _cancel: crate::exchange::Cancellation,
+    ) -> Result<ToolCompletionStream, InferError> {
+        Err(InferError::ToolCompletionUnsupported)
+    }
+
     /// Embed a single string.
     async fn embed(&self, input: &str) -> Result<Vec<f32>, InferError>;
 

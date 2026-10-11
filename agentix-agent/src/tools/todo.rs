@@ -12,6 +12,11 @@ pub struct TodoUpdateTool(pub TodoStore);
 
 #[async_trait]
 impl Tool for TodoListTool {
+    // Home-assistant tools retain their existing service-level authorization.
+    fn needs_approval(&self) -> bool {
+        false
+    }
+
     fn name(&self) -> &str {
         "todo_list"
     }
@@ -51,6 +56,11 @@ impl Tool for TodoListTool {
 
 #[async_trait]
 impl Tool for TodoCreateTool {
+    // Home-assistant tools retain their existing service-level authorization.
+    fn needs_approval(&self) -> bool {
+        false
+    }
+
     fn name(&self) -> &str {
         "todo_create"
     }
@@ -104,6 +114,11 @@ impl Tool for TodoCreateTool {
 
 #[async_trait]
 impl Tool for TodoCompleteTool {
+    // Home-assistant tools retain their existing service-level authorization.
+    fn needs_approval(&self) -> bool {
+        false
+    }
+
     fn name(&self) -> &str {
         "todo_complete"
     }
@@ -137,6 +152,11 @@ impl Tool for TodoCompleteTool {
 
 #[async_trait]
 impl Tool for TodoUpdateTool {
+    // Home-assistant tools retain their existing service-level authorization.
+    fn needs_approval(&self) -> bool {
+        false
+    }
+
     fn name(&self) -> &str {
         "todo_update"
     }

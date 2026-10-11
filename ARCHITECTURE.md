@@ -277,3 +277,43 @@ inconsistency to revisit when `agentix-infer` lands.
 | C++ isolation — search/indexer | tree-sitter kept in `agentix-indexer`; fastembed kept in `agentix-search` | Move all C++ to agentix-llama | tree-sitter and fastembed are bounded C++ builds; removing them would require rewriting parsers and reranking in pure Rust for no practical gain |
 | agentix-agent embedded storage | sled (key-value, no SQL) | SQLite, PostgreSQL | SQLite is disallowed by constitution; PostgreSQL is overkill for a single-user home assistant; sled gives durable atomic writes with five named trees and no migration files |
 | agentix-agent port 8765 | Separate Axum server on 8765 | Embed into agentix-daemon | Home assistant is a separate trust domain and lifecycle; coupling it to the inference gateway would complicate both deployment and future jail migration |
+
+## Feature 020 coding checkpoint: launch boundary
+
+`ax-jail` builds a bubblewrap profile before starting `ax`. The coding controller
+requires the launcher's read-only `/run/agentix/ax-profile.json`; an environment
+variable alone does not enable tools. The default writable project is the current
+Git worktree (or current directory outside Git). `--all-worktrees` explicitly grants
+the bare repository's parent. Additional `--ro`/`--rw` grants are canonicalized;
+credential/state aliases and broad host roots are rejected. Coding file tools
+currently require directory grants, reject symlink traversal, and reject direct
+`.git`/`.bare` access. They use pinned directory descriptors and atomic replacement
+with expected-content hashes. Multi-file patches are not transactions: a later I/O
+failure reports paths already changed. External writers are not locked out.
+
+The profile clears inherited environment, does not mount SSH agent sockets or host
+credential directories, and does not evaluate `.envrc`, direnv, user Git config,
+Git hooks or executable repository config. Shared Git metadata is mounted with a
+sanitized read-only configuration and empty hooks directories. Approved shell
+commands can read/write the granted project and invoke packaged tools or Nix.
+
+**Shared-network exception:** the jail shares the host network so it can contact
+the configured daemon and fetch development dependencies. It is not an egress
+firewall: an approved command can contact other host/network services. The explicit
+Nix daemon socket is also shared, while `/nix/store` is read-only; Nix daemon policy
+remains a host trust boundary. No host cloud/SSH/proxy credentials are forwarded.
+Deployment review must verify network-service authorization, Nix daemon client
+policy, effective mount grants and absence of credentials in granted project files.
+
+Codex filename-search keeps upstream symlink-following behavior, as explicitly
+approved for this feature. The mount profile bounds what it can reach; subsequent
+file reads/edits have stricter descriptor-based path checks. File and shell writes
+require one-shot approvals bound to cwd, exact arguments and turn. Actions whose
+complete approval text exceeds 8 KiB are rejected rather than partially displayed.
+Headless mode returns exit code 3 when approval is needed. Ctrl+C cancels generation
+or terminates/reaps an active command before returning to the prompt.
+
+Real bubblewrap tests cover hidden sentinels, credential aliases, Git hooks/config,
+single/all-worktree views and Nix daemon access. Production model quality and remote
+service authorization require deployment-specific validation. Persistent sessions,
+model installation UI and multi-agent supervision remain later feature phases.

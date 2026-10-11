@@ -1,6 +1,6 @@
 [package]
 name = "agentix-api"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 license = "Apache-2.0"
 description = "OpenAI-compatible contract types for the agentix gateway"
@@ -11,3 +11,4 @@ workspace = true
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+uuid = { version = "1", features = ["serde"] }

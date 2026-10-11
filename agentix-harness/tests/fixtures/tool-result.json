@@ -1,0 +1,5 @@
+{
+  "role": "tool",
+  "tool_call_id": "call-read-1",
+  "content": "pub fn answer() -> u32 { 42 }\n"
+}

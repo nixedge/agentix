@@ -143,6 +143,25 @@ a few minutes once; subsequent shells are instant.
 
 ### 2. Build the Rust binaries
 
+Use `nix develop` for the pinned Rust 1.94.1 toolchain. Agentix uses edition 2021,
+while the Codex libraries and extracted patch core use edition 2024; older Rust
+versions are not validated. The dev shell provides tools without building ax on
+entry. Build or run the launcher explicitly with `nix build .#ax-jail` or
+`nix run .#ax-jail`. Upstream pins and licenses are recorded in [licenses](licenses/README.md).
+
+Feature 020's API/daemon 0.2 changes are described in the
+[migration guide](docs/api-0.2-migration.md), including implementation status.
+The [coding checkpoint guide](specs/020-ax-coding-agent/quickstart.md#coding-checkpoint-validation--2026-10-11-continuation)
+records tested behavior, remaining issues and commands for running the matching
+worker, daemon and jailed terminal agent with an installed local model.
+
+Set `AGENTIX_GATEWAY_URL` to your agentix server (for example,
+`http://ai.lan.disasm.us:11434`) and launch `ax-jail` from the project directory.
+Without an explicit `--model` or `AGENTIX_MODEL`, the installed-model picker opens
+automatically; `/model` reopens it between turns. Type to filter, use arrows and
+Enter to load/select, and Esc to close. This requires the matching 0.2 daemon and
+worker. `ax --list-models` lists the catalog without launching coding tools.
+
 ```bash
 just build
 ```

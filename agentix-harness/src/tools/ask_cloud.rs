@@ -4,15 +4,14 @@ use async_trait::async_trait;
 
 /// Built-in tool that escalates a specific question to a cloud model via the gateway.
 ///
-/// The gateway routes any `provider/model` name (e.g. `moonshotai/kimi-k2`,
-/// `anthropic/claude-sonnet-4-6`) to OpenRouter automatically, so the local
-/// agent never needs an API key directly.
+/// The daemon validates the structured rationale and its configured cloud policy.
 ///
 /// Three required fields force the model to articulate the knowledge gap before
 /// escalating, preventing lazy escalation ("I don't know" → cloud).
 pub struct AskCloud {
     client: GatewayClient,
     cloud_model: String,
+    context: agentix_api::agent::InvocationContext,
 }
 
 impl AskCloud {
@@ -20,7 +19,17 @@ impl AskCloud {
         Ok(Self {
             client: GatewayClient::new(gateway_url)?,
             cloud_model: cloud_model.into(),
+            context: agentix_api::agent::InvocationContext {
+                session_id: uuid::Uuid::new_v4(),
+                turn_id: uuid::Uuid::new_v4(),
+                invocation_id: agentix_api::wire::Text::new("ask_cloud")?,
+            },
         })
+    }
+
+    pub fn with_context(mut self, context: agentix_api::agent::InvocationContext) -> Self {
+        self.context = context;
+        self
     }
 }
 
@@ -58,22 +67,32 @@ impl Tool for AskCloud {
     }
 
     async fn call(&self, args: serde_json::Value) -> Result<String> {
+        self.call_in_context(args, self.context.clone()).await
+    }
+    async fn call_in_context(
+        &self,
+        args: serde_json::Value,
+        invocation: agentix_api::agent::InvocationContext,
+    ) -> Result<String> {
         let context = args["what_i_already_know"].as_str().unwrap_or("");
         let question = args["specific_question"].as_str().unwrap_or("");
         let why = args["why_i_cant_answer_locally"].as_str().unwrap_or("");
 
-        let prompt = format!(
-            "Context from local agent:\n{context}\n\n\
-             Why local sources are insufficient:\n{why}\n\n\
-             Question:\n{question}"
-        );
-
-        let messages = vec![serde_json::json!({"role": "user", "content": prompt})];
-
-        let resp = self.client.chat(&self.cloud_model, &messages, &[]).await?;
-
-        Ok(resp
-            .content
-            .unwrap_or_else(|| "(cloud model returned no content)".into()))
+        use agentix_api::{
+            agent::{CloudProvider, CloudTarget, EscalationRequest},
+            wire::{Text, V1},
+        };
+        let request = EscalationRequest {
+            schema_version: V1,
+            knowledge: Text::new(context)?,
+            question: Text::new(question)?,
+            local_insufficiency: Text::new(why)?,
+            target: CloudTarget {
+                provider: CloudProvider::OpenRouter,
+                model: Text::new(self.cloud_model.clone())?,
+            },
+            context: invocation,
+        };
+        self.client.escalate(&request).await
     }
 }

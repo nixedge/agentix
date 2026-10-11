@@ -1,16 +1,25 @@
+mod generation;
+pub mod tool_template;
+
 use agentix_infer::{
     backend::{CompletionStream, InferBackend, LoadedModel},
     Capability, CompletionChunk, CompletionMessage, CompletionRequest, FinishReason, InferError,
     ModelFormat, ModelInfo,
 };
-use std::{num::NonZeroU32, path::Path, sync::Arc};
+use std::{
+    num::NonZeroU32,
+    path::Path,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+};
 
 use llama_cpp_2::{
     context::params::{LlamaContextParams, LlamaPoolingType},
     llama_backend::LlamaBackend,
     llama_batch::LlamaBatch,
     model::{params::LlamaModelParams, AddBos, LlamaModel},
-    sampling::LlamaSampler,
 };
 
 // True encoder-only architectures. These support llama_encode() and use
@@ -27,7 +36,17 @@ enum InferMessage {
     },
     Complete {
         req: CompletionRequest,
-        tx: tokio::sync::mpsc::UnboundedSender<Result<CompletionChunk, InferError>>,
+        tx: tokio::sync::mpsc::Sender<Result<CompletionChunk, InferError>>,
+        cancel: agentix_infer::exchange::Cancellation,
+        _busy: BusyGuard,
+    },
+    Tools {
+        request: agentix_infer::exchange::ToolCompletionRequest,
+        tx: tokio::sync::mpsc::Sender<
+            Result<agentix_infer::exchange::ToolCompletionEvent, InferError>,
+        >,
+        cancel: agentix_infer::exchange::Cancellation,
+        _busy: BusyGuard,
     },
     Tokenize {
         text: String,
@@ -36,7 +55,9 @@ enum InferMessage {
 }
 
 pub struct LlamaCppLoadedModel {
-    tx: std::sync::mpsc::SyncSender<InferMessage>,
+    tx: tokio::sync::mpsc::Sender<InferMessage>,
+    busy: Arc<AtomicBool>,
+    coding_supported: bool,
     vram_est: u64,
     is_embedding: bool,
     #[allow(dead_code)] // stored for future tokenize/context-info APIs
@@ -162,7 +183,9 @@ impl InferBackend for LlamaCppBackend {
         .map_err(|e| InferError::Backend(e.to_string()))??;
 
         // Phase 2: spawn a dedicated thread that owns model + context
-        let (tx, rx) = std::sync::mpsc::sync_channel::<InferMessage>(16);
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<InferMessage>(16);
+        let busy = Arc::new(AtomicBool::new(false));
+        let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
 
         std::thread::Builder::new()
             .name(format!(
@@ -200,20 +223,52 @@ impl InferBackend for LlamaCppBackend {
                 let mut ctx = match model.new_context(&backend, ctx_params) {
                     Ok(c) => c,
                     Err(e) => {
-                        tracing::error!("context creation failed: {:?}", e);
+                        let _ = ready_tx.send(Err(InferError::Backend(format!(
+                            "context creation failed: {e:?}"
+                        ))));
                         return;
                     }
                 };
 
-                for msg in rx {
+                let template = model.chat_template(None).ok().and_then(|value| {
+                    value
+                        .to_str()
+                        .ok()
+                        .and_then(|source| tool_template::ToolTemplate::new(source).ok())
+                });
+                if ready_tx.send(Ok(template.is_some())).is_err() {
+                    return;
+                }
+                while let Some(msg) = rx.blocking_recv() {
                     match msg {
                         InferMessage::EmbedBatch { inputs, reply } => {
                             let result =
                                 embed_batch_sync(&model, &mut ctx, &inputs, use_encoder_path);
                             let _ = reply.send(result);
                         }
-                        InferMessage::Complete { req, tx } => {
-                            complete_sync(&model, &mut ctx, &req, &tx);
+                        InferMessage::Complete {
+                            req,
+                            tx,
+                            cancel,
+                            _busy,
+                        } => {
+                            complete_sync(&model, &mut ctx, &req, &tx, &cancel);
+                        }
+                        InferMessage::Tools {
+                            request,
+                            tx,
+                            cancel,
+                            _busy,
+                        } => {
+                            let result = match template.as_ref() {
+                                Some(template) => {
+                                    tools_sync(&model, &mut ctx, template, request, &tx, &cancel)
+                                }
+                                None => Err(InferError::ToolCompletionUnsupported),
+                            };
+                            if let Err(error) = result {
+                                let _ = send_chunk(&tx, Err(error), &cancel);
+                            }
                         }
                         InferMessage::Tokenize { text, reply } => {
                             let result = model
@@ -228,8 +283,14 @@ impl InferBackend for LlamaCppBackend {
             })
             .map_err(|e| InferError::Backend(format!("failed to spawn inference thread: {e}")))?;
 
+        let coding_supported = ready_rx
+            .await
+            .map_err(|_| InferError::Backend("model initialization interrupted".into()))??;
+
         Ok(Arc::new(LlamaCppLoadedModel {
             tx,
+            busy,
+            coding_supported,
             vram_est: size_bytes,
             is_embedding,
             n_ctx: n_ctx_val,
@@ -293,144 +354,131 @@ fn complete_sync(
     model: &LlamaModel,
     ctx: &mut llama_cpp_2::context::LlamaContext<'_>,
     req: &CompletionRequest,
-    tx: &tokio::sync::mpsc::UnboundedSender<Result<CompletionChunk, InferError>>,
+    tx: &tokio::sync::mpsc::Sender<Result<CompletionChunk, InferError>>,
+    cancel: &agentix_infer::exchange::Cancellation,
 ) {
-    // Apply the model's built-in chat template to convert structured messages to a prompt.
-    let prompt = match apply_chat_template(model, &req.messages) {
-        Ok(p) => p,
-        Err(e) => {
-            let _ = tx.send(Err(InferError::Backend(format!(
-                "chat template error: {e}"
-            ))));
-            return;
+    let result = apply_chat_template(model, &req.messages)
+        .map_err(InferError::Backend)
+        .and_then(|prompt| {
+            generation::generate(
+                model,
+                ctx,
+                &prompt,
+                generation::Options {
+                    max_tokens: req.max_tokens.unwrap_or(1024),
+                    temperature: req.temperature,
+                    top_p: req.top_p,
+                    grammar: req.grammar.as_ref(),
+                    stop: &req.stop,
+                },
+                cancel,
+                |text| send_chunk(tx, Ok(CompletionChunk::new(text, None)), cancel),
+            )
+        });
+    let final_chunk = result.map(|reason| CompletionChunk::new(String::new(), Some(reason)));
+    let _ = send_chunk(tx, final_chunk, cancel);
+}
+
+fn send_chunk<T>(
+    tx: &tokio::sync::mpsc::Sender<T>,
+    mut item: T,
+    cancel: &agentix_infer::exchange::Cancellation,
+) -> Result<(), InferError> {
+    loop {
+        if cancel.is_cancelled() {
+            return Err(InferError::Cancelled);
         }
-    };
-
-    tracing::debug!(prompt_len = prompt.len(), "complete_sync: applying prompt");
-
-    let tokens = match model.str_to_token(&prompt, AddBos::Always) {
-        Ok(t) => t,
-        Err(e) => {
-            let _ = tx.send(Err(InferError::Backend(format!("tokenize error: {e:?}"))));
-            return;
-        }
-    };
-
-    if tokens.is_empty() {
-        let _ = tx.send(Ok(CompletionChunk::new(
-            String::new(),
-            Some(FinishReason::Stop),
-        )));
-        return;
-    }
-
-    let n_ctx = ctx.n_ctx();
-    let max_new = req.max_tokens.unwrap_or(1024);
-    if tokens.len() as u32 + max_new > n_ctx {
-        let _ = tx.send(Err(InferError::ContextExceeded {
-            prompt_tokens: tokens.len() as u32,
-            max_new_tokens: max_new,
-            context_window: n_ctx,
-        }));
-        return;
-    }
-
-    ctx.clear_kv_cache();
-
-    // Prefill: add all prompt tokens in one batch, only last needs logits.
-    let n_prompt = tokens.len();
-    let mut batch = LlamaBatch::new(n_prompt, 1);
-    for (i, &tok) in tokens.iter().enumerate() {
-        let is_last = i == n_prompt - 1;
-        if let Err(e) = batch.add(tok, i as i32, &[0], is_last) {
-            let _ = tx.send(Err(InferError::Backend(format!("batch add error: {e:?}"))));
-            return;
-        }
-    }
-
-    if let Err(e) = ctx.decode(&mut batch) {
-        let _ = tx.send(Err(InferError::Backend(format!(
-            "prefill decode error: {e:?}"
-        ))));
-        return;
-    }
-
-    // Build sampler chain: grammar (optional, must be first) → top-k → top-p → temperature → dist
-    let temperature = req.temperature.unwrap_or(0.8);
-    let top_p = req.top_p.unwrap_or(0.95);
-    let mut samplers: Vec<LlamaSampler> = Vec::new();
-    if let Some(agentix_infer::GrammarConstraint::Gbnf(gbnf)) = &req.grammar {
-        match LlamaSampler::grammar(model, gbnf, "root") {
-            Ok(s) => samplers.push(s),
-            Err(e) => {
-                let _ = tx.send(Err(InferError::Backend(format!("grammar init: {e:?}"))));
-                return;
+        match tx.try_send(item) {
+            Ok(()) => return Ok(()),
+            Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                return Err(InferError::Cancelled)
             }
+            Err(tokio::sync::mpsc::error::TrySendError::Full(value)) => item = value,
         }
+        // Runs only on the dedicated inference thread, never Tokio.
+        std::thread::sleep(std::time::Duration::from_millis(5));
     }
-    samplers.push(LlamaSampler::top_k(40));
-    samplers.push(LlamaSampler::top_p(top_p, 1));
-    samplers.push(LlamaSampler::temp(temperature));
-    samplers.push(LlamaSampler::dist(0xDEAD_BEEF));
-    let mut sampler = LlamaSampler::chain_simple(samplers);
+}
 
-    let mut n_pos = n_prompt;
-
-    for i in 0..max_new {
-        // sample() internally calls llama_sampler_accept; no separate accept call needed.
-        let new_token = sampler.sample(ctx, -1);
-
-        if model.is_eog_token(new_token) {
-            let _ = tx.send(Ok(CompletionChunk::new(
-                String::new(),
-                Some(FinishReason::Stop),
-            )));
-            return;
+fn tools_sync(
+    model: &LlamaModel,
+    ctx: &mut llama_cpp_2::context::LlamaContext<'_>,
+    template: &tool_template::ToolTemplate,
+    mut request: agentix_infer::exchange::ToolCompletionRequest,
+    tx: &tokio::sync::mpsc::Sender<
+        Result<agentix_infer::exchange::ToolCompletionEvent, InferError>,
+    >,
+    cancel: &agentix_infer::exchange::Cancellation,
+) -> Result<(), InferError> {
+    use agentix_infer::exchange::{
+        Message, ToolCompletionEvent as Event, ToolFinishReason as Reason,
+    };
+    for attempt in 0..=1 {
+        let prompt = template.render(&request)?;
+        let mut output = String::new();
+        let mut emitted = 0;
+        let reason = generation::generate(
+            model,
+            ctx,
+            &prompt,
+            generation::Options {
+                max_tokens: request.max_tokens,
+                temperature: request.temperature,
+                top_p: None,
+                grammar: None,
+                stop: &[],
+            },
+            cancel,
+            |text| {
+                output.push_str(&text);
+                // Hold every possible marker suffix and all text after a tool marker.
+                let available = output.find('<').unwrap_or(output.len());
+                if available > emitted {
+                    send_chunk(
+                        tx,
+                        Ok(Event::Text(output[emitted..available].to_string())),
+                        cancel,
+                    )?;
+                    emitted = available;
+                }
+                Ok(())
+            },
+        )?;
+        if reason != FinishReason::Stop {
+            send_chunk(tx, Ok(Event::Finished(Reason::Length)), cancel)?;
+            return Ok(());
         }
-
-        // token_to_piece_bytes(token, max_size, special=false, lstrip=None)
-        let piece = match model.token_to_piece_bytes(new_token, 32, false, None) {
-            Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
-            Err(e) => {
-                let _ = tx.send(Err(InferError::Backend(format!("detokenize error: {e:?}"))));
-                return;
+        match tool_template::parse_output(&output, &request.tools) {
+            Ok(parsed) => {
+                if parsed.text.len() > emitted {
+                    send_chunk(
+                        tx,
+                        Ok(Event::Text(parsed.text[emitted..].to_string())),
+                        cancel,
+                    )?;
+                }
+                let finish = if parsed.calls.is_empty() {
+                    Reason::Stop
+                } else {
+                    send_chunk(tx, Ok(Event::Calls(parsed.calls)), cancel)?;
+                    Reason::ToolCalls
+                };
+                return send_chunk(tx, Ok(Event::Finished(finish)), cancel);
             }
-        };
-
-        // Check stop strings
-        if req.stop.iter().any(|s| piece.contains(s.as_str())) {
-            let _ = tx.send(Ok(CompletionChunk::new(
-                String::new(),
-                Some(FinishReason::Stop),
-            )));
-            return;
+            Err(_) if attempt == 0 && !request.tools.is_empty() => {
+                // Exactly one repair, with no tool execution or invented result.
+                request.messages.push(Message::Assistant {
+                    content: output,
+                    tool_calls: vec![],
+                });
+                request.messages.push(Message::User { content: "Your previous tool response was invalid. Return only complete <tool_call> blocks with an available function name and an arguments JSON object, or answer without tools.".into() });
+            }
+            Err(error) => return Err(error),
         }
-
-        if tx.send(Ok(CompletionChunk::new(piece, None))).is_err() {
-            // Client disconnected
-            return;
-        }
-
-        if i == max_new - 1 {
-            let _ = tx.send(Ok(CompletionChunk::new(
-                String::new(),
-                Some(FinishReason::Length),
-            )));
-            return;
-        }
-
-        // Decode the generated token to extend the KV cache.
-        let mut next_batch = LlamaBatch::new(1, 1);
-        if let Err(e) = next_batch.add(new_token, n_pos as i32, &[0], true) {
-            let _ = tx.send(Err(InferError::Backend(format!("next batch add: {e:?}"))));
-            return;
-        }
-        if let Err(e) = ctx.decode(&mut next_batch) {
-            let _ = tx.send(Err(InferError::Backend(format!("next decode: {e:?}"))));
-            return;
-        }
-        n_pos += 1;
     }
+    Err(InferError::InvalidToolExchange(
+        "tool repair budget exhausted",
+    ))
 }
 
 fn apply_chat_template(
@@ -439,9 +487,15 @@ fn apply_chat_template(
 ) -> Result<String, String> {
     use llama_cpp_2::model::LlamaChatMessage;
 
-    let tmpl = model
-        .chat_template(None)
-        .map_err(|e| format!("chat_template: {e:?}"))?;
+    let tmpl = match model.chat_template(None) {
+        Ok(template) => template,
+        Err(llama_cpp_2::ChatTemplateError::MissingTemplate)
+            if messages.len() == 1 && messages[0].role == "user" =>
+        {
+            return Ok(messages[0].content.clone())
+        }
+        Err(error) => return Err(format!("chat_template: {error:?}")),
+    };
 
     let chat: Vec<LlamaChatMessage> = messages
         .iter()
@@ -456,6 +510,42 @@ fn apply_chat_template(
 
 #[async_trait::async_trait]
 impl LoadedModel for LlamaCppLoadedModel {
+    fn is_busy(&self) -> bool {
+        self.busy.load(Ordering::Acquire)
+    }
+    fn coding_supported(&self) -> bool {
+        self.coding_supported
+    }
+    fn context_limit(&self) -> u32 {
+        self.n_ctx
+    }
+
+    async fn complete_tools(
+        &self,
+        request: agentix_infer::exchange::ToolCompletionRequest,
+        cancel: agentix_infer::exchange::Cancellation,
+    ) -> Result<agentix_infer::backend::ToolCompletionStream, InferError> {
+        request.validate()?;
+        if !self.coding_supported {
+            return Err(InferError::ToolCompletionUnsupported);
+        }
+        let busy = BusyGuard::acquire(&self.busy)?;
+        let (tx, rx) = tokio::sync::mpsc::channel(32);
+        self.tx
+            .send(InferMessage::Tools {
+                request,
+                tx,
+                cancel: cancel.clone(),
+                _busy: busy,
+            })
+            .await
+            .map_err(|_| InferError::Backend("inference thread closed".into()))?;
+        Ok(Box::pin(CancellableStream {
+            inner: tokio_stream::wrappers::ReceiverStream::new(rx),
+            cancel,
+        }))
+    }
+
     async fn embed(&self, input: &str) -> Result<Vec<f32>, InferError> {
         let mut results = self.embed_batch(&[input]).await?;
         results
@@ -476,6 +566,7 @@ impl LoadedModel for LlamaCppLoadedModel {
                 inputs: inputs.iter().map(|s| s.to_string()).collect(),
                 reply: reply_tx,
             })
+            .await
             .map_err(|_| InferError::Backend("inference thread closed".to_string()))?;
         reply_rx
             .await
@@ -490,13 +581,23 @@ impl LoadedModel for LlamaCppLoadedModel {
             ));
         }
 
-        let (chunk_tx, chunk_rx) = tokio::sync::mpsc::unbounded_channel();
+        let busy = BusyGuard::acquire(&self.busy)?;
+        let cancel = agentix_infer::exchange::Cancellation::default();
+        let (chunk_tx, chunk_rx) = tokio::sync::mpsc::channel(32);
         self.tx
-            .send(InferMessage::Complete { req, tx: chunk_tx })
+            .send(InferMessage::Complete {
+                req,
+                tx: chunk_tx,
+                cancel: cancel.clone(),
+                _busy: busy,
+            })
+            .await
             .map_err(|_| InferError::Backend("inference thread closed".to_string()))?;
 
-        let stream = tokio_stream::wrappers::UnboundedReceiverStream::new(chunk_rx);
-        Ok(Box::pin(stream))
+        Ok(Box::pin(CancellableStream {
+            inner: tokio_stream::wrappers::ReceiverStream::new(chunk_rx),
+            cancel,
+        }))
     }
 
     async fn tokenize(&self, text: &str) -> Result<Vec<i32>, InferError> {
@@ -506,6 +607,7 @@ impl LoadedModel for LlamaCppLoadedModel {
                 text: text.to_string(),
                 reply: reply_tx,
             })
+            .await
             .map_err(|_| InferError::Backend("inference thread closed".to_string()))?;
         reply_rx
             .await
@@ -514,5 +616,39 @@ impl LoadedModel for LlamaCppLoadedModel {
 
     fn vram_bytes(&self) -> u64 {
         self.vram_est
+    }
+}
+
+struct BusyGuard(Arc<AtomicBool>);
+impl BusyGuard {
+    fn acquire(busy: &Arc<AtomicBool>) -> Result<Self, InferError> {
+        busy.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .map_err(|_| InferError::ModelBusy("inference worker".into()))?;
+        Ok(Self(Arc::clone(busy)))
+    }
+}
+impl Drop for BusyGuard {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
+}
+
+struct CancellableStream<T> {
+    inner: tokio_stream::wrappers::ReceiverStream<T>,
+    cancel: agentix_infer::exchange::Cancellation,
+}
+impl<T> tokio_stream::Stream for CancellableStream<T> {
+    type Item = T;
+    fn poll_next(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<T>> {
+        let this = self.get_mut();
+        std::pin::Pin::new(&mut this.inner).poll_next(cx)
+    }
+}
+impl<T> Drop for CancellableStream<T> {
+    fn drop(&mut self) {
+        self.cancel.cancel();
     }
 }

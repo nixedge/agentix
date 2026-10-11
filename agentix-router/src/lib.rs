@@ -24,6 +24,41 @@ impl Router {
         Self
     }
 
+    pub fn local_model(
+        &self,
+        requested: &str,
+        installed: &[String],
+    ) -> Result<String, &'static str> {
+        let requested = requested.strip_prefix("local/").unwrap_or(requested);
+        if installed.iter().any(|id| id == requested) {
+            return Ok(requested.to_string());
+        }
+        let normalized = requested.replace(':', "/");
+        let suffix = format!("/{normalized}");
+        let matches: Vec<_> = installed
+            .iter()
+            .filter(|id| id.ends_with(&suffix))
+            .collect();
+        match matches.as_slice() {
+            [id] => Ok((*id).clone()),
+            [] if self.route(requested) == RouteTarget::Local => Ok(requested.to_string()),
+            [] => Err("structured_escalation_required"),
+            _ => Err("ambiguous_local_model"),
+        }
+    }
+
+    pub fn validate_escalation(
+        &self,
+        request: agentix_api::agent::EscalationRequest,
+        enabled: bool,
+    ) -> Result<ValidatedEscalation, &'static str> {
+        if !enabled {
+            return Err("escalation_disabled");
+        }
+        // Required bounded fields have private validated constructors in agentix-api.
+        Ok(ValidatedEscalation { request })
+    }
+
     pub fn route(&self, model: &str) -> RouteTarget {
         let m = model.to_lowercase();
 
@@ -68,6 +103,26 @@ impl Router {
         // explicit prefix or provider/model syntax. This prevents a misconfigured or
         // typo'd model name from becoming an unstructured cloud call (Principle II).
         RouteTarget::Local
+    }
+}
+
+/// Provider executors accept this token, never arbitrary chat payloads.
+///
+/// ```compile_fail
+/// use agentix_router::ValidatedEscalation;
+/// let bypass = ValidatedEscalation { request: todo!() };
+/// ```
+/// ```compile_fail
+/// fn deserialize<T: serde::de::DeserializeOwned>() {}
+/// deserialize::<agentix_router::ValidatedEscalation>();
+/// ```
+pub struct ValidatedEscalation {
+    request: agentix_api::agent::EscalationRequest,
+}
+
+impl ValidatedEscalation {
+    pub fn request(&self) -> &agentix_api::agent::EscalationRequest {
+        &self.request
     }
 }
 

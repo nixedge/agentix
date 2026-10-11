@@ -1,0 +1,19 @@
+[package]
+name = "agentix-codex-patch"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+description = "Codex patch parsing and pure text transforms, without its execution server"
+
+[lints]
+workspace = true
+
+[dependencies]
+codex-utils-path-uri = { git = "https://github.com/openai/codex.git", rev = "092d3acd6bec3e3a14bdc7e7a2810ab628ab759d" }
+thiserror = "2"
+
+[dev-dependencies]
+codex-utils-absolute-path = { git = "https://github.com/openai/codex.git", rev = "092d3acd6bec3e3a14bdc7e7a2810ab628ab759d" }
+pretty_assertions = "1"
+tempfile = "3"

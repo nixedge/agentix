@@ -10,6 +10,11 @@ pub struct GmailScanInboxTool(pub Arc<GmailClient>);
 
 #[async_trait]
 impl Tool for GmailScanInboxTool {
+    // Home-assistant tools retain their existing service-level authorization.
+    fn needs_approval(&self) -> bool {
+        false
+    }
+
     fn name(&self) -> &str {
         "gmail_scan_inbox"
     }

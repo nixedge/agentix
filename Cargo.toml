@@ -15,11 +15,19 @@ members = [
   "agentix-agent",
   "agentix-tts",
   "agentix-voice",
+  "vendor/codex-apply-patch",
 ]
 resolver = "2"
 
 [workspace.package]
 version = "0.1.0"
+
+[workspace.dependencies]
+minijinja = { version = "=2.24.0", features = ["json", "fuel"] }
+agentix-codex-patch = { path = "vendor/codex-apply-patch" }
+codex-utils-pty = { git = "https://github.com/openai/codex.git", rev = "092d3acd6bec3e3a14bdc7e7a2810ab628ab759d" }
+codex-file-search = { git = "https://github.com/openai/codex.git", rev = "092d3acd6bec3e3a14bdc7e7a2810ab628ab759d" }
+codex-execpolicy = { git = "https://github.com/openai/codex.git", rev = "092d3acd6bec3e3a14bdc7e7a2810ab628ab759d" }
 
 [workspace.lints.clippy]
 unwrap_used = "deny"

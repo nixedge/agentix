@@ -1,14 +1,13 @@
-mod anthropic;
+mod escalation;
 mod health;
 mod ollama_manage;
-mod openai_proxy;
 mod proxy;
 mod speech_handler;
 mod transcription_handler;
 mod voices_handler;
 
 use crate::config::Config;
-use agentix_router::{RouteTarget, Router as ModelRouter};
+use agentix_router::Router as ModelRouter;
 use anyhow::Context as _;
 use axum::{
     body::Body,
@@ -35,7 +34,8 @@ pub struct AppState {
 pub fn router(model_router: Arc<ModelRouter>, config: Config) -> anyhow::Result<Router> {
     let http = reqwest::Client::builder()
         .user_agent("agentix-daemon/0.1")
-        .timeout(std::time::Duration::from_secs(2))
+        .timeout(std::time::Duration::from_secs(60))
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .context("failed to build HTTP client")?;
 
@@ -53,6 +53,10 @@ pub fn router(model_router: Arc<ModelRouter>, config: Config) -> anyhow::Result<
         .route("/health", get(health::handler))
         .route("/v1/models", get(models_handler))
         .route("/v1/chat/completions", post(chat_completions_handler))
+        .route("/v1/agentix/escalations", post(escalation::handler))
+        .route("/v1/agentix/models/readiness", post(readiness_handler))
+        .route("/v1/agentix/models", get(catalog_handler))
+        .route("/v1/agentix/models/tokenize", post(tokenize_handler))
         .route("/v1/responses", post(responses_proxy_handler))
         .route("/v1/embeddings", post(embeddings_handler))
         // Anthropic-native endpoint (for clients using the Anthropic SDK directly)
@@ -74,8 +78,84 @@ pub fn router(model_router: Arc<ModelRouter>, config: Config) -> anyhow::Result<
         .route("/api/delete", delete(ollama_manage::delete_handler))
         .route("/api/tags", get(ollama_manage::tags_handler))
         .route("/api/show", post(ollama_manage::show_handler))
+        .layer(axum::extract::DefaultBodyLimit::max(1024 * 1024))
         .layer(TraceLayer::new_for_http())
         .with_state(state))
+}
+
+async fn local_body(state: &AppState, body: &[u8]) -> Result<Vec<u8>, Response> {
+    let mut value: serde_json::Value = serde_json::from_slice(body)
+        .map_err(|_| escalation::failure(StatusCode::BAD_REQUEST, "invalid_request"))?;
+    let model = value["model"]
+        .as_str()
+        .ok_or_else(|| escalation::failure(StatusCode::BAD_REQUEST, "missing_model"))?;
+    let installed = local_ids(state).await;
+    let model = state
+        .model_router
+        .local_model(model, &installed)
+        .map_err(|code| {
+            escalation::failure(
+                if code == "ambiguous_local_model" {
+                    StatusCode::CONFLICT
+                } else {
+                    StatusCode::FORBIDDEN
+                },
+                code,
+            )
+        })?;
+    value["model"] = serde_json::Value::String(model);
+    serde_json::to_vec(&value)
+        .map_err(|_| escalation::failure(StatusCode::BAD_REQUEST, "invalid_request"))
+}
+
+async fn local_ids(state: &AppState) -> Vec<String> {
+    let request = proxy::forward(
+        &state.llama_socket,
+        axum::http::Method::GET,
+        "/v1/models",
+        HeaderMap::new(),
+        Body::empty(),
+    );
+    let response = match tokio::time::timeout(std::time::Duration::from_secs(5), request).await {
+        Ok(response) if response.status().is_success() => response,
+        _ => return vec![],
+    };
+    let Ok(bytes) = axum::body::to_bytes(response.into_body(), 1024 * 1024).await else {
+        return vec![];
+    };
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+        return vec![];
+    };
+    value["data"]
+        .as_array()
+        .map(|data| {
+            data.iter()
+                .filter_map(|model| model["id"].as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+async fn local_forward(
+    state: &AppState,
+    mut headers: HeaderMap,
+    body: &[u8],
+    path: &str,
+) -> Response {
+    let body = match local_body(state, body).await {
+        Ok(body) => body,
+        Err(response) => return response,
+    };
+    headers.remove("content-length");
+    headers.remove("authorization");
+    proxy::forward(
+        &state.llama_socket,
+        axum::http::Method::POST,
+        path,
+        headers,
+        Body::from(body),
+    )
+    .await
 }
 
 async fn chat_completions_handler(
@@ -83,126 +163,126 @@ async fn chat_completions_handler(
     headers: HeaderMap,
     body: axum::body::Bytes,
 ) -> Response {
-    let req: agentix_api::ChatCompletionRequest = match serde_json::from_slice(&body) {
-        Ok(r) => r,
-        Err(e) => {
-            return (StatusCode::BAD_REQUEST, format!("invalid request: {e}")).into_response()
-        }
-    };
-
-    let target = state.model_router.route(&req.model);
-    tracing::debug!(model = %req.model, target = ?target, "routing chat completion");
-
-    match target {
-        RouteTarget::Anthropic => anthropic::proxy_chat(&state, headers, body).await,
-        RouteTarget::OpenAI => openai_proxy::proxy_chat(&state, headers, body).await,
-        RouteTarget::OpenRouter => openai_proxy::proxy_openrouter(&state, headers, body).await,
-        RouteTarget::Local => {
-            proxy::forward(
-                &state.llama_socket,
-                axum::http::Method::POST,
-                "/v1/chat/completions",
-                headers,
-                Body::from(body),
-            )
-            .await
-        }
-    }
+    local_forward(&state, headers, &body, "/v1/chat/completions").await
 }
-
 async fn embeddings_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
     body: axum::body::Bytes,
 ) -> Response {
-    let model = serde_json::from_slice::<serde_json::Value>(&body)
-        .ok()
-        .and_then(|v| v["model"].as_str().map(str::to_string))
-        .unwrap_or_default();
-    tracing::debug!(model = %model, "embeddings request");
-
-    // Try the local llama backend first; fall back to Ollama if unavailable
-    let resp = proxy::forward(
-        &state.llama_socket,
-        axum::http::Method::POST,
-        "/v1/embeddings",
-        headers.clone(),
-        Body::from(body.clone()),
-    )
-    .await;
-
-    if resp.status() == StatusCode::SERVICE_UNAVAILABLE {
-        let url = format!("{}/v1/embeddings", state.config.ollama_base_url);
-        tracing::info!(model = %model, ollama_url = %url, "llama socket unavailable, falling back to Ollama");
-        return match state
-            .http
-            .post(&url)
-            .header("content-type", "application/json")
-            .body(body)
-            .send()
-            .await
-        {
-            Ok(r) => openai_proxy::relay_response(r).await,
-            Err(e) => (
-                StatusCode::BAD_GATEWAY,
-                format!("embeddings proxy error: {e}"),
-            )
-                .into_response(),
-        };
-    }
-
-    resp
+    local_embed(&state, headers, &body, "/v1/embeddings").await
 }
-
 async fn ollama_embed_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
     body: axum::body::Bytes,
 ) -> Response {
-    let resp = proxy::forward(
+    local_embed(&state, headers, &body, "/api/embed").await
+}
+
+async fn local_embed(
+    state: &AppState,
+    mut headers: HeaderMap,
+    body: &[u8],
+    path: &str,
+) -> Response {
+    let body = match local_body(state, body).await {
+        Ok(body) => body,
+        Err(response) => return response,
+    };
+    headers.remove("content-length");
+    headers.remove("authorization");
+    let response = proxy::forward(
         &state.llama_socket,
         axum::http::Method::POST,
-        "/api/embed",
+        path,
         headers,
         Body::from(body.clone()),
     )
     .await;
-
-    if resp.status() == StatusCode::SERVICE_UNAVAILABLE {
-        let url = format!("{}/api/embed", state.config.ollama_base_url);
-        return match state
-            .http
-            .post(&url)
-            .header("content-type", "application/json")
-            .body(body)
-            .send()
-            .await
-        {
-            Ok(r) => openai_proxy::relay_response(r).await,
-            Err(e) => (StatusCode::BAD_GATEWAY, format!("embed proxy error: {e}")).into_response(),
-        };
+    if response.status() != StatusCode::SERVICE_UNAVAILABLE {
+        return response;
     }
-    resp
+    match state
+        .http
+        .post(format!(
+            "{}{path}",
+            state.config.ollama_base_url.trim_end_matches('/')
+        ))
+        .header("content-type", "application/json")
+        .body(body)
+        .send()
+        .await
+    {
+        Ok(response) => {
+            let status = response.status();
+            let stream = response.bytes_stream();
+            (
+                status,
+                [(axum::http::header::CONTENT_TYPE, "application/json")],
+                Body::from_stream(stream),
+            )
+                .into_response()
+        }
+        Err(_) => escalation::failure(StatusCode::BAD_GATEWAY, "local_embedding_unavailable"),
+    }
 }
-
 async fn messages_handler(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    _headers: HeaderMap,
     body: axum::body::Bytes,
 ) -> Response {
-    anthropic::proxy_messages(&state, headers, body).await
+    match local_body(&state, &body).await {
+        Err(response) => response,
+        Ok(_) => escalation::failure(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "local_messages_unsupported",
+        ),
+    }
 }
-
 async fn responses_proxy_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
     body: axum::body::Bytes,
 ) -> Response {
+    local_forward(&state, headers, &body, "/v1/responses").await
+}
+async fn readiness_handler(State(state): State<AppState>, body: axum::body::Bytes) -> Response {
+    if agentix_api::wire::decode_request::<agentix_api::models::ReadinessRequest>(&body).is_err() {
+        return escalation::failure(StatusCode::BAD_REQUEST, "invalid_readiness_request");
+    }
     proxy::forward(
         &state.llama_socket,
         axum::http::Method::POST,
-        "/v1/responses",
-        headers,
+        "/control/readiness",
+        HeaderMap::new(),
+        Body::from(body),
+    )
+    .await
+}
+async fn catalog_handler(State(state): State<AppState>, uri: axum::http::Uri) -> Response {
+    let path = match uri.query() {
+        Some(query) => format!("/control/models?{query}"),
+        None => "/control/models".into(),
+    };
+    proxy::forward(
+        &state.llama_socket,
+        axum::http::Method::GET,
+        &path,
+        HeaderMap::new(),
+        Body::empty(),
+    )
+    .await
+}
+async fn tokenize_handler(State(state): State<AppState>, body: axum::body::Bytes) -> Response {
+    if agentix_api::wire::decode_request::<agentix_api::models::TokenizeRequest>(&body).is_err() {
+        return escalation::failure(StatusCode::BAD_REQUEST, "invalid_tokenize_request");
+    }
+    proxy::forward(
+        &state.llama_socket,
+        axum::http::Method::POST,
+        "/control/tokenize",
+        HeaderMap::new(),
         Body::from(body),
     )
     .await
@@ -230,24 +310,6 @@ async fn models_handler(State(state): State<AppState>) -> impl IntoResponse {
                 }
             }
         }
-    }
-
-    if state.config.anthropic_api_key.is_some() {
-        models.push(
-            serde_json::json!({"id":"claude-opus-4-7","object":"model","owned_by":"anthropic"}),
-        );
-        models.push(
-            serde_json::json!({"id":"claude-sonnet-4-6","object":"model","owned_by":"anthropic"}),
-        );
-        models.push(serde_json::json!({"id":"claude-haiku-4-5-20251001","object":"model","owned_by":"anthropic"}));
-    }
-    if state.config.openai_api_key.is_some() {
-        models.push(serde_json::json!({"id":"gpt-4o","object":"model","owned_by":"openai"}));
-    }
-    if state.config.openrouter_api_key.is_some() {
-        models.push(
-            serde_json::json!({"id":"openrouter/*","object":"model","owned_by":"openrouter"}),
-        );
     }
 
     axum::Json(serde_json::json!({ "object": "list", "data": models }))

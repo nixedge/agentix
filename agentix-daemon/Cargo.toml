@@ -1,6 +1,6 @@
 [package]
 name = "agentix-daemon"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 license = "Apache-2.0"
 
@@ -12,7 +12,7 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
-agentix-api = { path = "../agentix-api" }
+agentix-api = { path = "../agentix-api", version = "0.2" }
 agentix-router = { path = "../agentix-router" }
 axum = { version = "0.8", features = ["json"] }
 hyper = { version = "1", features = ["client", "http1"] }
@@ -27,3 +27,7 @@ hound = "3"
 anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+tempfile = "3"
