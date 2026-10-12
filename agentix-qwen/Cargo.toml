@@ -1,0 +1,9 @@
+[package]
+name = "agentix-qwen"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Independent Qwen Flash Next execution foundations for agentix"
+
+[lints]
+workspace = true
