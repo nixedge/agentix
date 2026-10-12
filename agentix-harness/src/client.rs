@@ -291,6 +291,17 @@ pub(crate) fn parse_response(json: &serde_json::Value) -> Result<ChatResponse> {
         .context("missing finish reason")?
         .to_string();
 
+    match finish_reason.as_str() {
+        "stop" | "tool_calls" => {}
+        "length" => {
+            anyhow::bail!("model response reached its output token limit (finish_reason=length); incomplete tool calls were not executed");
+        }
+        _ => {
+            return Err(anyhow::anyhow!("finish_reason={finish_reason:?}"))
+                .context("model response ended with an unsupported finish reason");
+        }
+    }
+
     let message = choice.get("message").context("no message in choice")?;
 
     let content = message
@@ -345,10 +356,12 @@ pub(crate) fn parse_response(json: &serde_json::Value) -> Result<ChatResponse> {
     if unique.len() != tool_calls.len() || tool_calls.len() > 128 {
         anyhow::bail!("duplicate or excessive tool calls");
     }
-    if !matches!(finish_reason.as_str(), "stop" | "tool_calls")
-        || (finish_reason == "tool_calls") == tool_calls.is_empty()
-    {
-        anyhow::bail!("incomplete or inconsistent finish reason");
+    if (finish_reason == "tool_calls") == tool_calls.is_empty() {
+        return Err(anyhow::anyhow!(
+            "finish_reason={finish_reason:?}, received {} tool calls",
+            tool_calls.len()
+        ))
+        .context("model response has an inconsistent finish reason");
     }
     Ok(ChatResponse {
         content,

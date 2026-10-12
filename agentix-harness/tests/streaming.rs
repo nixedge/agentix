@@ -57,3 +57,42 @@ fn fragmented_arguments_require_a_terminal_frame() -> Result<()> {
     assert_eq!(decoder.finish()?.tool_calls[0].name, "read_file");
     Ok(())
 }
+
+#[test]
+fn finish_errors_explain_truncation_and_inconsistent_batches() -> Result<()> {
+    for (delta, reason, expected) in [
+        (
+            json!({"content":"partial answer"}),
+            "length",
+            "output token limit",
+        ),
+        (
+            json!({"tool_calls":[{"index":0,"id":"a","type":"function","function":{"name":"write_file","arguments":"{\"content\":\"partial"}}]}),
+            "length",
+            "output token limit",
+        ),
+        (json!({}), "tool_calls", "received 0 tool calls"),
+        (
+            json!({"tool_calls":[{"index":0,"id":"a","type":"function","function":{"name":"read_file","arguments":"{}"}}]}),
+            "stop",
+            "received 1 tool calls",
+        ),
+        (json!({}), "content_filter", "content_filter"),
+    ] {
+        let wire = format!(
+            "{}{}data: [DONE]\n\n",
+            frame(delta, Value::Null),
+            frame(json!({}), json!(reason))
+        );
+        let mut decoder = SseCompletion::default();
+        decoder.push(wire.as_bytes(), None)?;
+        let error = match decoder.finish() {
+            Err(error) => error,
+            Ok(_) => anyhow::bail!("incomplete responses must not dispatch tools"),
+        };
+        let detail = format!("{error:#}");
+        assert!(detail.contains(expected), "{detail}");
+        assert!(detail.contains(reason), "{detail}");
+    }
+    Ok(())
+}

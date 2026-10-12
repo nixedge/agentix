@@ -136,6 +136,13 @@ Future work may split large phases into reviewed commits, each meeting applicabl
 
 ## User-prioritized terminal UX checkpoint
 
+- [ ] T065 Diagnose ax's ambiguous completion-finish error: distinguish output
+  truncation from inconsistent tool batches, retain the server's finish reason,
+  and verify streaming regressions before changing generation limits.
+  Diagnostic correction and streaming regressions pass harness tests, Clippy,
+  formatting and the ax Nix build. Awaiting the triggering prompt/response;
+  the live diagnostic probe returned model_busy. No token-budget change made.
+
 - [ ] T064 Correct native chat-template whitespace to match Hugging Face;
   cover a complete tool turn followed by another user question, preserve literal
   argument whitespace and validate worker tests/build plus live prompt replay.
