@@ -196,6 +196,7 @@ dependencies = [
  "tokio-stream",
  "tracing",
  "ureq 2.12.1",
+ "uuid",
 ]
 
 [[package]]

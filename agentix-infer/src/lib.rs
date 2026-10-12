@@ -3,6 +3,7 @@ pub mod engine;
 pub mod error;
 pub mod exchange;
 pub mod meta;
+pub mod model_operation;
 pub mod pool;
 pub mod store;
 
