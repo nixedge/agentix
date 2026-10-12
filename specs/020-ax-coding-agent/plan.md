@@ -57,6 +57,11 @@ Use Cargo Git dependencies pinned to the release commit, including any necessary
 
 ### Coding loop and upstream adapters
 
+Follow-up regression: configure MiniJinja with Hugging Face's `trim_blocks` and
+`lstrip_blocks` settings. Preserve whitespace inside message/argument values;
+test the exact ChatML generation boundary and replay of a completed tool turn
+before a second user question. Keep malformed tool-batch rejection strict.
+
 Typed `SessionController` accepts user turns and user control commands and emits ordered events. The harness owns the formal machine, not the TUI. An upstream process adapter supplies spawn/I/O/signal primitives; agentix still owns authorization, timeout, output bounds and process-group lifetime. An upstream file-search adapter supplies candidate matching with unchanged symlink-following behavior explicitly accepted by the user. Its starting root is not a containment boundary; jail mounts control accessibility. Read/edit path policy remains separate. Patch parsing/application and execution-policy reuse must cross the same compatibility gate, with agentix approval applied before every side effect.
 
 Tool calls are accumulated and validated only after completion. IDs must be unique per turn; every advertised tool call receives success/error/denied/cancelled results before another generation. Budget exhaustion resolves unexecuted calls explicitly, then permits at most one bounded tool-free finalization. Stagnation enters an intervention state. Plan mode omits mutating tools and shell execution; pure file/search/diff tools remain. Shell commands are not classified as read-only by a string heuristic.
@@ -156,3 +161,30 @@ Tests are required despite the generic tasks template calling them optional. Fea
 ## Complexity Tracking
 
 No accepted constitutional violations. The new orchestrator library and stdio/CLI crate replace the same roles planned in 019; a second queue backend is rejected. A full Codex runtime embed is not selected because its coupled state/runtime/policy stack needs a much broader compatibility and storage redesign than leaf-library reuse.
+
+### Terminal UX checkpoint (2026-10-12)
+
+Keep the current Ratatui/event architecture. Use default terminal foreground and
+background, bold user prompts, dim metadata and limited warning/error accents.
+Place model/approval mode and project path below a lightly separated composer.
+Shorten only displayed model identifiers; retain exact IDs in the picker. Wrap
+transcript words with Unicode display widths. Keep bounded tool details behind
+Ctrl+T, without hiding approvals or failures. Compare the final streamed response
+with completion text before appending a fallback answer. Validate event reduction,
+TestBackend layouts and the existing real-PTY resize/approval/follow-up tests.
+
+Syntax refinement: use syntect with its pure-Rust fancy-regex feature set for
+fenced code; no native regex dependency. Render a small Markdown presentation
+subset and preserve original transcript data. Cache styled transcript rows by
+log revision, width and detail visibility so spinner ticks do not repeat syntax
+parsing. Syntax resources initialize once. Unknown languages fall back to text.
+
+Extend this refinement with bounded in-memory input history, a labeled bordered
+composer and assistant-group bullets. Preserve SSE error payloads as bounded anyhow
+causes in the harness; the TUI displays the cause chain only in expanded details.
+
+Store bounded versioned model preferences per normalized gateway using atomic
+same-directory replacement and private file permissions. Load/save via spawn_blocking
+in the TUI; reuse the existing ~/.ax jail mount. Save only after picker readiness or
+successful completion, never on a failed selection. Combine footer spans and allocate
+width to both model and path; keep approval mode visible when space permits.

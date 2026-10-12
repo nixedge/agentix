@@ -74,6 +74,29 @@ fn round_trip_template(source: &str) -> Result<(), Box<dyn std::error::Error>> {
         json!(template.parse_output(history, &tools())?.calls[0].arguments),
         expected
     );
+    request.messages.extend([
+        Message::Assistant {
+            content: "Saved the edit.".into(),
+            tool_calls: vec![],
+        },
+        Message::User {
+            content: "Now review the diff.".into(),
+        },
+    ]);
+    let follow_up = template.render(&request)?;
+    assert!(follow_up.starts_with("<|im_start|>system\n"));
+    // This is a generation prefix, not prose: an extra newline changes the
+    // tokens from which the model continues its next tool call.
+    assert!(follow_up.ends_with(concat!(
+        "<tool_response>\nsaved\n</tool_response>\n<|im_end|>\n",
+        "<|im_start|>assistant\nSaved the edit.<|im_end|>\n",
+        "<|im_start|>user\nNow review the diff.<|im_end|>\n",
+        "<|im_start|>assistant\n",
+    )));
+    assert!(follow_up.contains("<name>content</name>\n<type>string</type>\n</parameter>"));
+    let follow_up_call = call("<parameter=content>\n  next edit\n\n</parameter>\n");
+    let parsed = template.parse_output(&follow_up_call, &tools())?;
+    assert_eq!(parsed.calls[0].arguments["content"], "  next edit\n");
     request.tools.clear();
     assert!(template.render(&request)?.contains(content));
     assert!(template.repair_prompt().contains("<function="));

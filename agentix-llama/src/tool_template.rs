@@ -144,6 +144,10 @@ impl ToolTemplate {
             .map(|tool| json!({"type":"function", "function":tool}))
             .collect();
         let mut env = minijinja::Environment::new();
+        // Match Hugging Face's chat-template environment. Literal newlines
+        // around Jinja blocks otherwise change the assistant's token prefix.
+        env.set_trim_blocks(true);
+        env.set_lstrip_blocks(true);
         env.set_fuel(Some(200_000));
         env.set_recursion_limit(64);
         env.add_function(

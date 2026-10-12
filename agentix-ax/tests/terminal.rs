@@ -160,15 +160,20 @@ async fn scenario(resize: bool, picker: bool) -> Result<()> {
         child.session.resize(TerminalSize { rows: 30, cols: 80 })?;
     }
     child.session.writer_sender().send(b"y".to_vec()).await?;
-    wait_for(&mut child.stdout_rx, "checkpoint complete").await?;
+    // Ratatui may skip unchanged spaces with cursor moves; match a distinct word.
+    wait_for(&mut child.stdout_rx, "checkpoint").await?;
     assert_eq!(std::fs::read_to_string(root.join("new.txt"))?, "approved");
+    tokio::time::sleep(Duration::from_millis(150)).await;
+    child.session.writer_sender().send(vec![20]).await?;
+    wait_for(&mut child.stdout_rx, "sha256").await?;
+    child.session.writer_sender().send(vec![20]).await?;
     tokio::time::sleep(Duration::from_millis(150)).await;
     child
         .session
         .writer_sender()
-        .send(b"what changed?\r".to_vec())
+        .send(b"what changed?\x1b[A\x1b[B\r".to_vec())
         .await?;
-    wait_for(&mut child.stdout_rx, "followup complete").await?;
+    wait_for(&mut child.stdout_rx, "followup").await?;
     tokio::time::sleep(Duration::from_millis(150)).await;
     child.session.writer_sender().send(vec![3]).await?;
     let mut tail = Vec::new();
@@ -177,6 +182,28 @@ async fn scenario(resize: bool, picker: bool) -> Result<()> {
     }
     assert_eq!(child.exit_rx.await?, 0);
     assert!(tail.windows(8).any(|w| w == b"\x1b[?1049l"));
+    // A new jailed process without --model must restore the successful selection.
+    let mut restart_args: Vec<String> = profile
+        .args
+        .iter()
+        .map(|s| s.to_string_lossy().into_owned())
+        .collect();
+    restart_args.extend(["--".into(), "ax".into()]);
+    let mut restarted = upstream::spawn(&ProcessRequest {
+        program: std::env::var("AX_TEST_BWRAP")?.into(),
+        args: restart_args,
+        cwd: root.clone(),
+        env: std::env::vars().collect(),
+        mode: ProcessMode::Terminal(TerminalSize {
+            rows: 30,
+            cols: 100,
+        }),
+    })
+    .await?;
+    wait_for(&mut restarted.stdout_rx, "fixture").await?;
+    restarted.session.writer_sender().send(vec![3]).await?;
+    while restarted.stdout_rx.recv().await.is_some() {}
+    assert_eq!(restarted.exit_rx.await?, 0);
     let captured = server.await??;
     let messages = captured[0]["messages"].as_array().context("messages")?;
     assert_eq!(messages[0]["role"], "system");
@@ -192,6 +219,16 @@ async fn scenario(resize: bool, picker: bool) -> Result<()> {
         .context("messages")?
         .iter()
         .any(|m| m["tool_call_id"] == "w"));
+    assert_eq!(
+        captured[2]["messages"]
+            .as_array()
+            .context("messages")?
+            .iter()
+            .rev()
+            .find(|m| m["role"] == "user")
+            .context("follow-up")?["content"],
+        "what changed?"
+    );
     Ok(())
 }
 async fn wait_for(rx: &mut tokio::sync::mpsc::Receiver<Vec<u8>>, needle: &str) -> Result<()> {

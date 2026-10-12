@@ -133,3 +133,25 @@ Phase 1 blocks upstream adoption. Phase 2 blocks the coding/model paths. Phase 3
 US1 is demonstrable with a configured existing model after Phase 3. US2 is independently tested against its catalog fixtures after Phase 4. US3 adds discovery/download without depending on orchestration. US4 has its own restart/context scenarios. US5 depends on the shared coding/session/jail foundations but has a separate DAG acceptance test. US6's single-agent checks precede US1; its worker checks follow supervisor implementation.
 
 Future work may split large phases into reviewed commits, each meeting applicable build/test rules. Do not label tasks parallel merely because their functions differ when they edit the same files. Task decomposition does not authorize autonomous publication, model downgrades or additional agents in this planning session.
+
+## User-prioritized terminal UX checkpoint
+
+- [ ] T064 Correct native chat-template whitespace to match Hugging Face;
+  cover a complete tool turn followed by another user question, preserve literal
+  argument whitespace and validate worker tests/build plus live prompt replay.
+  Implemented; 22 worker tests, Clippy, formatting and the Nix worker build pass.
+  Corrected-prompt replay returns the expected call at temperatures 0 and 0.7.
+  Final end-to-end verification requires deployment of the worker correction.
+
+- [x] T061 Refresh ax transcript/composer/footer and picker styling; show compact
+  model and project path, collapse tool details behind Ctrl+T, preserve visible
+  approval/error states and avoid duplicate final answers. Validate event reduction,
+  Unicode/narrow layouts, real terminal input/resize and the ax Nix package.
+- [x] T062 Add cached language-aware fenced-code colors and Markdown presentation;
+  validate streaming fences, indentation, Unicode wrapping, unknown languages,
+  literal tool output, labeled composer/assistant bullets, bounded Up/Down history,
+  expanded SSE error causes and existing terminal scenarios; build the ax Nix package.
+- [x] T063 Persist successful interactive model selection per gateway, respecting
+  explicit overrides, and style the one-line yellow-model/green-path footer and grey
+  prompt. Test persistence, malformed preferences, footer widths/colors and real
+  terminal flows; validate the ax Nix package.

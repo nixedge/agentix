@@ -1,174 +1,198 @@
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Position},
+    layout::{Constraint, Layout, Position},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
     Frame,
 };
-
-use super::{AgentStatus, App, LogKind, TuiConfig};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+
+use super::{AgentStatus, App, TuiConfig};
 
 pub const SPINNER: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
-pub fn render(f: &mut Frame, app: &App, config: &TuiConfig) {
-    let area = f.area();
+fn muted() -> Style {
+    Style::default().add_modifier(Modifier::DIM)
+}
 
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Fill(1),
-            Constraint::Length(1),
-            Constraint::Length(3),
-        ])
-        .split(area);
-
-    // Title bar
-    let status_suffix = match &app.status {
-        AgentStatus::Idle => "  idle".to_string(),
-        AgentStatus::Running => format!("  {} calls", app.calls_made),
-        AgentStatus::Done => "  done".to_string(),
-    };
-    let no_cloud_tag = if config.no_cloud { "" } else { " → " };
-    let cloud_part = if config.no_cloud {
-        ""
+pub(super) fn model_label(model: &str) -> &str {
+    let model = if model.starts_with("hf.co/") {
+        model
+            .rsplit_once(':')
+            .map_or(model, |(_, artifact)| artifact)
     } else {
-        config.cloud.as_str()
+        model
     };
-    let title = format!(
-        " ax{}  {}{}{}  |{}",
-        if config.dangerous {
-            " [approvals off]"
-        } else {
-            ""
-        },
-        crate::sanitize(if config.model.is_empty() {
-            "no model selected"
-        } else {
-            &config.model
-        }),
-        no_cloud_tag,
-        cloud_part,
-        status_suffix
-    );
+    let name = model.rsplit('/').next().unwrap_or(model);
+    name.strip_suffix(".gguf").unwrap_or(name)
+}
+
+fn ellipsize(text: &str, width: usize, keep_end: bool) -> String {
+    if text.width() <= width {
+        return text.to_owned();
+    }
+    if width == 0 {
+        return String::new();
+    }
+    let mut chars = Vec::new();
+    let mut used = 1;
+    let iter: Box<dyn Iterator<Item = char>> = if keep_end {
+        Box::new(text.chars().rev())
+    } else {
+        Box::new(text.chars())
+    };
+    for c in iter {
+        let size = c.width().unwrap_or(0);
+        if used + size > width {
+            break;
+        }
+        chars.push(c);
+        used += size;
+    }
+    if keep_end {
+        chars.reverse();
+        format!("…{}", chars.into_iter().collect::<String>())
+    } else {
+        format!("{}…", chars.into_iter().collect::<String>())
+    }
+}
+
+pub fn render(f: &mut Frame, app: &App, config: &TuiConfig) {
+    let chunks = Layout::vertical([
+        Constraint::Length(2),
+        Constraint::Fill(1),
+        Constraint::Length(1),
+        Constraint::Length(3),
+        Constraint::Length(1),
+    ])
+    .split(f.area());
     f.render_widget(
-        Paragraph::new(title).style(
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        ),
+        Paragraph::new(Line::from(vec![
+            Span::styled(" ax", Style::default().add_modifier(Modifier::BOLD)),
+            Span::styled("  local coding agent", muted()),
+        ])),
         chunks[0],
     );
 
-    // Log area — scroll from bottom (scroll=0 means show latest)
-    let log_height = chunks[1].height as usize;
-    let width = usize::from(chunks[1].width).max(1);
-    let mut lines = Vec::new();
-    for entry in &app.log {
-        let mut line = String::new();
-        let mut used = 0;
-        for c in entry.text.chars() {
-            let size = c.width().unwrap_or(0);
-            if used + size > width && !line.is_empty() {
-                lines.push((entry.kind, std::mem::take(&mut line)));
-                used = 0;
-            }
-            line.push(c);
-            used += size;
-        }
-        lines.push((entry.kind, line));
-    }
-    let total = lines.len();
-    let visible_start = if total > log_height {
-        let max_offset = total - log_height;
-        max_offset.saturating_sub(app.scroll)
-    } else {
-        0
-    };
-
-    let items: Vec<ListItem> = lines
-        .iter()
-        .skip(visible_start)
-        .take(log_height)
-        .map(|(kind, text)| {
-            let color = match kind {
-                LogKind::Task => Color::Cyan,
-                LogKind::ToolCall => Color::Yellow,
-                LogKind::ToolResult => Color::Green,
-                LogKind::CloudEscalation => Color::LightBlue,
-                LogKind::Stagnation | LogKind::Budget => Color::Magenta,
-                LogKind::Answer => Color::LightGreen,
-                LogKind::Error => Color::Red,
-            };
-            ListItem::new(Line::from(Span::styled(
-                text.as_str(),
-                Style::default().fg(color),
-            )))
-        })
-        .collect();
-
+    let width = usize::from(chunks[1].width.saturating_sub(2)).max(1);
+    let mut cache = app.transcript_cache.borrow_mut();
+    cache.update(app, width);
+    let lines = &cache.lines;
+    let height = usize::from(chunks[1].height);
+    let start = lines
+        .len()
+        .saturating_sub(height)
+        .saturating_sub(app.scroll);
     f.render_widget(
-        List::new(items).block(Block::default().borders(Borders::NONE)),
+        Paragraph::new(
+            lines
+                .iter()
+                .skip(start)
+                .take(height)
+                .cloned()
+                .collect::<Vec<_>>(),
+        ),
         chunks[1],
     );
 
-    // Activity / hint line
-    let hint = match &app.status {
-        AgentStatus::Idle => {
-            Paragraph::new(" Idle — type a task · /model selects model · Ctrl+C quits")
-                .style(Style::default().fg(Color::DarkGray))
-        }
-        AgentStatus::Running => {
-            let sp = SPINNER[app.spinner_frame];
-            Paragraph::new(if app.approval.is_some() {
-                " Review action above: y approve / n deny • ↑↓ scroll • Ctrl+C cancel".into()
-            } else {
-                format!(
-                    " {} Working…  ({} calls, {} cloud escalations)",
-                    sp, app.calls_made, app.escalations_made
-                )
-            })
-            .style(Style::default().fg(Color::Yellow))
-        }
-        AgentStatus::Done => {
-            Paragraph::new(" Done — type another task · /model selects model · Ctrl+C quits")
-                .style(Style::default().fg(Color::Green))
-        }
-    };
-    f.render_widget(hint, chunks[2]);
-
-    // Input box
-    let is_running = matches!(app.status, AgentStatus::Running);
-    let border_style = if is_running {
-        Style::default().fg(Color::DarkGray)
+    let running = matches!(app.status, AgentStatus::Running);
+    let hint = if app.approval.is_some() {
+        " Review action above · y approve / n deny · Ctrl+C cancel".to_owned()
+    } else if running {
+        format!(
+            " {} Working · {} tool calls · Esc cancel · Ctrl+T details",
+            SPINNER[app.spinner_frame], app.calls_made
+        )
     } else {
-        Style::default().fg(Color::Cyan)
+        let state = if matches!(app.status, AgentStatus::Idle) {
+            "Idle"
+        } else {
+            "Done"
+        };
+        format!(
+            " {state} · /model · Ctrl+T {} details · ↑↓ history · PgUp/Dn scroll",
+            if app.show_details { "hide" } else { "show" }
+        )
     };
-    let input_display = format!("> {}", app.input);
+    f.render_widget(Paragraph::new(hint).style(muted()), chunks[2]);
+
+    let available = usize::from(chunks[3].width.saturating_sub(5));
+    let before = app.input[..app.cursor_pos].replace('\n', " ");
+    let after = app.input[app.cursor_pos..].replace('\n', " ");
+    let before = ellipsize(&before, available.saturating_sub(1), true);
+    let input = if app.input.is_empty() && !running {
+        "› Ask for a change, review, or explanation".to_owned()
+    } else {
+        format!("› {before}{after}")
+    };
     f.render_widget(
-        Paragraph::new(input_display.as_str())
+        Paragraph::new(format!(" {input}"))
+            .style(if app.input.is_empty() {
+                Style::default().fg(Color::Gray).bg(Color::Indexed(236))
+            } else {
+                Style::default().fg(Color::White).bg(Color::Indexed(236))
+            })
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title(" Task ")
-                    .border_style(border_style),
-            )
-            .wrap(Wrap { trim: false }),
+                    .title(" Message ")
+                    .border_style(muted()),
+            ),
         chunks[3],
     );
-
-    // Cursor (only when input is active)
-    if !is_running {
-        let inner_w = chunks[3].width.saturating_sub(4) as usize; // 2 borders + "> "
-        let cursor_width = app.input[..app.cursor_pos].width();
-        if cursor_width <= inner_w {
-            f.set_cursor_position(Position {
-                x: chunks[3].x + 1 + 2 + cursor_width as u16,
-                y: chunks[3].y + 1,
-            });
-        }
+    if !running && chunks[3].height >= 3 && chunks[3].width > 5 {
+        f.set_cursor_position(Position {
+            x: chunks[3].x + 4 + before.width() as u16,
+            y: chunks[3].y + 1,
+        });
     }
+
+    let model = if config.model.is_empty() {
+        "no model selected"
+    } else {
+        model_label(&config.model)
+    };
+    let approvals = if config.dangerous {
+        "approvals off"
+    } else {
+        "approvals on"
+    };
+    let cloud = if config.no_cloud {
+        ""
+    } else {
+        " · cloud enabled"
+    };
+    let path = crate::sanitize(&config.access.cwd.display().to_string());
+    let path = match std::env::var_os("HOME") {
+        Some(home) => config
+            .access
+            .cwd
+            .strip_prefix(&home)
+            .ok()
+            .map(|relative| format!("~/{}", crate::sanitize(&relative.display().to_string())))
+            .unwrap_or(path),
+        None => path,
+    };
+    let footer_width = usize::from(chunks[4].width.saturating_sub(1));
+    let suffix = if footer_width >= 70 {
+        format!(" · {approvals}{cloud}")
+    } else {
+        String::new()
+    };
+    let content_width = footer_width.saturating_sub(suffix.width() + 3);
+    let model_width = (content_width / 2).max(content_width.saturating_sub(path.width()));
+    let label = ellipsize(&crate::sanitize(model), model_width, false);
+    let path = ellipsize(&path, content_width.saturating_sub(label.width()), true);
+    f.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::raw(" "),
+            Span::styled(label, Style::default().fg(Color::Yellow)),
+            Span::styled(" · ", muted()),
+            Span::styled(path, Style::default().fg(Color::Green)),
+            Span::styled(suffix, muted()),
+        ])),
+        chunks[4],
+    );
     if let Some(picker) = &app.picker {
         render_picker(f, picker);
     }
@@ -186,8 +210,11 @@ fn render_picker(f: &mut Frame, picker: &super::model_picker::ModelPicker) {
     ])
     .split(area);
     f.render_widget(
-        Paragraph::new(format!("Filter: {}", crate::sanitize(&picker.filter)))
-            .block(Block::bordered().title(" Local models ")),
+        Paragraph::new(format!("Filter: {}", crate::sanitize(&picker.filter))).block(
+            Block::bordered()
+                .title(" Local models ")
+                .border_style(muted()),
+        ),
         chunks[0],
     );
     let visible = picker.visible();
@@ -201,30 +228,34 @@ fn render_picker(f: &mut Frame, picker: &super::model_picker::ModelPicker) {
             };
             ListItem::new(vec![
                 Line::from(crate::sanitize(m.id.as_str())),
-                Line::from(format!(
-                    "  {:?} · {coding} · {} context · {:.1} GiB",
-                    m.resident,
-                    m.context_limit,
-                    m.byte_size.get() as f64 / 1073741824.0
-                )),
+                Line::styled(
+                    format!(
+                        "  {:?} · {coding} · {} context · {:.1} GiB",
+                        m.resident,
+                        m.context_limit,
+                        m.byte_size.get() as f64 / 1073741824.0
+                    ),
+                    muted(),
+                ),
             ])
         })
         .collect();
     let mut state =
         ListState::default().with_selected((!visible.is_empty()).then_some(picker.selected));
     f.render_stateful_widget(
-        List::new(rows).highlight_symbol("› ").highlight_style(
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        ),
+        List::new(rows)
+            .highlight_symbol("› ")
+            .highlight_style(Style::default().add_modifier(Modifier::BOLD | Modifier::REVERSED)),
         chunks[1],
         &mut state,
     );
     f.render_widget(
-        Paragraph::new(crate::sanitize(&picker.message))
-            .wrap(Wrap { trim: false })
-            .block(Block::bordered().title(" Status ")),
+        Paragraph::new(format!(
+            "{}\n↑↓ select · Enter load · Esc back · Ctrl+R refresh",
+            crate::sanitize(&picker.message)
+        ))
+        .wrap(Wrap { trim: false })
+        .block(Block::bordered().title(" Status ").border_style(muted())),
         chunks[2],
     );
 }

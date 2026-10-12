@@ -419,3 +419,115 @@ this correction. The model weights need no further download.
 The corrected CUDA worker Nix build also passes:
 `nix build .#agentix-llama --no-link -L`.
 Log: `/tmp/agentix-unsloth-build-final.log`. Formatting and `git diff --check` pass.
+
+## Terminal UX checkpoint — 2026-10-12
+
+User confirmed deployed Qwen3-Coder now works; their transcript demonstrates
+write_file and run_command. This is user-reported live evidence, not a new model
+quality evaluation (the displayed Monte Carlo answer did not establish ten-digit
+accuracy).
+
+The ax client now uses terminal-default foreground/background with dim metadata,
+bold user prompts and warning/error accents. The composer has horizontal separators;
+the footer shows the selected model artifact (retaining quantization), approval mode
+and project path. Full IDs remain in the model picker. Ctrl+T expands/collapses bounded
+tool arguments and output, collapsed by default. Approval requests, tool failures,
+nonzero command exits and cancellation/timeout results remain visible. Esc cancels
+an active turn. Streamed final answers appear once; non-streamed answers still display.
+Long input follows the cursor horizontally; transcript prose wraps at word boundaries.
+
+Validation:
+- `nix develop --command cargo test -p agentix-ax`: 24 tests pass, including three
+  real jailed PTY scenarios for approval, resize, model selection, follow-up and
+  Ctrl+T expansion/collapse. Initial PTY assertions assumed an uninterrupted
+  `checkpoint complete` byte sequence; Ratatui's default-color diff skips unchanged
+  spaces via cursor movement. Distinct-word completion markers fix that fixture
+  assumption while retaining the same behavior checks.
+- Four new unit/TestBackend tests cover final-answer deduplication/fallback,
+  failure visibility, running/completed detail toggles, live model-footer changes,
+  default colors, long Unicode input and widths 1/20/80/160. These passed again after
+  the final Hugging Face artifact-label adjustment.
+- `cargo clippy -p agentix-ax --all-targets -- -D warnings` through Nix passes.
+- Workspace formatting and `git diff --check` pass; `nix build .#ax --no-link` passes
+  with the final client sources.
+
+Try from this worktree: `nix run .#ax-jail -- --dangerous`. Use `/model`, submit a
+small task, then press Ctrl+T during or after execution. No daemon deployment is
+needed. This remains the existing alternate-screen TUI; native scrollback and full
+Markdown/syntax rendering are not part of this checkpoint.
+
+### Syntax and interaction refinement
+
+Code fences now use syntect 5.3.0 with pure-Rust regex support and bundled grammars.
+Unknown languages remain plain code; regular prose keeps terminal colors. The
+presentation subset covers fenced code, headings, bold/emphasis and inline code;
+it is not a full CommonMark renderer. Code indentation and token colors survive
+Unicode wrapping, including unfinished streamed fences. Styled transcript rows
+are cached by log revision, width and detail visibility.
+
+The composer now has a labeled Message border and assistant groups start with a
+bullet. Up/Down navigates up to 100 submissions in this process (bounded to 1 MiB),
+restoring an unfinished draft when returning past the newest submission. Page
+Up/Down scrolls the transcript. History is not persisted between launches.
+
+The harness retains up to 16,384 characters of a model SSE error as an error cause.
+The TUI keeps the concise error visible and shows the sanitized cause chain with
+Ctrl+T. This fixes the previous loss of the server's error payload.
+
+Checks: ax/harness tests pass, including syntax/unknown-language/streamed-fence,
+Unicode indentation, cache reuse, draft history and expanded-error regressions.
+All three real jailed terminal scenarios pass with Ctrl+T and Up/Down draft
+restoration; Clippy passes after removing an unused import and moving cloning
+behind the visible-row selection. Package build evidence follows below.
+
+`nix build .#ax --no-link` passes with syntect and the updated harness. Workspace
+format checks and `git diff --check` also pass. Re-run the same ax-jail command to
+try this client-only update; no daemon redeployment is required.
+
+### Model preference and status bar refinement
+
+Successful picker selections and completed interactive turns atomically save the
+model ID in ~/.ax/model-<gateway-hash>.json (0600, bounded versioned JSON), using the
+existing persistent jail mount. Interactive startup restores that server's selection
+unless --model/AGENTIX_MODEL was explicitly supplied. Failed/cancelled selections
+never save; invalid preferences leave the picker available and report a warning.
+Headless mode still requires an explicit model. A saved model removed from the
+server can be replaced with /model.
+
+The bottom line combines a yellow model label and green project path, shortening
+both to fit. Approval/cloud metadata appears when width permits. The Message
+composer uses a grey background with light foreground text.
+
+Validation: all 29 ax tests pass, including per-gateway preference replacement,
+private permissions, malformed/oversized recovery, footer color/layout assertions
+and three real jailed terminal scenarios that restart ax without --model and
+observe the remembered model. Clippy with denied warnings, workspace formatting,
+git diff --check and nix build .#ax --no-link pass. No new mount or daemon change.
+
+### Qwen3-Coder follow-up correction (2026-10-12)
+
+The deployed worker reproduced `truncated or unmatched tool marker` for a saved
+conversation containing `git rev-list --count HEAD`, its `92` result, an assistant
+answer, and the follow-up `how many commits since master?`.
+
+MiniJinja used default whitespace settings, whereas Hugging Face's
+[chat-template environment](https://github.com/huggingface/transformers/blob/v4.57.1/src/transformers/utils/chat_template_utils.py#L422-L424)
+uses `trim_blocks=true` and `lstrip_blocks=true`. With the installed Unsloth
+template, the defaults inserted an initial newline, extra parameter-schema blank
+lines, and a second newline after the assistant generation header. The worker
+now matches those settings without trimming message content or file arguments.
+Both pinned Coder templates have a regression for a completed tool turn followed
+by another user question, including exact generation boundaries and preserved
+argument whitespace. Malformed tool calls remain rejected.
+
+Live diagnostic replay of the corrected prompt through the deployed plain-chat
+path, at both temperature 0 and ax's default 0.7, returned a complete `run_command` call for
+`git rev-list --count master..HEAD`. That checks the model with the corrected
+prompt; it does not exercise the updated worker's tool path. Redeploy
+`agentix-llama`, then repeat the two questions in a fresh ax session to confirm
+the end-to-end fix. An ax-only rebuild cannot apply this worker correction.
+
+Validation: 22 worker tests pass (two opt-in grammar tests remain ignored),
+including the small-GGUF worker/UDS integration test. Worker Clippy with warnings
+denied, workspace formatting, `git diff --check`, and
+`nix build .#agentix-llama --no-link` pass. No deployment was performed.

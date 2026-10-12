@@ -7,6 +7,14 @@
 
 ## Scope and clarification
 
+2026-10-12 UX checkpoint: terminal-default colors, persistent compact model and
+project path below the composer, word-wrapped transcript, and no repeated final
+answer after streaming. Ctrl+T toggles bounded tool argument/output details,
+collapsed by default; activity summaries, failures and approvals remain visible.
+Acceptance includes live toggling, narrow/Unicode layouts, model switches and
+streamed versus non-streamed completion. This user-authorized checkpoint precedes
+the remaining orchestration work.
+
 2026-10-12: user requests Qwen3-Coder-30B-A3B-Instruct support in the current
 checkpoint. Native tool calls must preserve file/patch strings and typed arguments,
 reject malformed batches before execution, and retain Qwen2.5 compatibility.
@@ -142,3 +150,26 @@ Concurrent model selection, a busy or evicted model, a split GGUF, stale search 
 - Workers are local to the launcher host; the daemon and PostgreSQL may be on the configured trusted LAN. Multi-tenant authentication is not part of this feature, and management exposure must be administrator restricted.
 - Feature 019's design is absorbed as a foundation, not assumed implemented. Its optional-test language and unfenced claims do not override this feature's required integration and recovery behavior.
 - Upstream reuse is preferred, but no untested API compatibility or stable upstream Rust library guarantee is assumed. No SQLite storage is introduced.
+
+### Syntax color refinement
+
+Assistant fenced code blocks use language-aware token colors; unknown languages
+remain readable as plain code. Headings, bold/emphasis and inline code receive
+restrained styling while prose retains terminal defaults. Preserve indentation,
+Unicode wrapping, streaming/unclosed fences and Ctrl+T behavior. Tool output is
+literal text, never interpreted as assistant Markdown.
+
+Additional UX acceptance: a distinctly bordered Message composer; assistant
+response bullets; Up/Down recalls prior submissions and restores the current draft
+without submitting it. Page Up/Down remains transcript scrolling. When a model SSE
+error occurs, retain its bounded underlying payload in Ctrl+T details and keep a
+concise error visible in collapsed mode.
+
+### Remembered model and bottom status bar
+
+Remember the last successfully selected/used model per gateway in the existing
+persistent ~/.ax mount. Explicit CLI/environment model selection takes precedence;
+failed or cancelled selections do not overwrite it. A malformed preference must
+leave the picker usable. Show a yellow model and green project path on the same
+bottom line with width-aware shortening; use a grey prompt background with legible
+text. Headless invocations keep explicit-model requirements.

@@ -65,8 +65,13 @@ impl SseCompletion {
                 continue;
             }
             let value: Value = serde_json::from_str(&data)?;
-            if value.get("error").is_some() {
-                bail!("model stream reported an error");
+            if let Some(error) = value.get("error") {
+                let detail = error
+                    .as_str()
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| error.to_string());
+                let detail: String = detail.chars().take(16384).collect();
+                return Err(anyhow::anyhow!(detail)).context("model stream reported an error");
             }
             if self.finish.is_some() {
                 bail!("data after finish reason");
@@ -139,5 +144,26 @@ impl SseCompletion {
         parse_response(
             &json!({"choices":[{"finish_reason":self.finish,"message":{"content":self.text,"tool_calls":self.calls.into_values().collect::<Vec<_>>()}}]}),
         )
+    }
+}
+
+#[cfg(test)]
+mod error_tests {
+    use super::*;
+    #[test]
+    fn preserves_bounded_server_error_as_cause() {
+        let mut stream = SseCompletion::default();
+        let error = stream.push(b"data: {\"error\":{\"message\":\"context window exceeded\",\"code\":\"context_length\"}}\n\n", None).err();
+        assert!(error.is_some());
+        if let Some(error) = error {
+            assert_eq!(error.to_string(), "model stream reported an error");
+            assert!(format!("{error:#}").contains("context window exceeded"));
+            assert!(format!("{error:#}").contains("context_length"));
+        }
+        let payload = format!("data: {}\n\n", json!({"error":"界".repeat(20000)}));
+        let error = SseCompletion::default()
+            .push(payload.as_bytes(), None)
+            .err();
+        assert!(error.is_some_and(|error| format!("{error:#}").chars().count() < 16500));
     }
 }
