@@ -269,6 +269,7 @@
     axPkg = craneLib.buildPackage (commonArgs
       // {
         pname = "agentix-ax";
+        meta.mainProgram = "ax";
         src = mkWorkspaceSrc ["agentix-ax" "agentix-api" "agentix-harness" "vendor/codex-apply-patch"];
         cargoArtifacts = agentixAxDeps;
         cargoExtraArgs = "--package agentix-ax";
