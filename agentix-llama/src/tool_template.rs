@@ -60,7 +60,7 @@ impl ToolTemplate {
             tools: vec![ToolDefinition {
                 name: "probe_definition_739".into(),
                 description: "probe_description_739".into(),
-                parameters: json!({"type":"object"}),
+                parameters: json!({"type":"object", "properties":{"probe_arg_739":{"type":"integer"}}, "required":["probe_arg_739"]}),
             }],
             max_tokens: 1,
             temperature: None,
@@ -122,7 +122,19 @@ impl ToolTemplate {
             Message::User { content } => json!({"role":"user", "content":content}),
             Message::Tool { content, tool_call_id } => json!({"role":"tool", "content":content, "tool_call_id":tool_call_id}),
             Message::Assistant { content, tool_calls } => {
-                let calls: Vec<Value> = tool_calls.iter().map(|call| json!({"id":call.id, "type":"function", "function":{"name":call.name, "arguments":call.arguments}})).collect();
+                let calls: Vec<Value> = tool_calls.iter().map(|call| {
+                    // Coder parameters are literal text. Some native templates
+                    // use Jinja's display conversion, which is not JSON for
+                    // nested nulls/bools. Supply their wire text explicitly.
+                    let arguments: serde_json::Map<String, Value> = call.arguments.iter().map(|(name, value)| {
+                        let value = match self.format {
+                            CallFormat::Coder if !value.is_string() => Value::String(value.to_string()),
+                            _ => value.clone(),
+                        };
+                        (name.clone(), value)
+                    }).collect();
+                    json!({"id":call.id, "type":"function", "function":{"name":call.name, "arguments":arguments}})
+                }).collect();
                 json!({"role":"assistant", "content":content, "tool_calls":calls})
             }
         }).collect();

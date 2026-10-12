@@ -123,6 +123,10 @@ adapters and picker reconnection are not wired yet; T022 remains unchecked.
   Clippy and CUDA worker/ax-jail Nix builds pass. Q4_K_M is installed on ai.lan
   with the expected digest. Live generation/tool use awaits the user's deployment;
   this task remains unchecked until that acceptance check passes.
+  The first deployed check exposed Unsloth's embedded-template differences:
+  readiness needed a complete probe schema and historical compound arguments
+  needed explicit JSON text. Both are corrected with the exact GGUF template
+  regression; live acceptance awaits deployment of this correction.
 
 Phase 1 blocks upstream adoption. Phase 2 blocks the coding/model paths. Phase 3 starts only after Phase 2 and establishes the sandbox before tools execute. Phase 4 → Phase 5 delivers the complete `/model` flow. Phase 6 completes the shared session context used by delegation. Phase 7 → Phase 8 → Phase 9 implements orchestration; no external 019 service is presumed. Phase 10 requires all journeys.
 

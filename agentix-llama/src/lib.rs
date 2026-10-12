@@ -231,10 +231,13 @@ impl InferBackend for LlamaCppBackend {
                 };
 
                 let template = model.chat_template(None).ok().and_then(|value| {
-                    value
-                        .to_str()
-                        .ok()
-                        .and_then(|source| tool_template::ToolTemplate::new(source).ok())
+                    value.to_str().ok().and_then(|source| {
+                        tool_template::ToolTemplate::new(source)
+                            .inspect_err(
+                                |error| tracing::warn!(%error, "model tool template rejected"),
+                            )
+                            .ok()
+                    })
                 });
                 if ready_tx.send(Ok(template.is_some())).is_err() {
                     return;

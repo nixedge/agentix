@@ -388,3 +388,34 @@ Build log: `/tmp/agentix-qwen3-build-final.log`. The host NVIDIA driver is a run
 dependency supplied by the deployed machine; this build is not a CUDA runtime test.
 Workspace rustfmt also normalized existing formatting in six voice-related files;
 those changes are formatting-only. Live acceptance remains pending the user's deployment.
+
+### Qwen3-Coder deployed-template correction — 2026-10-12
+
+After the user's deployment, the actual Q4_K_M loaded successfully but reported
+`coding_supported: false` (worker context 32768). The GGUF embeds an Unsloth-modified
+6896-byte template rather than the original Qwen tokenizer template used by the
+first regression fixture. Its parameter loop requires `parameters.properties`;
+the compatibility probe supplied only `{"type":"object"}`, causing rejection.
+The probe now advertises a complete parameter schema.
+
+The exact embedded template is retained unmodified in
+`agentix-llama/tests/fixtures/qwen3-coder-unsloth.jinja`, with source revision,
+GGUF/template hashes and its Apache-2.0 notice. Expanded replay tests also exposed
+non-JSON nested-value display in that template. The Coder adapter now passes
+non-string historical arguments as JSON text, preserving string content verbatim.
+Both original-Qwen and embedded-Unsloth templates round-trip nested nulls/booleans,
+arrays, escaped text and file whitespace. Worker logs now report template rejection
+reasons instead of silently discarding them.
+
+The llama suite and all-target Clippy pass; the real small-model UDS worker check
+also passes. Two existing optional grammar-generation tests remain ignored.
+Logs: `/tmp/agentix-unsloth-all-tests.log`, `/tmp/agentix-unsloth-clippy.log`.
+The separate Nix entry-point fix sets `meta.mainProgram = "ax"`; both
+`nix run .#ax -- --help` and live `--list-models` work.
+
+Live Qwen3-Coder tool acceptance remains pending another worker deployment with
+this correction. The model weights need no further download.
+
+The corrected CUDA worker Nix build also passes:
+`nix build .#agentix-llama --no-link -L`.
+Log: `/tmp/agentix-unsloth-build-final.log`. Formatting and `git diff --check` pass.

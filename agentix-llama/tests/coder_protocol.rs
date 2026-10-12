@@ -22,11 +22,23 @@ fn call(body: &str) -> String {
 #[test]
 fn native_coder_template_round_trips_typed_calls_and_file_whitespace(
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let template = ToolTemplate::new(include_str!("fixtures/qwen3-coder.jinja"))?;
+    round_trip_template(include_str!("fixtures/qwen3-coder.jinja"))
+}
+
+#[test]
+fn installed_unsloth_template_round_trips_typed_calls_and_file_whitespace(
+) -> Result<(), Box<dyn std::error::Error>> {
+    round_trip_template(include_str!("fixtures/qwen3-coder-unsloth.jinja"))
+}
+
+fn round_trip_template(source: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let template = ToolTemplate::new(source)?;
     let content = "\n  if a < b && c > d {\n    println!(\"null &amp; 🦀\");\n  }\n\n";
-    let output = call(&format!("<parameter=content>\n{content}\n</parameter>\n<parameter=count>42</parameter>\n<parameter=enabled>true</parameter>\n<parameter=options>{{\"a\":1}}</parameter>\n<parameter=paths>[\"a\",\"b\"]</parameter>\n<parameter=nothing>null</parameter>\n"));
+    let options =
+        json!({"a":1, "new_file":null, "enabled":true, "nested":["quoted\"\nline", false]});
+    let output = call(&format!("<parameter=content>\n{content}\n</parameter>\n<parameter=count>42</parameter>\n<parameter=enabled>true</parameter>\n<parameter=options>{options}</parameter>\n<parameter=paths>[\"a\",\"b\"]</parameter>\n<parameter=nothing>null</parameter>\n"));
     let parsed = template.parse_output(&output, &tools())?;
-    let expected = json!({"content":content,"count":42,"enabled":true,"options":{"a":1},"paths":["a","b"],"nothing":null});
+    let expected = json!({"content":content,"count":42,"enabled":true,"options":options,"paths":["a","b"],"nothing":null});
     assert_eq!(json!(parsed.calls[0].arguments), expected);
     let id = parsed.calls[0].id.clone();
     let mut request = ToolCompletionRequest {
@@ -50,7 +62,7 @@ fn native_coder_template_round_trips_typed_calls_and_file_whitespace(
     let rendered = template.render(&request)?;
     assert!(rendered.contains("<name>content</name>"));
     assert!(rendered.contains("<tool_response>\nsaved\n</tool_response>"));
-    assert!(rendered.ends_with("<|im_start|>assistant\n"));
+    assert!(rendered.trim_end().ends_with("<|im_start|>assistant"));
     let history = rendered
         .split("<|im_start|>assistant")
         .nth(1)
