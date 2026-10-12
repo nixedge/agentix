@@ -144,16 +144,21 @@ Post-rebase validation: `cargo test --locked -p agentix-agent -p agentix-harness
 Nix dev shell. These include home-tool execution, system-prompt history, Piper
 route preservation, model selection, and real terminal/jail tests. Nix derivation
 evaluation passes for ax, home agent, voice, daemon, llama and Whisper. Full Nix
-package builds and live-server deployment validation have not been repeated after
-this rebase; the older build outputs below predate this integration.
+package builds have not been repeated locally after this rebase; the older build
+outputs below predate this integration. Post-deployment checks are recorded below.
 
 `AGENTIX_GATEWAY_URL` selects the endpoint and is explicitly passed through
 `ax-jail`. The user's existing server is `http://ai.lan.disasm.us:11434`.
-Its installed Qwen2.5-7B-Instruct streams text, but the deployed build lacks the new
-catalog/readiness API and returned prose rather than a structured call in a tool
-probe. It needs the updated daemon **and** worker for this checkpoint.
+After the user deployed the updated daemon and worker, live checks on 2026-10-11
+confirmed the catalog and readiness APIs. Qwen2.5-7B-Instruct reports coding support
+and 32768 context. The packaged interactive picker fetched the live catalog,
+filtered to Qwen, and selected it. A headless turn called `read_file` and returned a
+random value from a disposable project file. An interactive turn requested approval
+for `write_file`; after approval it wrote the exact expected `AX_LIVE_OK` contents.
+Both turns completed successfully. Piper's voice list still returned
+`en_US-lessac-medium`. These are smoke checks, not broad model-quality validation.
 
-After those services are updated:
+To use the deployed services:
 
 ```sh
 export AGENTIX_GATEWAY_URL=http://ai.lan.disasm.us:11434
@@ -163,6 +168,12 @@ nix run /home/sam/home/agentix/020-ax-coding-agent#ax-jail
 ```
 
 With no `--model`/`AGENTIX_MODEL`, ax opens the installed-model picker on startup.
+The explicit `nix run .#ax-jail -- --dangerous` option skips tool approvals in both
+interactive and headless modes. It retains jail/path/conflict checks and disabled
+tools; direct unjailed coding remains unavailable. The launcher already forwarded
+this flag, but ax's parser and controller lacked the corresponding policy before
+the 2026-10-12 fix. Default-mode denial, dangerous-mode writing, launcher argument
+forwarding, and disabled-tool/conflict behavior are covered by regression tests.
 Use `/model` between turns to reopen it; type to filter, arrows to navigate, Enter
 to load/select, Ctrl+R to refresh, and Esc to close. Residency is distinct from
 installation and coding support; cold models are checked on load. Failed, busy,
@@ -205,11 +216,34 @@ AGENTIX_MODEL='hf.co/bartowski/Qwen2.5-7B-Instruct-GGUF:Qwen2.5-7B-Instruct-Q8_0
   --json 'Reply exactly AX_CONNECTION_OK. Do not call tools.'
 ```
 
-Live picker/coding acceptance remains blocked by deployment access: the current
-session has no forwarded SSH agent, and the server hostname/IP lacks a trusted
-entry in its available known-hosts file. Deployment is already authorized; resume
-with authenticated SSH and trusted host configuration, inspect existing service
-settings, validate the CUDA package there, deploy and run a real coding turn.
+The earlier SSH deployment blocker was resolved by the user's deployment; no SSH
+access was required for the subsequent live API and coding smoke checks. The exact
+server build identity and CUDA configuration were not inspected through SSH.
+
+### Durable warm-operation foundation (not yet connected to the UI)
+
+The infer library now provides a synchronous `OperationStore` and asynchronous
+`WarmOperations` runner over an injected `WarmLoader`. Snapshots use private
+0700 directories/0600 files, exclusive OS writer locks, atomic replacement and
+file/directory fsync. Defaults bound active operations to 8, retained records to
+1024 and each snapshot to 4 MiB; terminal records expire after 24 hours. Reusing a
+key returns the same job; changing its request is rejected. Restart marks pending
+jobs interrupted and never retries them automatically. Failed writes require
+reopening before further access. Backend error codes are fixed, without raw
+upstream diagnostics.
+
+Queued cancellation is immediate. During loading it records cancellation intent
+but retains capacity until the loader returns; a late successful load then becomes
+cancelled rather than ready. This does not claim cancellation stops backend FFI.
+All persistence runs on blocking threads through the async runner, and accepted
+work survives a submitter disconnect. HTTP/SSE routes, daemon loader assembly,
+picker reconnection and exact rendered-context budgeting remain pending.
+
+Validation: 12 operation tests cover persistence, idempotency conflicts, restart,
+stale results, cancellation, capacity, retention, writer locking, corruption,
+private paths, failed writes, concurrent retries and loader failures. All 41 infer
+tests and `cargo clippy -p agentix-infer --all-targets -- -D warnings` pass through
+the Nix dev shell. No daemon deployment is required for this library-only change.
 
 Build from this worktree:
 
@@ -266,3 +300,91 @@ history. Restart persistence is not implemented yet.
 A positional task runs headless; add `--json` for versioned event envelopes. Reads
 can complete headlessly, but writes/commands return exit code 3 instead of waiting
 for approval. `-` reads a task of at most 64 KiB from stdin.
+
+### Qwen3-Coder checkpoint
+
+User-selected model: `hf.co/unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf`
+(18.6 GB weights). Expected SHA-256:
+`fadc3e5f8d42bf7e894a785b05082e47daee4df26680389817e2093056f088ad`.
+
+The native function/parameter parser lives in agentix-llama; deploy the updated
+**llama worker**. The daemon's existing structured-tool transport needs no protocol
+change. Rebuild ax/ax-jail to get the coding system prompt (Git status, staged and
+unstaged diffs for reviews; read-before-edit; evidence-backed test reporting).
+Automatic AGENTS.md and skill loading is still T033, not implemented here.
+
+For the 3090, start with these environment settings on the **worker service**, not
+in the ax terminal:
+
+```sh
+AGENTIX_MAX_CTX=16384
+AGENTIX_MAX_LOADED_MODELS=1
+```
+
+With the repository's NixOS module, the corresponding settings are:
+
+```nix
+services.agentix.llama.maxCtx = 16384;
+services.agentix.llama.maxLoadedModels = 1;
+```
+
+Keep its existing CUDA configuration. The model file size excludes KV cache and
+runtime buffers. Leave space for any Whisper residency; simultaneous GPU workloads
+have not been validated. The model's advertised 256K context is not a 24 GB memory
+budget. Restart the worker through the normal deployment so settings take effect.
+
+If the model is not already installed, the existing operator pull endpoint is:
+
+```sh
+curl --fail-with-body -H 'Content-Type: application/json' \
+  -d '{"name":"hf.co/unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf"}' \
+  http://ai.lan.disasm.us:11434/api/pull
+```
+
+This legacy endpoint downloads without warming and returns only after completion;
+it is not the planned resumable Hub/job UI. Verify the catalog SHA-256 against the
+value above. Do not infer readiness from a successful download.
+
+After deployment:
+
+```sh
+export AGENTIX_GATEWAY_URL=http://ai.lan.disasm.us:11434
+nix run .#ax-jail
+```
+
+Filter the picker to `Qwen3-Coder`, select it, and require readiness to succeed.
+From a disposable Git project, ask for a review of a small staged/unstaged change;
+verify real `run_command`/file-read events and an evidence-based answer. Then ask
+for a small file edit, approve it, and inspect exact bytes plus the resulting diff.
+Live CUDA generation/tool use with this model remains pending the user's deployment.
+
+Local validation on 2026-10-12:
+
+- Pinned upstream Qwen3-Coder template rendering/history replay, typed arguments,
+  nullable edit preconditions, literal strings/whitespace, malformed/duplicate/
+  unavailable calls, batch atomicity and size/count bounds pass; Qwen JSON
+  regressions remain green.
+- `cargo test -p agentix-llama -p agentix-ax -p agentix-harness -p agentix-codex-patch`
+  passes under Nix, including real terminal/approval/resize and small-model UDS
+  generation/tokenization/cancellation checks. Two existing optional grammar
+  generation tests remain explicitly ignored; this is not a full workspace gate.
+- The required infer `generation_fixture` check passes. Targeted all-target Clippy
+  for llama/ax/harness and workspace formatting pass. Three old grammar-test
+  unwraps were replaced with checked assertions; terminal fixtures now find the
+  user message by role after adding the system prompt.
+- Logs: `/tmp/agentix-qwen3-full-tests.log`,
+  `/tmp/agentix-qwen3-grammar-tests.log`, `/tmp/agentix-qwen3-clippy.log`,
+  `/tmp/agentix-qwen3-generation.log`, `/tmp/agentix-qwen3-fmt.log`.
+
+The operator pull completed successfully on ai.lan.disasm.us on 2026-10-12.
+The catalog reports the exact ID above, architecture `qwen3moe`, 18,556,689,568
+bytes and the expected SHA-256. Residency is `unloaded`; coding support remains
+`unknown` until the updated worker is deployed and the model is warmed. No server
+service was deployed or restarted by this change.
+
+Final `nix build .#agentix-llama .#ax-jail --no-link -L` succeeded, including the
+CUDA worker (configured CUDA architectures 86 and 120) and updated client.
+Build log: `/tmp/agentix-qwen3-build-final.log`. The host NVIDIA driver is a runtime
+dependency supplied by the deployed machine; this build is not a CUDA runtime test.
+Workspace rustfmt also normalized existing formatting in six voice-related files;
+those changes are formatting-only. Live acceptance remains pending the user's deployment.

@@ -63,6 +63,18 @@ Tool calls are accumulated and validated only after completion. IDs must be uniq
 
 ### Model selection and Hub lifecycle
 
+2026-10-12 checkpoint extension: support Qwen3-Coder-30B-A3B-Instruct's native
+function/parameter tool syntax alongside Qwen JSON. Select the parser from a
+rendered historical-call probe, use advertised parameter schemas for typed values,
+preserve string whitespace, and reject incomplete/duplicate/unknown calls before
+dispatch. Pin the upstream template as a regression fixture. The change lives in
+agentix-llama and requires a worker rebuild/deployment; ax's wire protocol stays
+unchanged. Validate rendering, historical replay, typed parsing and repair prompts,
+then document Q4_K_M setup and actual live validation status.
+Add a concise built-in ax coding prompt covering Git status/staged/unstaged review,
+read-before-edit and evidence-backed validation; full instruction/skill discovery
+remains T033. Verify the system message survives follow-ups without duplication.
+
 A model record has a stable opaque ID, aliases, blob digest, exact source revision, resident state and validated capability profile. Unknown capability is not coding-ready. Initially support one documented Qwen-style tool-template family with regression fixtures; identify support by validated metadata/template behavior rather than model name alone. Other templates remain inspectable/installable but unavailable in coding mode until an adapter exists.
 
 Daemon catalog/search adapters resolve Hub repositories and file metadata. The user chooses an exact single-file GGUF at an immutable commit. Catalog tags are hints, not proof of compatibility. Downloads write private partials, verify expected size/SHA-256, and atomically publish blob and manifest under per-artifact locks. No arbitrary URL or server-local path is accepted by new public endpoints. Redirects are HTTPS-only, bounded and validated against configured Hub/CDN origins; do not forward authorization across origins.

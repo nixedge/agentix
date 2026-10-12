@@ -123,6 +123,10 @@ async fn approved_read_search_patch_test_and_followup_keep_matching_history() ->
     server.await??;
     let requests = requests.lock().map_err(|_| anyhow::anyhow!("lock"))?;
     let messages = requests[5]["messages"].as_array().context("messages")?;
+    assert_eq!(messages.iter().filter(|m| m["role"] == "system").count(), 1);
+    assert!(messages[0]["content"]
+        .as_str()
+        .is_some_and(|s| s.contains("git diff --cached")));
     assert!(messages.iter().any(|m| m["role"] == "tool"
         && m["tool_call_id"] == "t"
         && m["content"]
@@ -133,6 +137,45 @@ async fn approved_read_search_patch_test_and_followup_keep_matching_history() ->
         .any(|m| m["content"] == "Changed example.txt; test exited 0."));
     Ok(())
 }
+#[tokio::test]
+async fn dangerous_preserves_tool_restrictions_and_file_conflict_checks() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    std::fs::write(root.path().join("existing"), "original")?;
+    let (url, requests, server) = server(vec![
+        calls(
+            "w",
+            "write_file",
+            json!({"path":"existing","content":"replacement","expected_sha256":digest("stale")}),
+        ),
+        answer("The file changed; no edit was made."),
+    ])
+    .await?;
+    let mut controller = controller(root.path(), url)?;
+    controller.dangerous = true;
+    controller.no_shell = true;
+    controller.no_cloud = true;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    controller
+        .build(Cancellation::default(), tx.clone(), true)?
+        .run_with_events("edit", tx)
+        .await?;
+    while let Ok(event) = rx.try_recv() {
+        assert!(!matches!(event, AgentEvent::ApprovalRequired { .. }));
+    }
+    assert_eq!(
+        std::fs::read_to_string(root.path().join("existing"))?,
+        "original"
+    );
+    server.await??;
+    let requests = requests.lock().map_err(|_| anyhow::anyhow!("lock"))?;
+    let tools = requests[0]["tools"].as_array().context("tools")?;
+    assert!(!tools.iter().any(|tool| matches!(
+        tool["function"]["name"].as_str(),
+        Some("run_command" | "ask_cloud")
+    )));
+    Ok(())
+}
+
 #[tokio::test]
 async fn headless_edit_requires_approval_and_broken_stream_never_edits() -> Result<()> {
     for truncated in [false, true] {

@@ -448,7 +448,7 @@ fn tools_sync(
             send_chunk(tx, Ok(Event::Finished(Reason::Length)), cancel)?;
             return Ok(());
         }
-        match tool_template::parse_output(&output, &request.tools) {
+        match template.parse_output(&output, &request.tools) {
             Ok(parsed) => {
                 if parsed.text.len() > emitted {
                     send_chunk(
@@ -471,7 +471,9 @@ fn tools_sync(
                     content: output,
                     tool_calls: vec![],
                 });
-                request.messages.push(Message::User { content: "Your previous tool response was invalid. Return only complete <tool_call> blocks with an available function name and an arguments JSON object, or answer without tools.".into() });
+                request.messages.push(Message::User {
+                    content: template.repair_prompt().into(),
+                });
             }
             Err(error) => return Err(error),
         }

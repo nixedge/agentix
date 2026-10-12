@@ -7,6 +7,10 @@
 
 ## Scope and clarification
 
+2026-10-12: user requests Qwen3-Coder-30B-A3B-Instruct support in the current
+checkpoint. Native tool calls must preserve file/patch strings and typed arguments,
+reject malformed batches before execution, and retain Qwen2.5 compatibility.
+
 The target is a Linux terminal coding workflow: inspect a repository, plan changes, edit, execute commands/tests, review diffs, retain context, delegate bounded work and resume after interruption. Model reasoning quality is not promised to equal Codex. The feature includes the required local tool-calling/backend work; UI-only changes cannot satisfy it.
 
 Clarified on 2026-10-11: orchestration is included, using feature 019's design as the starting point; upstream Codex library reuse must be evaluated before implementing equivalent components. Review remediation: all cloud routes must enforce structured escalation; supervisor control uses authenticated role separation; dependencies consume sealed reviewed changes; dirty-parent delegation requires an explicit committed base. No implementation is authorized in this planning stage.
@@ -77,7 +81,7 @@ A developer runs `ax-jail`, asks for a change, follows streaming progress, revie
 - **FR-001**: Support interactive `ax` and headless `ax exec`, retaining the existing positional task invocation as a documented alias.
 - **FR-002**: Preserve multi-turn conversation and correlated assistant/tool messages in one session; expose streaming text and tool progress.
 - **FR-003**: Supply bounded file read/list/search, conflict-aware patch editing, command execution and diff inspection within authorized jail mounts. Per user clarification during implementation, upstream filename search follows symlinks unchanged; its starting root is not an additional filesystem boundary. Reads and writes still enforce their path/approval policy.
-- **FR-004**: Enforce explicit approval policies for edits, execution, MCP and escalation; denial or no headless approval input must never imply consent.
+- **FR-004**: Enforce explicit approval policies for edits, execution, MCP and escalation; denial or no headless approval input must never imply consent. The user-requested `--dangerous` flag explicitly skips tool approvals for that invocation, including headless mode, while preserving jail mounts, path/conflict checks, tool restrictions and cloud opt-in. Interactive mode visibly identifies this policy.
 - **FR-005**: Interrupt generation and tool work, terminate owned process groups and restore terminal state; report uncertain side effects after crashes.
 - **FR-006**: Validate tool names, arguments and complete stream boundaries before execution, with per-turn budgets, timeouts and stagnation transitions.
 - **FR-007**: Make all primary agent requests use the selected local model through the daemon; reject silent cloud fallback and incompatible coding models.

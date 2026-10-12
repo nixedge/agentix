@@ -31,6 +31,9 @@ struct Cli {
     no_cloud: bool,
     #[arg(long)]
     no_shell: bool,
+    /// Skip tool approval prompts inside the jail. Mount and tool restrictions still apply.
+    #[arg(long)]
+    dangerous: bool,
     #[arg(long = "mcp")]
     mcp_servers: Vec<String>,
     #[arg(long)]
@@ -96,6 +99,7 @@ async fn run() -> Result<()> {
     controller.cloud = cli.cloud;
     controller.no_cloud = !cli.allow_cloud || cli.no_cloud;
     controller.no_shell = cli.no_shell;
+    controller.dangerous = cli.dangerous;
     controller.max_calls = cli.max_calls;
     for command in cli.mcp_servers {
         let (server, defs) = mcp::spawn_and_init(&command, cli.task.is_some()).await?;

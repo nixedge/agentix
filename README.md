@@ -162,6 +162,18 @@ automatically; `/model` reopens it between turns. Type to filter, use arrows and
 Enter to load/select, and Esc to close. This requires the matching 0.2 daemon and
 worker. `ax --list-models` lists the catalog without launching coding tools.
 
+`nix run .#ax-jail -- --dangerous` explicitly skips tool approval prompts for that
+invocation, including headless runs. The TUI shows `approvals off`. Jail mounts,
+file conflict checks, `--no-shell`, and cloud opt-in still apply; the flag does not
+allow coding tools to run outside `ax-jail`.
+
+The llama worker supports Qwen JSON tools and Qwen3-Coder's native function and
+parameter tags. Qwen3-Coder requires the updated worker, not just a new ax client.
+See the [Qwen3-Coder setup](specs/020-ax-coding-agent/quickstart.md#qwen3-coder-checkpoint)
+for the 24 GB GPU configuration and deployment checks. Ax now supplies a coding
+prompt with Git review and verification guidance; automatic AGENTS.md/skill
+loading remains unfinished.
+
 ```bash
 just build
 ```

@@ -63,6 +63,7 @@ pub struct AgentLoop {
     tools: Vec<Box<dyn Tool>>,
     policy: EscalationPolicy,
     system_prompt: Option<String>,
+    approval_policy: crate::approval::ApprovalPolicy,
     control: Option<TurnControl>,
     history: Arc<Mutex<Vec<serde_json::Value>>>,
 }
@@ -75,6 +76,7 @@ impl AgentLoop {
             tools: vec![],
             policy: EscalationPolicy::default(),
             system_prompt: None,
+            approval_policy: crate::approval::ApprovalPolicy::Require,
             control: None,
             history: Arc::new(Mutex::new(vec![])),
         }
@@ -87,6 +89,11 @@ impl AgentLoop {
 
     pub fn with_policy(mut self, policy: EscalationPolicy) -> Self {
         self.policy = policy;
+        self
+    }
+
+    pub fn with_approval_policy(mut self, policy: crate::approval::ApprovalPolicy) -> Self {
+        self.approval_policy = policy;
         self
     }
 
@@ -293,7 +300,8 @@ impl AgentLoop {
                     machine.step(TurnStep::Stopped)?;
                     return Err(Cancelled.into());
                 }
-                if machine.remaining() > 0
+                if self.approval_policy == crate::approval::ApprovalPolicy::Require
+                    && machine.remaining() > 0
                     && find_tool(&self.tools, &call.name).is_some_and(|tool| tool.needs_approval())
                 {
                     machine.step(TurnStep::NeedApproval)?;

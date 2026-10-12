@@ -308,7 +308,10 @@ policy, effective mount grants and absence of credentials in granted project fil
 Codex filename-search keeps upstream symlink-following behavior, as explicitly
 approved for this feature. The mount profile bounds what it can reach; subsequent
 file reads/edits have stricter descriptor-based path checks. File and shell writes
-require one-shot approvals bound to cwd, exact arguments and turn. Actions whose
+require one-shot approvals bound to cwd, exact arguments and turn by default.
+The explicit `ax --dangerous` policy skips tool approvals for that invocation;
+it does not expand mounts, enable disabled tools or bypass file conflict checks.
+The terminal title identifies this policy as `approvals off`. Actions whose
 complete approval text exceeds 8 KiB are rejected rather than partially displayed.
 Headless mode returns exit code 3 when approval is needed. Ctrl+C cancels generation
 or terminates/reaps an active command before returning to the prompt.

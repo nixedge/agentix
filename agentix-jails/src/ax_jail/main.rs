@@ -49,3 +49,20 @@ fn main() -> Result<()> {
     drop(profile);
     std::process::exit(status.code().unwrap_or(130));
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn forwards_dangerous_to_ax_with_or_without_separator() -> Result<()> {
+        for arguments in [
+            vec!["ax-jail", "--dangerous"],
+            vec!["ax-jail", "--", "--dangerous"],
+        ] {
+            let args = Args::try_parse_from(arguments)?;
+            assert_eq!(args.ax_args, ["--dangerous"]);
+        }
+        Ok(())
+    }
+}

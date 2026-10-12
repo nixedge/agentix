@@ -37,7 +37,12 @@ pub fn render(f: &mut Frame, app: &App, config: &TuiConfig) {
         config.cloud.as_str()
     };
     let title = format!(
-        " ax  {}{}{}  |{}",
+        " ax{}  {}{}{}  |{}",
+        if config.dangerous {
+            " [approvals off]"
+        } else {
+            ""
+        },
         crate::sanitize(if config.model.is_empty() {
             "no model selected"
         } else {

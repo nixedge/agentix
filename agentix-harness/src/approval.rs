@@ -159,3 +159,9 @@ fn now_ms() -> u64 {
         .as_millis()
         .min(u128::from(u64::MAX)) as u64
 }
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum ApprovalPolicy {
+    #[default]
+    Require,
+    Skip,
+}

@@ -178,7 +178,15 @@ async fn scenario(resize: bool, picker: bool) -> Result<()> {
     assert_eq!(child.exit_rx.await?, 0);
     assert!(tail.windows(8).any(|w| w == b"\x1b[?1049l"));
     let captured = server.await??;
-    assert_eq!(captured[0]["messages"][0]["content"], "h🦀");
+    let messages = captured[0]["messages"].as_array().context("messages")?;
+    assert_eq!(messages[0]["role"], "system");
+    assert_eq!(
+        messages
+            .iter()
+            .find(|m| m["role"] == "user")
+            .context("user message")?["content"],
+        "h🦀"
+    );
     assert!(captured[2]["messages"]
         .as_array()
         .context("messages")?

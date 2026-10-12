@@ -872,8 +872,9 @@ mod tests {
             ResponseFormatType::JsonObject => Some(GrammarConstraint::Gbnf(JSON_GBNF.to_string())),
             _ => None,
         };
-        let GrammarConstraint::Gbnf(gbnf) = grammar.unwrap();
-        assert!(gbnf.contains("root") && gbnf.contains("::= object"));
+        assert!(
+            matches!(grammar, Some(GrammarConstraint::Gbnf(gbnf)) if gbnf.contains("root") && gbnf.contains("::= object"))
+        );
     }
 
     #[test]
@@ -885,7 +886,7 @@ mod tests {
         });
         let result = validate_and_convert_schema(&schema);
         assert!(result.is_ok(), "expected Ok, got: {result:?}");
-        assert!(result.unwrap().contains("root ::="));
+        assert!(result.is_ok_and(|grammar| grammar.contains("root ::=")));
     }
 
     #[test]
@@ -893,7 +894,7 @@ mod tests {
         let schema = serde_json::json!({ "$ref": "https://example.com/schema.json" });
         let result = validate_and_convert_schema(&schema);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("external $ref URI"));
+        assert!(result.is_err_and(|error| error.contains("external $ref URI")));
     }
 
     #[test]

@@ -53,6 +53,14 @@ Client/PTY tests and the real daemon/worker catalog test pass. T022–T024 remai
 for durable readiness jobs, exact rendered-context budgeting, OOM/disconnect job
 recovery and complete lifecycle coverage; this is not full Phase 4 acceptance.
 
+T022 continuation: `agentix-infer/src/model_operation.rs` and its async runner now
+provide private, atomic warm-operation snapshots, exclusive writer locking,
+idempotent submission, checked transitions, cancellation/result fencing, bounded
+retention and restart interruption. Twelve focused tests plus the full infer suite
+and all-target Clippy pass. The runner continues accepted work after a submitter
+disconnects and retains capacity until loading actually stops. Daemon HTTP/SSE
+adapters and picker reconnection are not wired yet; T022 remains unchecked.
+
 ## Phase 5 — US3 Hugging Face discovery and installation
 
 - [ ] T025 [US3] Implement daemon Hub catalog adapter in `agentix-daemon/src/hub.rs`, recording actual primary API endpoint/query/redirect fixtures in `agentix-daemon/tests/fixtures/hub/`; support search/file pagination, immutable revision and explicit-file lookup (FR-010, FR-011).
@@ -107,6 +115,14 @@ recovery and complete lifecycle coverage; this is not full Phase 4 acceptance.
 - [ ] T059 Run constitution gates through Nix: fmt, clippy with denied warnings, full workspace tests with actual PostgreSQL/small-model fixtures, Nix builds for all T056 deliverables and CI; record results in `specs/020-ax-coding-agent/quickstart.md` and do not claim completion on skipped required checks (FR-034, SC-008).
 
 ## Dependencies and delivery
+
+- [ ] T060 [US1] Add native Qwen3-Coder template/parser support in agentix-llama,
+  pinned upstream fixture and protocol regressions; validate worker build and
+  document installation/deployment and live tool-call evidence.
+  Implementation, native-template tests, small-model/terminal regressions,
+  Clippy and CUDA worker/ax-jail Nix builds pass. Q4_K_M is installed on ai.lan
+  with the expected digest. Live generation/tool use awaits the user's deployment;
+  this task remains unchecked until that acceptance check passes.
 
 Phase 1 blocks upstream adoption. Phase 2 blocks the coding/model paths. Phase 3 starts only after Phase 2 and establishes the sandbox before tools execute. Phase 4 → Phase 5 delivers the complete `/model` flow. Phase 6 completes the shared session context used by delegation. Phase 7 → Phase 8 → Phase 9 implements orchestration; no external 019 service is presumed. Phase 10 requires all journeys.
 

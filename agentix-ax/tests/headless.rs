@@ -5,7 +5,7 @@ use std::{collections::HashMap, path::PathBuf};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 #[tokio::test]
 async fn real_jail_headless_streams_and_refuses_unapproved_edits() -> Result<()> {
-    for edit in [false, true] {
+    for (edit, dangerous) in [(false, false), (true, false), (true, true)] {
         let temp = tempfile::tempdir()?;
         let home = temp.path().join("home");
         let root = home.join("project");
@@ -23,23 +23,25 @@ async fn real_jail_headless_streams_and_refuses_unapproved_edits() -> Result<()>
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
         let url = format!("http://{}", listener.local_addr()?);
         let server = tokio::spawn(async move {
-            let (mut socket, _) = listener.accept().await?;
-            let mut request = vec![0; 65536];
-            let n = socket.read(&mut request).await?;
-            anyhow::ensure!(n > 0, "request missing");
-            let (delta, finish) = if edit {
-                (
-                    serde_json::json!({"tool_calls":[{"index":0,"id":"w","type":"function","function":{"name":"write_file","arguments":"{\"path\":\"new\",\"content\":\"bad\",\"expected_sha256\":null}"}}]}),
-                    "tool_calls",
-                )
-            } else {
-                (serde_json::json!({"content":"Hello from the jail"}), "stop")
-            };
-            let wire = format!(
-                "data: {}\n\ndata: [DONE]\n\n",
-                serde_json::json!({"choices":[{"index":0,"delta":delta,"finish_reason":finish}]})
-            );
-            socket.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{wire}",wire.len()).as_bytes()).await?;
+            for round in 0..if edit && dangerous { 2 } else { 1 } {
+                let (mut socket, _) = listener.accept().await?;
+                let mut request = vec![0; 65536];
+                let n = socket.read(&mut request).await?;
+                anyhow::ensure!(n > 0, "request missing");
+                let (delta, finish) = if edit && round == 0 {
+                    (
+                        serde_json::json!({"tool_calls":[{"index":0,"id":"w","type":"function","function":{"name":"write_file","arguments":"{\"path\":\"new\",\"content\":\"bad\",\"expected_sha256\":null}"}}]}),
+                        "tool_calls",
+                    )
+                } else {
+                    (serde_json::json!({"content":"Hello from the jail"}), "stop")
+                };
+                let wire = format!(
+                    "data: {}\n\ndata: [DONE]\n\n",
+                    serde_json::json!({"choices":[{"index":0,"delta":delta,"finish_reason":finish}]})
+                );
+                socket.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{wire}",wire.len()).as_bytes()).await?;
+            }
             Ok::<(), anyhow::Error>(())
         });
         let profile = profile::Profile::build(profile::ProfileOptions {
@@ -67,13 +69,18 @@ async fn real_jail_headless_streams_and_refuses_unapproved_edits() -> Result<()>
                     "--json",
                     "task",
                 ])
+                .args(if dangerous {
+                    vec!["--dangerous"]
+                } else {
+                    vec![]
+                })
                 .output(),
         )
         .await??;
         server.await??;
         assert_eq!(
             output.status.code(),
-            Some(if edit { 3 } else { 0 }),
+            Some(if edit && !dangerous { 3 } else { 0 }),
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
@@ -88,24 +95,30 @@ async fn real_jail_headless_streams_and_refuses_unapproved_edits() -> Result<()>
         }
         assert_eq!(
             events.last().context("terminal event")?["type"],
-            if edit {
+            if edit && !dangerous {
                 "turn_failed"
             } else {
                 "turn_completed"
             }
         );
-        assert!(!root.join("new").exists());
+        if edit && dangerous {
+            assert_eq!(std::fs::read_to_string(root.join("new"))?, "bad");
+        } else {
+            assert!(!root.join("new").exists());
+        }
     }
     Ok(())
 }
 #[test]
 fn direct_ax_refuses_to_enable_tools_without_launcher() -> Result<()> {
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_ax"))
-        .arg("task")
-        .output()?;
-    // This integration test is run outside ax-jail, which creates its own /run marker.
-    assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("ax-jail"));
+    for args in [vec!["task"], vec!["--dangerous", "task"]] {
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_ax"))
+            .args(args)
+            .output()?;
+        // This integration test is run outside ax-jail, which creates its own /run marker.
+        assert!(!output.status.success());
+        assert!(String::from_utf8_lossy(&output.stderr).contains("ax-jail"));
+    }
     Ok(())
 }
 

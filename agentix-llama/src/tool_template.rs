@@ -6,12 +6,21 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::io::Write;
 
+mod coder;
+
 const OPEN: &str = "<tool_call>";
 const CLOSE: &str = "</tool_call>";
 pub const MAX_OUTPUT: usize = 1024 * 1024;
 
 pub struct ToolTemplate {
     source: String,
+    format: CallFormat,
+}
+
+#[derive(Clone, Copy)]
+enum CallFormat {
+    Json,
+    Coder,
 }
 
 impl ToolTemplate {
@@ -23,8 +32,9 @@ impl ToolTemplate {
         {
             return Err(InferError::ToolCompletionUnsupported);
         }
-        let template = Self {
+        let mut template = Self {
             source: source.to_string(),
+            format: CallFormat::Json,
         };
         // Verify both advertised tools and historical calls/results survive the
         // actual template. Token spelling alone is not a capability declaration.
@@ -70,7 +80,39 @@ impl ToolTemplate {
         {
             return Err(InferError::ToolCompletionUnsupported);
         }
+        let history = rendered
+            .split("<|im_start|>assistant")
+            .nth(1)
+            .and_then(|s| s.split("<|im_end|>").next())
+            .ok_or(InferError::ToolCompletionUnsupported)?;
+        if history.contains("<function=probe_function_739>") {
+            template.format = CallFormat::Coder;
+        }
+        let historical_tools = vec![ToolDefinition {
+            name: "probe_function_739".into(),
+            description: String::new(),
+            parameters: json!({"type":"object", "properties":{"probe_arg_739":{"type":"integer"}}}),
+        }];
+        let parsed = template.parse_output(history, &historical_tools)?;
+        if parsed.calls.len() != 1 || parsed.calls[0].arguments != probe_call_arguments() {
+            return Err(InferError::ToolCompletionUnsupported);
+        }
         Ok(template)
+    }
+
+    pub fn parse_output(
+        &self,
+        output: &str,
+        tools: &[ToolDefinition],
+    ) -> Result<ParsedOutput, InferError> {
+        parse_with_format(output, tools, self.format)
+    }
+
+    pub fn repair_prompt(&self) -> &'static str {
+        match self.format {
+            CallFormat::Json => "Your previous tool response was invalid. Return only complete <tool_call> blocks with an available function name and an arguments JSON object, or answer without tools.",
+            CallFormat::Coder => "Your previous tool response was invalid. Use the advertised tool format: <tool_call>\n<function=available_function_name>\n<parameter=parameter_name>\nvalue\n</parameter>\n</function>\n</tool_call>. Include all required parameters, with raw text for strings and JSON for arrays/objects, or answer without tools.",
+        }
     }
 
     pub fn render(&self, request: &ToolCompletionRequest) -> Result<String, InferError> {
@@ -111,6 +153,10 @@ impl ToolTemplate {
     }
 }
 
+fn probe_call_arguments() -> serde_json::Map<String, Value> {
+    serde_json::Map::from_iter([("probe_arg_739".into(), json!(1))])
+}
+
 struct BoundedWriter(Vec<u8>);
 impl Write for BoundedWriter {
     fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
@@ -138,6 +184,14 @@ pub struct ParsedOutput {
 }
 
 pub fn parse_output(output: &str, tools: &[ToolDefinition]) -> Result<ParsedOutput, InferError> {
+    parse_with_format(output, tools, CallFormat::Json)
+}
+
+fn parse_with_format(
+    output: &str,
+    tools: &[ToolDefinition],
+    format: CallFormat,
+) -> Result<ParsedOutput, InferError> {
     if output.len() > MAX_OUTPUT {
         return Err(invalid("model output exceeds limit"));
     }
@@ -154,8 +208,11 @@ pub fn parse_output(output: &str, tools: &[ToolDefinition]) -> Result<ParsedOutp
         let end = body
             .find(CLOSE)
             .ok_or_else(|| invalid("truncated tool call"))?;
-        let call: GeneratedCall = serde_json::from_str(body[..end].trim())
-            .map_err(|_| invalid("malformed tool call JSON"))?;
+        let call: GeneratedCall = match format {
+            CallFormat::Json => serde_json::from_str(body[..end].trim())
+                .map_err(|_| invalid("malformed tool call JSON"))?,
+            CallFormat::Coder => coder::parse_call(body[..end].trim(), tools)?,
+        };
         if !tools.iter().any(|tool| tool.name == call.name) {
             return Err(invalid("model requested an unavailable tool"));
         }
