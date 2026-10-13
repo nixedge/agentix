@@ -4,7 +4,7 @@ use agentix_qwen::{
     reference::{
         linear_from_rows, qsa_decode_step_from_rows, QsaDecodeGeometry, TextRotaryEmbedding,
     },
-    tokenizer::PreparedPrompt,
+    tokenizer::{PreparedPrompt, PromptRequest, QwenTokenizer},
     Error as QwenError,
 };
 use agentix_qwen_sys::{
@@ -304,18 +304,45 @@ fn main() -> Result<(), Box<dyn Error>> {
         return Err("actual block-3 decoder output was malformed or non-finite".into());
     }
     let mut full_model = QwenGgufDecoder::open(&set, &config)?;
-    let prepared_prompt = PreparedPrompt {
-        rendered: String::new(),
-        token_ids: vec![u32::try_from(source_token_id)?],
-        admission: ContextAdmission {
-            prompt_tokens: 1,
-            requested_output_tokens: 2,
-            total_tokens: 3,
-            remaining_tokens: config
-                .max_position_embeddings
-                .checked_sub(3)
-                .ok_or("Qwen test prompt exceeds model context")?,
-        },
+    let prepared_prompt = if env::var_os("AGENTIX_QWEN_CHAT_SMOKE").is_some() {
+        let tokenizer_path = PathBuf::from(
+            env::var_os("AGENTIX_QWEN_TOKENIZER_PATH")
+                .ok_or("AGENTIX_QWEN_TOKENIZER_PATH is required for chat smoke")?,
+        );
+        let template_path = PathBuf::from(
+            env::var_os("AGENTIX_QWEN_TEMPLATE_PATH")
+                .ok_or("AGENTIX_QWEN_TEMPLATE_PATH is required for chat smoke")?,
+        );
+        let tokenizer = QwenTokenizer::from_files(&tokenizer_path, &template_path)?;
+        let messages = [serde_json::json!({
+            "role": "user",
+            "content": "Reply with OK."
+        })];
+        tokenizer.prepare_prompt(PromptRequest {
+            messages: &messages,
+            tools: &[],
+            reasoning_effort: "none",
+            enable_thinking: false,
+            preserve_thinking: false,
+            add_generation_prompt: true,
+            max_new_tokens: 2,
+            context_limit: config.max_position_embeddings,
+        })?
+    } else {
+        let total_tokens = 3;
+        PreparedPrompt {
+            rendered: String::new(),
+            token_ids: vec![u32::try_from(source_token_id)?],
+            admission: ContextAdmission {
+                prompt_tokens: 1,
+                requested_output_tokens: 2,
+                total_tokens,
+                remaining_tokens: config
+                    .max_position_embeddings
+                    .checked_sub(total_tokens)
+                    .ok_or("Qwen test prompt exceeds model context")?,
+            },
+        }
     };
     let generated = full_model
         .generate_prepared_greedy(&prepared_prompt, &[])
@@ -352,9 +379,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     )?;
     writeln!(
         output,
-        "# decoder_model=full blocks={} input_token_id={} output_logits={} greedy_token_id={} greedy_logit={:.8} second_input_token_id={} second_greedy_token_id={} cached_position={} finite=true synthetic_input=false",
+        "# decoder_model=full blocks={} prompt_source={} prompt_tokens={} output_logits={} greedy_token_id={} greedy_logit={:.8} second_input_token_id={} second_greedy_token_id={} cached_position={} finite=true synthetic_input=false",
         config.layer_types.len(),
-        source_token_id,
+        if prepared_prompt.rendered.is_empty() { "synthetic_token" } else { "pinned_chat_template" },
+        prepared_prompt.admission.prompt_tokens,
         generated.prompt_logits.len(),
         predicted_token,
         generated.prompt_logits[predicted_token as usize],

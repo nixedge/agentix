@@ -227,6 +227,7 @@ version = "0.1.0"
 dependencies = [
  "agentix-qwen",
  "llama-cpp-sys-2",
+ "serde_json",
 ]
 
 [[package]]

@@ -227,21 +227,27 @@ actual token ID 1 through all 48 configured blocks, including block 1 PLE,
 then the final stream combine and full vocabulary projection. It emits finite
 logits and greedy token IDs for two consecutive positions. This is a stateful
 CPU reference smoke run, not an independent parity result or a tokenizer-backed
-prompt generation worker.
+prompt generation worker. Set `AGENTIX_QWEN_CHAT_SMOKE=1` when running the
+sampler inside `nix develop` to render the actual `Reply with OK.` user prompt
+through the pinned chat template and tokenizer before full-model decode; the
+sampler reports the prompt source and admitted token count. This opt-in path has
+not yet been run against the full artifact.
 Reproduce the
 actual-artifact validation with:
 
 ```sh
-nix develop path:. --command cargo run -p agentix-qwen-sys --example validate_gguf_sample_rows -- \
+nix develop path:. --command env AGENTIX_QWEN_CHAT_SMOKE=1 cargo run -p agentix-qwen-sys --example validate_gguf_sample_rows -- \
   agentix-qwen/tests/fixtures/qwen3_8_flash_next_config.json \
   /home/sam/home/agentix/.cache/agentix-qwen/iq3s-ed59f92082b1e93c0e96d60a8b11aab089b52f09/iq3s-00001.gguf \
   /home/sam/home/agentix/.cache/agentix-qwen/iq3s-ed59f92082b1e93c0e96d60a8b11aab089b52f09/iq3s-00002.gguf
 ```
 
 This checks header schema, one finite row from each observed storage type, and
-the listed row-backed operator paths; it does not verify each tensor's numeric
-values or run full-model inference. Synthetic GGUF unit fixtures continue to
-cover malformed metadata and reader errors.
+the listed row-backed operator paths, followed by a two-token stateful full
+decoder run. With the opt-in chat flag above, the decoder input is rendered by
+the pinned tokenizer/template. Neither mode verifies every tensor's numeric
+values or independent full-model parity. Synthetic GGUF unit fixtures continue
+to cover malformed metadata and reader errors.
 
 The pinned tokenizer artifact contains 248,077 token IDs, while the model's
 input/output embedding vocabulary is padded to 248,320 rows. Use the tokenizer
