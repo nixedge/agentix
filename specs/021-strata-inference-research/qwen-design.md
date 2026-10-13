@@ -1,6 +1,6 @@
 # Independent Qwen execution design
 
-**Implementation status**: a reusable CPU GGUF decoder traverses all 48 blocks and preserves state across tokens; a two-token full-artifact smoke pass produces vocabulary logits. The MiniJinja tokenizer and Unix-socket worker are integrated. An optional CUDA matvec reaches only the final quantized vocabulary projection, and has not run on a GPU. Independent full-model parity, full rendered-prompt execution against the artifact, and CUDA execution for the remaining model operators are still open.
+**Implementation status**: a reusable CPU GGUF decoder traverses all 48 blocks and preserves state across tokens; a two-token full-artifact smoke pass produces vocabulary logits. A compact synthetic four-block GGUF fixture now runs through the full stateful decoder with a hash-pinned exact output. The MiniJinja tokenizer and Unix-socket worker are integrated. An optional CUDA matvec reaches only the final quantized vocabulary projection, and has not run on a GPU. Independent full-model parity, full rendered-prompt execution against the artifact, and CUDA execution for the remaining model operators are still open.
 
 ## Authorities and provenance
 
@@ -90,6 +90,17 @@ match exactly, and the 48-value `A_log` vector passes this bound after `-exp`
 and head reordering. These sampled vectors exercise real payload bytes but do not stand
 in for full tensor or full-model parity.
 
+The compact decoder fixture is generated from the Qwen4-Exp schema using the
+pinned GGML writer: four blocks (three GatedDeltaNet plus QSA), hidden width 256,
+eight vocabulary rows, two experts, and zero F32/Q4_0 tensors. Its generated
+GGUF SHA-256 is
+`29ddcc30858e34f94259607a6695da7d9a216b70651ff0d89bf5e9b8221259d0`. The
+full stateful decoder must return eight zero logits and greedily generate token
+IDs `[0, 0]` from a one-token prompt. This is a deliberately simple end-to-end
+control-flow oracle; it checks schema loading, recurrent/QSA/PLE state traversal,
+and the generation adapter, but it does not validate nonzero model arithmetic,
+the production 48-layer dimensions, or Qwen checkpoint weights.
+
 The full-model reference run must use the immutable Qwen checkpoint and the
 pinned Transformers implementation listed above, the same source BF16 tensor
 payloads and tokenizer/template, and deterministic greedy decoding. Persist
@@ -102,8 +113,8 @@ quantization error. Require exact integer/state-layout agreement and report
 maximum absolute/relative tensor error plus top-1 logit agreement at every
 position. Freeze numeric acceptance thresholds only after capturing these
 independent outputs. No complete source-BF16 loader, reference output archive,
-architecture fixture, or target GPU result exists yet, so this protocol is
-specified but not executed and full-model numeric acceptance remains open.
+or target GPU result exists yet, so this protocol is specified but not executed
+and full-model numeric acceptance remains open.
 
 ## Further execution details checked against the pinned reference
 

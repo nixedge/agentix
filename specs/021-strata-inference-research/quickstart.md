@@ -44,8 +44,9 @@ full-artifact run from a rendered chat prompt exists yet.
 The target host is only accessible to the user. GPU build, inventory, model
 verification and benchmark commands will be added once their executable paths
 exist and have been checked locally. No target-host action is needed to validate
-these CPU foundations. T010/T030's complete model fixture and native dependency
-strategy remain open; this document covers only T033's foundation package.
+these CPU foundations. The compact synthetic fixture below checks decoder
+control flow; T010/T030's production-model reference and final dependency/package
+strategy remain open. This document covers the current foundation package.
 
 ## Qwen worker package
 
@@ -66,6 +67,23 @@ the user to place the verified GGUF shards in its configured model directory.
 The CPU reference sampler is the available local end-to-end model evidence; a
 full model request through the worker has not been run because generation is
 slow on this host and the real chat prefill is not batched yet.
+
+### Compact full-decoder fixture
+
+Run the deterministic four-block synthetic GGUF through the complete stateful
+CPU decoder with:
+
+```sh
+nix develop path:. --command cargo test -p agentix-qwen-sys \
+  compact_qwen4exp_gguf_runs_the_full_stateful_decoder
+```
+
+The test generates the fixture using the pinned `llama-cpp-sys-2` GGUF writer,
+validates its complete schema, and asserts the exact greedy output for all-zero
+weights. The generated artifact SHA-256 is
+`29ddcc30858e34f94259607a6695da7d9a216b70651ff0d89bf5e9b8221259d0`. This
+checks full-decoder wiring and state traversal; it is not original-checkpoint
+numeric parity or a worker deployment test.
 
 ### NixOS smoke deployment
 
@@ -102,10 +120,23 @@ performance setting. The worker validates that the selected CUDA device exists
 before binding its socket. CUDA output projection has not been executed on the
 RTX 3090 target; leave the option unset until testing on that host.
 
-Place `iq3s-00001.gguf` and `iq3s-00002.gguf` in `/var/lib/agentix/qwen/`;
-the module creates that directory for the `agentix` service account. The worker
-package supplies the pinned config, tokenizer and chat template. Verify the
-shards before activation:
+The model shards are hosted under the `IQ3_S/` subdirectory with longer
+publisher filenames. Fetch the pinned revision directly into the worker's
+expected names (the module creates the destination for the `agentix` account):
+
+```sh
+sudo install -d -o agentix -g agentix -m 0750 /var/lib/agentix/qwen
+cd /var/lib/agentix/qwen
+sudo -u agentix curl -fL --retry 5 \
+  'https://huggingface.co/ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF/resolve/ed59f92082b1e93c0e96d60a8b11aab089b52f09/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00001-of-00002.gguf' \
+  -o iq3s-00001.gguf
+sudo -u agentix curl -fL --retry 5 \
+  'https://huggingface.co/ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF/resolve/ed59f92082b1e93c0e96d60a8b11aab089b52f09/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00002-of-00002.gguf' \
+  -o iq3s-00002.gguf
+```
+
+Both shards total about 83.6 GB. The worker package supplies the pinned
+config, tokenizer and chat template. Verify the shard digests before activation:
 
 ```sh
 sha256sum /var/lib/agentix/qwen/iq3s-00001.gguf /var/lib/agentix/qwen/iq3s-00002.gguf
@@ -240,9 +271,11 @@ normal dependency tree contains Strata. These results establish the current
 crate boundary; they do not establish a full model loader or runtime.
 
 The CPU package can be reproduced with the commands above. The configured sys
-package builds with its CUDA feature and passes its current native boundary
-tests; this verifies packaging and compilation, not execution on a CUDA device.
-Its Nix source set retains both `agentix-qwen-sys` and its pure `agentix-qwen` trait
-dependency so the package build sees the same interface as the workspace. This
-documents the current package boundary, not the final T010 fixture/dependency
-strategy or a substitute for T016 review.
+package compiles with its CUDA feature, but its current Nix check phase cannot
+load the test executable in this no-driver sandbox because `libcuda.so.1` is
+absent. The separate CPU sys test suite passes. This verifies CUDA compilation,
+not CUDA test execution or device behavior. The Nix source set retains both
+`agentix-qwen-sys` and its pure `agentix-qwen` trait dependency so the package
+build sees the same interface as the workspace. The package boundary review is
+recorded in `decision.md`; target-driver execution and final T010 packaging
+acceptance remain open.

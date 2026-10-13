@@ -1,6 +1,6 @@
 # Source and artifact provenance
 
-**Recorded**: 2026-10-13. Model metadata and GGUF metadata ranges were fetched; no bulk weight payload was downloaded. A 320-byte BF16 source PLE row and its 90-byte Q4_0 GGUF row, a 128-value BF16 norm vector and its 512-byte F32 GGUF vector, and 48-value BF16 `A_log` and `dt_bias` vectors with their 192-byte F32 GGUF vectors were range-read, hashed, decoded, and compared.
+**Recorded**: 2026-10-13. The initial provenance probe used model metadata and GGUF metadata ranges, plus bounded tensor-row samples. Subsequent full IQ3_S shard acquisition and SHA256/schema verification are recorded below. The bounded probes included a 320-byte BF16 source PLE row and its 90-byte Q4_0 GGUF row, a 128-value BF16 norm vector and its 512-byte F32 GGUF vector, and 48-value BF16 `A_log` and `dt_bias` vectors with their 192-byte F32 GGUF vectors; these were range-read, hashed, decoded, and compared.
 
 | Source | Revision | Evidence |
 |---|---|---|

@@ -1,14 +1,13 @@
 # Coding and tool benchmark task fixtures
 
-These are draft task statements for the coding/tool suite. The current Git
-`HEAD` (`08406f42db6e8cbf5a7ae82dc8725749762aca88`) does not contain the staged
-and untracked Qwen feature files referenced by several tasks, so it is not a
-valid benchmark baseline. Pin a clean repository commit that includes this
-feature before running the suite. Tasks must run independently without shared
-edits, use the ordinary Agentix Rust/Nix setup, and must not commit. The
-evaluator applies each acceptance command and rejects unrelated changes. Hash
-the finalized task file and baseline in each run record. These drafts do not
-imply that an evaluator or baseline run exists.
+These ten task statements are frozen for the coding/tool benchmark. The pinned
+baseline commit is `13f2a5cb52ebc801eab154b009b0ab01f19e7a6a`; it contains the
+committed Qwen worker/decoder feature and all paths used by the task statements.
+Each task must start independently from a clean checkout of that commit, use the
+ordinary Agentix Rust/Nix setup, and must not commit. The evaluator applies each
+acceptance command and rejects unrelated edits. The statements do not imply that
+an evaluator or baseline run exists. The exact task-file SHA-256 is recorded in
+`benchmarks.md`.
 
 ## Task 1 — Rust bug fix with regression test
 

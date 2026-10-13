@@ -3418,6 +3418,201 @@ mod tests {
         Ok(())
     }
 
+    fn compact_decoder_config(
+    ) -> Result<agentix_qwen::config::QwenTextConfig, Box<dyn std::error::Error>> {
+        use agentix_qwen::config::LayerType;
+
+        let mut config = agentix_qwen::config::QwenTextConfig::parse(include_bytes!(
+            "../../agentix-qwen/tests/fixtures/qwen3_8_flash_next_config.json"
+        ))?;
+        config.hidden_size = 256;
+        config.layer_types = vec![
+            LayerType::GatedDeltaNet,
+            LayerType::GatedDeltaNet,
+            LayerType::GatedDeltaNet,
+            LayerType::Qsa,
+        ];
+        config.attention_heads = 2;
+        config.attention_kv_heads = 1;
+        config.attention_head_dim = 4;
+        config.indexer_query_heads = 2;
+        config.indexer_kv_heads = 1;
+        config.indexer_head_dim = 2;
+        config.indexer_token_budget = 2;
+        config.indexer_compress_ratio = 2;
+        config.gdn_key_heads = 2;
+        config.gdn_key_head_dim = 2;
+        config.gdn_value_heads = 2;
+        config.gdn_value_head_dim = 2;
+        config.gdn_conv_kernel_size = 2;
+        config.residual_streams = 2;
+        config.residual_rank = 2;
+        config.expert_count = 2;
+        config.experts_per_token = 1;
+        config.expert_intermediate_size = 256;
+        config.shared_expert_intermediate_size = 4;
+        config.heads_per_ngram = 1;
+        config.ngram_vocab_size_base = 2;
+        config.ngram_split_parts = 2;
+        config.ngram_vocab_divisor = 2;
+        config.ple_embedding_dim = 256;
+        config.ple_conv_kernel_size = 2;
+        config.eos_token_id = 7;
+        config.vocab_size = 8;
+        config.max_position_embeddings = 16;
+        config.partial_rotary_factor = 1.0;
+        config.ple_layer_ids = vec![2];
+        Ok(config)
+    }
+
+    fn write_compact_decoder_shard(
+        file: &TempFile,
+        config: &agentix_qwen::config::QwenTextConfig,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let geometries = agentix_qwen::schema::qwen4exp_tensor_geometries(config)?;
+        let architecture_key = CString::new("general.architecture")?;
+        let architecture_value = CString::new("qwen4exp")?;
+        let split_no_key = CString::new("split.no")?;
+        let split_count_key = CString::new("split.count")?;
+        let path = CString::new(file.0.to_str().ok_or("fixture path is not UTF-8")?)?;
+        // SAFETY: the arena is bounded and the fixture has a small generated tensor schema.
+        let tensor_context = unsafe {
+            ffi::ggml_init(ffi::ggml_init_params {
+                mem_size: 16 * 1024 * 1024,
+                mem_buffer: ptr::null_mut(),
+                no_alloc: false,
+            })
+        };
+        let tensor_context =
+            NonNull::new(tensor_context).ok_or("GGML fixture context allocation failed")?;
+        // SAFETY: GGUF context construction has no borrowed inputs.
+        let gguf_context = unsafe { ffi::gguf_init_empty() };
+        let gguf_context =
+            NonNull::new(gguf_context).ok_or("GGUF fixture context allocation failed")?;
+        // SAFETY: all metadata keys and values remain live through serialization.
+        unsafe {
+            ffi::gguf_set_val_str(
+                gguf_context.as_ptr(),
+                architecture_key.as_ptr(),
+                architecture_value.as_ptr(),
+            );
+            ffi::gguf_set_val_u16(gguf_context.as_ptr(), split_no_key.as_ptr(), 0);
+            ffi::gguf_set_val_u16(gguf_context.as_ptr(), split_count_key.as_ptr(), 1);
+        }
+
+        for geometry in geometries {
+            let name = CString::new(geometry.name.as_str())?;
+            let expert_stack = geometry.name.ends_with("_exps.weight");
+            let rank = if expert_stack {
+                3
+            } else if geometry.extents[1..].iter().all(|extent| *extent == 1) {
+                1
+            } else {
+                2
+            };
+            let mut dimensions = [1_i64; 4];
+            let mut element_count = 1_usize;
+            for (index, dimension) in dimensions.iter_mut().enumerate().take(rank) {
+                *dimension = i64::try_from(geometry.extents[index])?;
+                element_count = element_count
+                    .checked_mul(usize::try_from(geometry.extents[index])?)
+                    .ok_or("fixture tensor size overflow")?;
+            }
+            let storage_type = if expert_stack {
+                ffi::GGML_TYPE_Q4_0
+            } else {
+                ffi::GGML_TYPE_F32
+            };
+            // SAFETY: rank is 1-3, dimensions are positive and fit in i64, and the context is live.
+            let tensor = unsafe {
+                ffi::ggml_new_tensor(
+                    tensor_context.as_ptr(),
+                    storage_type,
+                    i32::try_from(rank)?,
+                    dimensions.as_ptr(),
+                )
+            };
+            let tensor = NonNull::new(tensor).ok_or("GGML fixture tensor allocation failed")?;
+            // SAFETY: tensor belongs to the live allocating GGML context.
+            let payload = unsafe { ffi::ggml_get_data(tensor.as_ptr()) };
+            if payload.is_null() {
+                return Err("GGML fixture tensor has no payload allocation".into());
+            }
+            let payload_bytes = if expert_stack {
+                // SAFETY: Q4_0 is a validated GGML type and the row width is block-aligned.
+                let row_bytes = unsafe { ffi::ggml_row_size(storage_type, dimensions[0]) };
+                row_bytes
+                    .checked_mul(element_count / usize::try_from(dimensions[0])?)
+                    .ok_or("quantized fixture byte size overflow")?
+            } else {
+                element_count
+                    .checked_mul(4)
+                    .ok_or("fixture byte size overflow")?
+            };
+            // SAFETY: payload has exactly element_count F32 values and all GGUF pointers stay live.
+            unsafe {
+                ptr::write_bytes(payload.cast::<u8>(), 0, payload_bytes);
+                ffi::ggml_set_name(tensor.as_ptr(), name.as_ptr());
+                ffi::gguf_add_tensor(gguf_context.as_ptr(), tensor.as_ptr());
+                ffi::gguf_set_tensor_data(gguf_context.as_ptr(), name.as_ptr(), payload);
+            }
+        }
+        // SAFETY: GGUF context and output path are valid and uniquely owned here.
+        let written =
+            unsafe { ffi::gguf_write_to_file(gguf_context.as_ptr(), path.as_ptr(), false) };
+        // SAFETY: both contexts are uniquely owned and no longer needed after serialization.
+        unsafe {
+            ffi::gguf_free(gguf_context.as_ptr());
+            ffi::ggml_free(tensor_context.as_ptr());
+        }
+        if !written {
+            return Err("GGUF compact decoder fixture serialization failed".into());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn compact_qwen4exp_gguf_runs_the_full_stateful_decoder(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let file = TempFile::new();
+        let config = compact_decoder_config()?;
+        write_compact_decoder_shard(&file, &config)?;
+        assert!(std::fs::metadata(&file.0)?.len() < 50 * 1024 * 1024);
+        let fixture_sha256 = agentix_qwen::identity::sha256_file(&file.0)?;
+        assert_eq!(
+            fixture_sha256,
+            "29ddcc30858e34f94259607a6695da7d9a216b70651ff0d89bf5e9b8221259d0"
+        );
+
+        let store = QwenGgufTensorStore::open(std::slice::from_ref(&file.0), &config)?;
+        let expert = store
+            .tensor_index()
+            .entries
+            .iter()
+            .find(|entry| entry.name == "blk.0.ffn_gate_exps.weight")
+            .ok_or("compact fixture has no expert tensor")?;
+        assert_eq!(&expert.extents[..3], &[256, 256, 2]);
+        if let Err(error) = store.open_group_matrix_rows("blk.0.ffn_gate_exps.weight", 0) {
+            return Err(format!("compact fixture expert row open failed: {error:?}").into());
+        }
+        let mut decoder = QwenGgufDecoder::open(&store, &config)?;
+        let prompt = agentix_qwen::tokenizer::PreparedPrompt {
+            rendered: "fixture".to_owned(),
+            token_ids: vec![1],
+            admission: agentix_qwen::budget::ContextAdmission {
+                prompt_tokens: 1,
+                requested_output_tokens: 2,
+                total_tokens: 3,
+                remaining_tokens: 13,
+            },
+        };
+        let output = decoder.generate_prepared_greedy(&prompt, &[7])?;
+        assert_eq!(output.generation.generated_token_ids, [0, 0]);
+        assert_eq!(output.prompt_logits, [0.0; 8]);
+        assert_eq!(decoder.position, 2);
+        Ok(())
+    }
+
     fn write_test_f32_vector(
         file: &TempFile,
         tensor_name: &str,

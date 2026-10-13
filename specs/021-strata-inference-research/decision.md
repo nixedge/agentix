@@ -36,11 +36,11 @@ The 90% same-model Strata throughput criterion is a target to evaluate on the ac
 - Selected `llama-cpp-sys-2` 0.1.154 as the isolated GGUF/GGML native boundary. The CPU package contains a metadata-only GGUF inspector; synthetic one-tensor and truncated-file parser tests pass. MiniJinja template fixtures pass with the two-method compatibility callback.
 - Pinned official llama.cpp Qwen4-Exp converter source confirms PLE shard concatenation order and row-width validation. Header-only reads verify 128 ordered source PLE shards of BF16 `[2500012,160]`, whose 320,001,536 physical rows match the padded GGUF extent and include 90 rows beyond the logical n-gram table. `rows::SafeTensorFile` now opens bounded BF16 row readers, and `ple::ShardedEmbeddingRows` composes them without materializing the table. One real 320-byte source row was read through that API and compared with the published GGUF Q4_0 row within a 0.003 maximum absolute error; the full 128-shard payload set remains unread. The ggml-org preset's second shard stores PLE as Q4_0 `[160,320001536]`; the separate IQ3_S candidate stores it as IQ4_NL with the same extents. `agentix-qwen-sys` has bounded readers for all six storage types in the ggml-org inventory (F32/F16/BF16/Q4_0/IQ4_NL/Q8_0) and both candidate expert formats IQ2_XS/IQ3_S. IQ2_XS/IQ3_S use the pinned native GGML CPU `to_float` callback with validated 256-value block geometry and bounded rows; tests cover synthetic blocks. A pinned IQ3_S expert row from a rank-three `[2560,640,512]` tensor was also decoded, and its header, raw bytes and output are recorded in `evidence/ista_iq3s_*`; there is no independent numeric oracle comparison for this row. Other quantized decoders and F16/BF16 conversion match pinned native callbacks; one published Q4_0 row and one published IQ4_NL row match within `1e-7`. The native row adapters remain in `agentix-qwen-sys`; `agentix-qwen` remains native-free. An Agentix source-name map covers all 1,294 text index entries and produces the same 1,224 unique names as the pinned config schema and published header. CPU transform primitives cover mapped split/reorder/norm/squeeze operations but are not yet integrated with payload loading. Typed PLE hash-array reading and GGUF UINT64 metadata rewriting are implemented with synthetic tests that verify the arrays and preserve tensor payload bytes; full source-array parity and model-wide serialization remain open.
 - Parsed the ggml-org second-shard metadata directory into a pinned 1,224-row name/type/shape/byte-size inventory. It contains 292 IQ4_NL, 518 Q8_0, 388 F32, 24 BF16, one F16, and the Q4_0 PLE tensor. The full first shard is hash-verified and has zero tensors; the sparse second-shard header plus first file pass Agentix's complete split-index/name-uniqueness check. The second payload remains unverified. The checked header crosswalk and geometry test verify all text-source shapes against their transformed GGUF targets. A direct 128-value BF16-to-F32 norm vector matches exactly, and the 48-value A_log source vector matches published GGUF within tolerance after -exp and reorder; broader source payload values remain unverified.
-- Pending: verifying source values and quantization, exercising the index-driven PLE opener on the complete 128-tensor/33-file checkpoint, wiring the source map and existing CPU transforms into source checkpoint conversion, PLE source-array parity and model-wide serialization, an independently verified small model fixture, and full-model reference vectors. The IQ2_XS/IQ3_S candidate formats are separate artifact research and are not claimed for the inspected ggml-org artifact. Analytical CPU vectors and the two-token IQ3_S sampler do not establish end-to-end model correctness.
+- Pending: verifying source values and quantization, exercising the index-driven PLE opener on the complete 128-tensor/33-file checkpoint, wiring the source map and existing CPU transforms into source checkpoint conversion, PLE source-array parity and model-wide serialization, and full-model reference vectors. A compact synthetic four-block GGUF fixture now has a pinned generated hash and exact zero-logit greedy output; it does not establish nonzero model correctness. The IQ2_XS/IQ3_S candidate formats are separate artifact research and are not claimed for the inspected ggml-org artifact. Analytical CPU vectors and the two-token IQ3_S sampler do not establish original-checkpoint correctness.
 - Pending: model weight verification, target driver/free-memory/bandwidth/PCIe/storage inventory and host access. This session runs on a different machine (RTX 5090 Max-Q, without an available NVIDIA management utility), so the requested RTX 3090 measurements are unavailable here.
 - Pending: CUDA device execution, full-model correctness and target-host experiments. No throughput, fit or coding capability is advertised by the CPU foundations.
 
-## Constitution review — current crate boundary
+## Constitution review — current worker and crate boundary
 
 The current `agentix-qwen` and `agentix-qwen-sys` split satisfies the relevant
 library-first and isolation requirements: the former has no network surface or
@@ -48,14 +48,31 @@ native dependency; the latter owns the pinned GGUF/GGML binding and checked
 metadata/row utilities. Both are independently testable and have Nix package
 attributes. The generic inference/router crates do not depend on them, and the
 daemon remains the only public HTTP listener. No Strata dependency is present in
-the Qwen crate trees. This review covers the CPU/sys foundations only; the
-proposed CUDA worker, final dependency tree, CUDA capability packaging, and
-runtime/daemon assembly must be reviewed after implementation. The workspace test
-suite passes, and the documented workspace format and Clippy commands now pass
-after cleanup recorded in `implementation-log.md`. The stronger Clippy run with
-`--all-targets` still reports existing panic-style calls in test targets; that is
-outside the documented command and is recorded separately. CUDA worker,
-capability packaging, and runtime assembly review remain open.
+the Qwen crate trees. Follow-up review covers the worker, final normal dependency
+trees, CUDA feature packaging, and daemon assembly. `agentix-qwen-worker` owns
+the public-to-private Unix-socket boundary and calls the same stateful decoder;
+the daemon routes only the exact configured model ID to that socket, while
+existing local models retain the llama path. CUDA remains an opt-in feature of
+`agentix-qwen-sys` forwarded by the worker feature and Nix package. Its only
+decoder dispatch is the final quantized vocabulary projection; device selection
+is checked before the worker binds its readiness socket. Generic inference and
+router crates do not gain a Qwen or native dependency, and the normal worker and
+daemon dependency trees contain no Strata dependency. Nix CUDA compilation
+derives architecture targets from `pkgs.config.cudaCapabilities`; runtime still
+requires the matching host driver and has not been verified on the target GPU.
+
+The worker currently creates request-scoped decoder state, limits execution to
+one generation at a time, performs inference on the blocking pool, and bounds
+SSE buffering. Tool calls and reasoning output remain explicitly unsupported;
+the CUDA projection uploads streamed weight rows per token and is a correctness
+probe, not a throughput feature. Thus the packaging and boundary review is
+complete, while target-host execution, CUDA parity, model-backed lifecycle
+conformance, and performance acceptance remain separate open requirements.
+The workspace test suite passes, and the documented workspace format and
+Clippy commands now pass after cleanup recorded in `implementation-log.md`. The
+stronger Clippy run with `--all-targets` still reports existing panic-style
+calls in test targets; that is outside the documented command and is recorded
+separately.
 
 ## Acceptance and rollback
 
@@ -73,16 +90,16 @@ The spec and task coverage table define all FR/SC gates. Build/run without Strat
 | FR-006 | Bounded row store, source SafeTensors BF16 and Q4_0/IQ4_NL GGUF readers implementing the PLE row interface, ordered sharding, and one source/target parity row | Partial: all source shards are not yet opened in one run; production PLE cache metrics and separate prefill/decode scheduling remain unimplemented. |
 | FR-007 | N-gram history snapshots and transactional recurrent/PLE/QSA state foundations | Open: prefix cache and MTP/speculative decoding are not implemented or tested end to end. |
 | FR-008 | Detailed lifecycle, event, cancellation, backpressure and capability contract; isolated worker and exact-model daemon route; bounded SSE and typed unavailable/unsupported errors | Partial: real-worker inference tests, cancellation, load/unload and full API conformance remain. |
-| FR-009 | CPU/native crates and Nix attributes; worker and daemon package builds; native dependency isolated from generic inference/router; exact Qwen dispatch leaves other local models on the llama socket | Partial: CUDA device execution and jail task path remain. |
+| FR-009 | CPU/native crates and Nix attributes; worker and daemon package builds; native dependency isolated from generic inference/router; exact Qwen dispatch leaves other local models on the llama socket | Partial: the CUDA sys package compiles, but its Nix check phase cannot load `libcuda.so.1` in this sandbox; CUDA device execution and jail task path remain. |
 | FR-010 | Frozen measurement fields and protocol in `benchmarks.md` | Open: no executable engine/host runs or raw result records. |
 | FR-011 | Comparison rules and approximation labels documented | Open: no matched-model or different-model measurements. |
-| FR-012 | Workspace tests, formatter and Clippy pass; Qwen/sys/indexer/daemon/worker Nix builds pass, including CUDA-feature package builds | Partial: small independent model fixture, target-host experiments and CUDA device checks remain. |
+| FR-012 | Workspace tests, formatter and Clippy pass; Qwen/sys/indexer/daemon/worker Nix builds pass, including CUDA-feature package builds | Partial: the compact fixture, CPU sys tests, focused strict sys Clippy and formatting pass; earlier Qwen, worker, daemon and indexer package builds pass. The latest CUDA-enabled sys Nix derivation compiles but fails its check phase because `libcuda.so.1` is unavailable in the sandbox. Workspace-wide current-state verification, the approved CUDA package strategy, and target-host experiments/device checks remain. |
 | SC-001 | Source/dependency provenance recorded; Cargo normal dependency trees and worker/daemon packages build without Strata; native dependency remains isolated to `agentix-qwen-sys` | Partial: target-host runtime and acceptance run remain. |
-| SC-002 | Analytical CPU operator/state tests, exact tokenizer and benchmark prompt fixtures, one source-to-published-GGUF PLE row comparison, and sampled norm/A_log/dt_bias vector comparisons pass | Partial: no full-model reference comparison or cancellation/load/unload integration tests. |
+| SC-002 | Analytical CPU operator/state tests, exact tokenizer and benchmark prompt fixtures, a hash-pinned compact full-decoder fixture, one source-to-published-GGUF PLE row comparison, and sampled norm/A_log/dt_bias vector comparisons pass | Partial: no original-checkpoint full-model reference comparison or cancellation/load/unload integration tests. |
 | SC-003 | Protocol specifies 4K/32K/64K runs | Open: RTX 3090 access and executable model are unavailable here; no measurements. |
-| SC-004 | Ten coding/tool categories and draft task statements/acceptance commands are documented in `benchmarks.md` and `coding-task-fixtures.md` | Open: no clean baseline commit includes the current Qwen feature, and task hashes/evaluator runs are absent. |
+| SC-004 | Ten coding/tool task statements and acceptance commands are frozen against clean feature baseline `13f2a5cb52ebc801eab154b009b0ab01f19e7a6a`; task-file SHA-256 is recorded in `benchmarks.md` | Open: clean-checkout evaluator, per-task run records, and baseline results are absent. |
 | SC-005 | 90%/110% thresholds documented as targets | Open: no engine or same-host Strata result. |
-| SC-006 | Workspace tests, format and Clippy pass; Qwen/sys/indexer/daemon/worker Nix builds, NixOS service evaluation, normal dependency audit and exact-route selectability checks pass | Partial: target runtime and acceptance evidence remain. |
+| SC-006 | Workspace tests, format and Clippy pass; Qwen/sys/indexer/daemon/worker package compilation, NixOS service evaluation, normal dependency audit and exact-route selectability checks pass | Partial: the latest CUDA-enabled sys Nix derivation fails at test execution without `libcuda.so.1`; target runtime and acceptance evidence remain. |
 
 This is the local evidence map for T017, not a release assessment. Requirements
 with partial or open status still need the named artifact, CUDA, target-host,

@@ -1,6 +1,6 @@
 # Target host inventory
 
-**Updated**: 2026-10-12
+**Updated**: 2026-10-13
 **Evidence**: User-provided target hardware identification; the agent-container probe below was read-only but is not the target. No target inspection or benchmarks performed.
 
 | Component | Confirmed specification |
@@ -23,6 +23,15 @@ Evaluate the independent agentix Qwen backend's NVIDIA/CUDA path, CPU participat
 - Storage type, free space, and model location.
 - Competing inference, embedding, voice, and other workloads.
 - Power/thermal settings and swap configuration relevant to reproducibility.
+
+The 2026-10-13 user-provided systemd journal identifies the deployment host as
+`kursk` and confirms that `agentix-qwen.service` is installed and attempting to
+start. Its failure is currently explained by the absent first IQ3_S shard at
+`/var/lib/agentix/qwen/iq3s-00001.gguf`; the journal does not provide hardware,
+memory, storage-capacity or driver inventory. The required IQ3_S download is
+83,617,662,656 bytes across both shards, so available target storage must be
+checked before fetching. This is artifact-size arithmetic, not evidence that
+the target has sufficient free space.
 
 T004 remains incomplete until these are recorded. Candidate memory budgets and performance measurements are pending; this inventory does not establish that a particular model/runtime configuration fits or meets parity goals.
 
