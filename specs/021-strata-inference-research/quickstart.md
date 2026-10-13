@@ -67,6 +67,60 @@ The CPU reference sampler is the available local end-to-end model evidence; a
 full model request through the worker has not been run because generation is
 slow on this host and the real chat prefill is not batched yet.
 
+### NixOS smoke deployment
+
+Import the module from the Agentix flake (replace `inputs.agentix` if the flake
+input has a different name) and enable both the gateway and worker. Both package
+options are required by the module:
+
+```nix
+{ inputs, pkgs, ... }:
+{
+  imports = [ inputs.agentix.nixosModules.agentix ];
+
+  services.agentix = {
+    daemon.enable = true;
+    daemon.package = inputs.agentix.packages.${pkgs.system}.agentix-daemon;
+
+    qwen = {
+      enable = true;
+      package = inputs.agentix.packages.${pkgs.system}.agentix-qwen-worker;
+      modelDir = "/var/lib/agentix/qwen";
+      # Defaults: the verified IQ3_S shard names and publisher hashes.
+      # context = 32768;
+    };
+  };
+}
+```
+
+Place `iq3s-00001.gguf` and `iq3s-00002.gguf` in `/var/lib/agentix/qwen/`;
+the module creates that directory for the `agentix` service account. The worker
+package supplies the pinned config, tokenizer and chat template. Verify the
+shards before activation:
+
+```sh
+sha256sum /var/lib/agentix/qwen/iq3s-00001.gguf /var/lib/agentix/qwen/iq3s-00002.gguf
+# Expected, in shard order:
+# 4c1eb2ceb4915e1192f4f386021897bde56a97f40a0bb78bb86465e0f7d2aca3
+# 316b46f3a2dbd68c900f43136ab9449f9dcc3725dfd8c794847c204bc161e113
+```
+
+After `nixos-rebuild switch`, inspect worker readiness and send a small greedy
+chat request through the daemon:
+
+```sh
+systemctl status agentix-qwen agentix-daemon
+curl -sS http://127.0.0.1:11434/v1/chat/completions \\
+  -H 'content-type: application/json' \\
+  -d '{"model":"qwen3.8-flash-next","messages":[{"role":"user","content":"Reply with OK."}],"temperature":0,"max_tokens":4}'
+```
+
+This is a CPU smoke deployment. The `cuda` Nix feature currently confirms a
+CUDA-enabled native package build; the decoder does not dispatch inference
+operators to CUDA. A successful package build therefore does not establish GPU
+inference, target-device correctness, or acceptable latency. Real chat prefill
+is also not batched, so the first request may be very slow.
+
 ## Current dependency and Nix boundary
 
 `agentix-qwen` is the pure Rust reference/identity/tokenizer crate. Its locked
