@@ -678,9 +678,16 @@ async fn shutdown_signal() {
 
 #[cfg(test)]
 mod tests {
-    use super::{validate_reasoning_options, verify_shard_hashes, ReasoningOptionError};
-    use serde_json::json;
-    use std::{error::Error, fs};
+    use super::{
+        prepare_socket_path, send_sse, validate_reasoning_options, verify_shard_hashes,
+        ReasoningOptionError,
+    };
+    use serde_json::{json, Value};
+    use std::{error::Error, fs, os::unix::net::UnixListener};
+
+    fn temporary_path(suffix: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!("agentix-qwen-{suffix}-{}", uuid::Uuid::new_v4()))
+    }
 
     #[test]
     fn reasoning_options_reject_invalid_types_and_unsupported_modes() {
@@ -720,8 +727,7 @@ mod tests {
 
     #[test]
     fn shard_integrity_requires_matching_ordered_hashes() -> Result<(), Box<dyn Error>> {
-        let path =
-            std::env::temp_dir().join(format!("agentix-qwen-hash-{}.gguf", uuid::Uuid::new_v4()));
+        let path = temporary_path("hash.gguf");
         fs::write(&path, b"abc")?;
         let result = verify_shard_hashes(
             std::slice::from_ref(&path),
@@ -735,5 +741,56 @@ mod tests {
         .is_err());
         let _ = fs::remove_file(&path);
         Ok(())
+    }
+
+    #[test]
+    fn socket_setup_removes_a_stale_socket() -> Result<(), Box<dyn Error>> {
+        let path = temporary_path("stale.sock");
+        let listener = UnixListener::bind(&path)?;
+        drop(listener);
+
+        prepare_socket_path(&path)?;
+
+        assert!(!path.exists());
+        Ok(())
+    }
+
+    #[test]
+    fn socket_setup_preserves_an_existing_regular_file() -> Result<(), Box<dyn Error>> {
+        let path = temporary_path("regular-file");
+        fs::write(&path, b"keep this file")?;
+
+        assert!(prepare_socket_path(&path).is_err());
+        assert_eq!(fs::read(&path)?, b"keep this file");
+        fs::remove_file(path)?;
+        Ok(())
+    }
+
+    #[test]
+    fn sse_frames_include_event_and_json_data_lines() -> Result<(), Box<dyn Error>> {
+        let (sender, mut receiver) = tokio::sync::mpsc::channel(1);
+        assert!(send_sse(
+            &sender,
+            Some("error"),
+            &json!({"code": "internal"})
+        ));
+        let frame = receiver.blocking_recv().ok_or("SSE frame missing")?;
+        let frame = std::str::from_utf8(&frame)?;
+        assert!(frame.starts_with("event: error\ndata: "));
+        assert!(frame.ends_with("\n\n"));
+        let json_line = frame
+            .strip_prefix("event: error\ndata: ")
+            .and_then(|frame| frame.strip_suffix("\n\n"))
+            .ok_or("malformed SSE frame")?;
+        let payload: Value = serde_json::from_str(json_line)?;
+        assert_eq!(payload, json!({"code": "internal"}));
+        Ok(())
+    }
+
+    #[test]
+    fn sse_sender_reports_disconnect_without_panicking() {
+        let (sender, receiver) = tokio::sync::mpsc::channel(1);
+        drop(receiver);
+        assert!(!send_sse(&sender, None, &json!({"delta": "text"})));
     }
 }
