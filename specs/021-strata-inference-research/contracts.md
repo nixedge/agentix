@@ -8,7 +8,7 @@
 
 Keep the existing worktree base; do not merge sibling branches implicitly. Model computation belongs in the network-free `agentix-qwen` library. Put generated/unsafe GGML and GGUF calls behind `agentix-qwen-sys`. Run the CUDA-linked Qwen engine in an `agentix-qwen-worker` process separate from `agentix-llama`, using the daemon's existing Unix-socket HTTP/SSE proxy boundary. Neither the generic inference crate nor router may depend on CUDA/native code through this backend.
 
-The daemon uses Unix-socket worker proxying and does not link `agentix-infer` directly. `AGENTIX_QWEN_SOCKET` defaults to `/run/agentix/qwen.sock`, and `AGENTIX_QWEN_MODEL` selects one exact identifier (default `qwen3.8-flash-next`). The gateway now routes exact chat-completion matches to the Qwen socket and returns an explicit service-unavailable error without falling back to llama/cloud. Unsupported embeddings, responses, and Anthropic-message requests for the exact Qwen ID fail explicitly. Existing llama selection and socket remain unchanged. The worker validates pinned shard hashes, config geometry and tokenizer vocabulary before binding its local socket; it exposes health, model-list, greedy text completion and bounded SSE text streams. Tools, reasoning-channel output, non-greedy sampling, embeddings and multimodal input are rejected. No endpoint may start or depend on Strata.
+The daemon uses Unix-socket worker proxying and does not link `agentix-infer` directly. `AGENTIX_QWEN_SOCKET` defaults to `/run/agentix/qwen.sock`, and `AGENTIX_QWEN_MODEL` selects one exact identifier (default `qwen3.8-flash-next`). The gateway now routes exact chat-completion matches to the Qwen socket and returns an explicit service-unavailable error without falling back to llama/cloud. Unsupported embeddings, responses, and Anthropic-message requests for the exact Qwen ID fail explicitly. Existing llama selection and socket remain unchanged. The worker validates pinned shard hashes, config geometry and tokenizer vocabulary before binding its local socket; it exposes health, model-list, greedy text completion, validated non-streaming function calls and bounded SSE text streams. Streaming function calls, reasoning-channel output, non-greedy sampling, embeddings and multimodal input are rejected. No endpoint may start or depend on Strata.
 
 ## Identity and loading
 
@@ -30,18 +30,20 @@ Prefix identity includes model artifacts, rendered token prefix, template, posit
 
 ## Streaming and cancellation
 
-Emit UTF-8-safe text deltas and distinct reasoning events where the API supports them. Tool calls cross the backend boundary only after complete parsing and validation; malformed output yields an explicit error rather than an invented call. Emit exactly one successful terminal event; an error terminates the stream without a later success event. Bound output queues; cancellation and receiver closure interrupt stalled sends and stop scheduling more compute.
+Emit UTF-8-safe text deltas and distinct reasoning events where the API supports them. Non-streaming Qwen tool output follows the pinned `<tool_call>/<function>/<parameter>` template and is returned as validated OpenAI function calls; prior assistant tool calls and tool responses are included in subsequent rendered prompts. Tool calls cross the backend boundary only after complete parsing and argument-schema validation; malformed output yields an `invalid_tool_call` error rather than an invented call. Streaming tool-call chunks are not supported yet. Emit exactly one successful terminal event; an error terminates the stream without a later success event. Bound output queues; cancellation and receiver closure interrupt stalled sends and stop scheduling more compute.
 
 ## Typed errors and transport mapping
 
 Keep backend failures typed until the HTTP/SSE boundary. The worker returns one of
 `invalid_request`, `unsupported_capability`, `context_length_exceeded`, `busy`,
+`invalid_tool_call`,
 `model_unavailable`, `invalid_model_artifact`, `resource_exhausted`,
 `cancelled`, or `internal`. Map the first three to HTTP 400, `busy` to 503,
 unavailable/invalid-artifact/resource failures to 503, and unexpected internal
-failures to 500. Cancellation is a control result rather than a successful model
-response. These status mappings are adapter behavior and do not require a public
-API schema change.
+failures to 500. Map `invalid_tool_call` to HTTP 502 because generated model
+output failed the declared tool contract. Cancellation is a control result
+rather than a successful model response. These status mappings are adapter
+behavior and do not require a public API schema change.
 
 Before response headers are sent, return an OpenAI-compatible JSON error envelope
 (`error.message`, `error.type`, `error.code`, and optional `error.param`). Once

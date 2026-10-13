@@ -59,7 +59,9 @@ set `AGENTIX_QWEN_GGUF_SHARDS` and
 `AGENTIX_QWEN_EXPECTED_SHARD_SHA256` together when names or artifacts change.
 The worker serves `/health`, `/v1/models` and greedy text
 `/v1/chat/completions` over `AGENTIX_QWEN_SOCKET`. The daemon routes only the
-exact `AGENTIX_QWEN_MODEL` name to it. Text SSE is bounded; tools, reasoning
+exact `AGENTIX_QWEN_MODEL` name to it. Text SSE is bounded. Non-streaming
+function calls support the worker's validated scalar JSON Schema subset and
+return OpenAI-compatible `tool_calls`; streaming function calls, reasoning
 channels, non-greedy sampling and non-chat endpoints are explicitly unsupported.
 
 The NixOS module exposes `services.agentix.qwen`; the deployment still needs

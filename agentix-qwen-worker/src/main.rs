@@ -5,6 +5,8 @@ use agentix_qwen::{
     Error as QwenError,
 };
 use agentix_qwen_sys::{QwenGgufDecoder, QwenGgufTensorStore};
+mod tool_calls;
+
 use axum::{
     body::Bytes,
     extract::State,
@@ -247,11 +249,12 @@ async fn chat_completions(State(state): State<AppState>, body: Bytes) -> Respons
             "This worker currently supports greedy text completion only",
         );
     }
-    if request
-        .messages
-        .iter()
-        .any(|message| !message.content.is_string())
-    {
+    if request.messages.iter().any(|message| {
+        !(message.content.is_string()
+            || message.content.is_null()
+                && message.role == "assistant"
+                && message.tool_calls.is_some())
+    }) {
         return api_error(
             StatusCode::BAD_REQUEST,
             "unsupported_capability",
@@ -260,15 +263,31 @@ async fn chat_completions(State(state): State<AppState>, body: Bytes) -> Respons
     }
     let tools = match request.extra.get("tools") {
         None => Vec::new(),
-        Some(Value::Array(tools)) if tools.is_empty() => Vec::new(),
+        Some(Value::Array(tools)) => {
+            if tool_calls::validate_tool_definitions(tools).is_err() {
+                return api_error(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_request",
+                    "Function tool definitions are invalid or use an unsupported schema",
+                );
+            }
+            tools.clone()
+        }
         Some(_) => {
             return api_error(
                 StatusCode::BAD_REQUEST,
-                "unsupported_capability",
-                "Tool calling is not available in this worker build",
+                "invalid_request",
+                "The tools field must be an array of function definitions",
             )
         }
     };
+    if streaming && !tools.is_empty() {
+        return api_error(
+            StatusCode::BAD_REQUEST,
+            "unsupported_capability",
+            "Streaming function calls are not available in this worker build",
+        );
+    }
     let allowed_extra = [
         "tools",
         "reasoning_effort",
@@ -351,8 +370,27 @@ async fn chat_completions(State(state): State<AppState>, body: Bytes) -> Respons
     let messages = request
         .messages
         .iter()
-        .map(|message| json!({"role": message.role, "content": message.content}))
-        .collect::<Vec<_>>();
+        .map(|message| -> Result<Value, tool_calls::ToolCallError> {
+            let mut mapped = json!({"role": message.role, "content": message.content});
+            if let Some(tool_calls) = &message.tool_calls {
+                mapped["tool_calls"] = tool_calls::normalize_tool_history(tool_calls)?;
+            }
+            if let Some(tool_call_id) = &message.tool_call_id {
+                mapped["tool_call_id"] = json!(tool_call_id);
+            }
+            Ok(mapped)
+        })
+        .collect::<Result<Vec<_>, _>>();
+    let messages = match messages {
+        Ok(messages) => messages,
+        Err(_) => {
+            return api_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "Prior function-call messages are malformed",
+            );
+        }
+    };
     let prepared = match state.tokenizer.prepare_prompt(PromptRequest {
         messages: &messages,
         tools: &tools,
@@ -440,8 +478,49 @@ async fn chat_completions(State(state): State<AppState>, body: Bytes) -> Respons
 
     match result {
         Ok(Ok((text, stopped, prompt_tokens, completion_tokens))) => {
-            let finish = if stopped { "stop" } else { "length" };
+            let parsed_tool_output = match tool_calls::parse_tool_output(&text, &tools) {
+                Ok(parsed) => parsed,
+                Err(tool_calls::ToolCallError::InvalidDefinitions) => {
+                    return api_error(
+                        StatusCode::BAD_REQUEST,
+                        "invalid_request",
+                        "Function tool definitions are invalid",
+                    );
+                }
+                Err(tool_calls::ToolCallError::MalformedOutput) => {
+                    return api_error(
+                        StatusCode::BAD_GATEWAY,
+                        "invalid_tool_call",
+                        "The model produced an invalid function call",
+                    );
+                }
+            };
+            let (content, response_tool_calls, finish) = match parsed_tool_output {
+                Some(parsed) => {
+                    let calls = parsed
+                        .calls
+                        .into_iter()
+                        .map(|call| {
+                            json!({
+                                "id": format!("call_{}", uuid::Uuid::new_v4().simple()),
+                                "type": "function",
+                                "function": {
+                                    "name": call.name,
+                                    "arguments": serde_json::to_string(&call.arguments)
+                                        .unwrap_or_else(|_| "{}".to_owned())
+                                }
+                            })
+                        })
+                        .collect::<Vec<_>>();
+                    (parsed.content, Some(calls), "tool_calls")
+                }
+                None => (Some(text), None, if stopped { "stop" } else { "length" }),
+            };
             let total_tokens = prompt_tokens.saturating_add(completion_tokens);
+            let mut message = json!({"role": "assistant", "content": content});
+            if let Some(tool_calls) = response_tool_calls {
+                message["tool_calls"] = json!(tool_calls);
+            }
             Json(json!({
                 "id": format!("chatcmpl-{}", uuid::Uuid::new_v4().simple()),
                 "object": "chat.completion",
@@ -449,7 +528,7 @@ async fn chat_completions(State(state): State<AppState>, body: Bytes) -> Respons
                 "model": state.model_name.as_ref(),
                 "choices": [{
                     "index": 0,
-                    "message": {"role": "assistant", "content": text},
+                    "message": message,
                     "finish_reason": finish
                 }],
                 "usage": {
@@ -787,6 +866,7 @@ mod tests {
         prepare_socket_path, send_sse, validate_reasoning_options, verify_shard_hashes,
         ReasoningOptionError,
     };
+    use agentix_api::ChatCompletionRequest;
     use serde_json::{json, Value};
     use std::{error::Error, fs, os::unix::net::UnixListener};
 
@@ -828,6 +908,50 @@ mod tests {
             ),
             Ok(())
         );
+    }
+
+    #[test]
+    fn chat_request_preserves_prior_tool_calls_and_tool_response_ids() -> Result<(), Box<dyn Error>>
+    {
+        let request: ChatCompletionRequest = serde_json::from_value(json!({
+            "model": "qwen3.8-flash-next",
+            "messages": [
+                {
+                    "role": "assistant",
+                    "content": null,
+                    "tool_calls": [{
+                        "id": "call_123",
+                        "type": "function",
+                        "function": {
+                            "name": "run_command",
+                            "arguments": "{\"command\":\"pwd\"}"
+                        }
+                    }]
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "call_123",
+                    "content": "/workspace"
+                }
+            ],
+            "tools": []
+        }))?;
+        assert_eq!(
+            request.messages[0]
+                .tool_calls
+                .as_ref()
+                .and_then(Value::as_array)
+                .and_then(|calls| calls.first())
+                .and_then(|call| call.get("id"))
+                .and_then(Value::as_str),
+            Some("call_123")
+        );
+        assert_eq!(
+            request.messages[1].tool_call_id.as_deref(),
+            Some("call_123")
+        );
+        assert!(request.extra.get("tools").is_some_and(Value::is_array));
+        Ok(())
     }
 
     #[test]
