@@ -251,11 +251,12 @@ to cover malformed metadata and reader errors.
 
 ### Original source-to-IQ3_S row comparison
 
-One raw BF16 row from the pinned original checkpoint is captured at
-`evidence/qwen3_8_flash_next_token_embd_row1_source.bf16` (SHA256
-`f6965babadc297161d7fa20e1afeba62083ee8b9c40c427fe2c2e17e88e3f7db`). It is
-row 1 of `model.language_model.embed_tokens.weight` and maps directly to
-`token_embd.weight`. Compare the source values with the IQ3_S row using:
+Raw BF16 row 1 from the pinned original checkpoint is captured for both
+`model.language_model.embed_tokens.weight` → `token_embd.weight` and
+`lm_head.weight` → `output.weight`. Their hashes and source offsets are in
+`evidence/qwen3_8_flash_next_token_embd_row1_source.json` and
+`evidence/qwen3_8_flash_next_lm_head_row1_source.json`. Compare the embedding
+source values with the IQ3_S row using:
 
 ```sh
 nix develop path:. --command cargo run -p agentix-qwen-sys --example compare_source_bf16_gguf_row -- \
@@ -265,6 +266,10 @@ nix develop path:. --command cargo run -p agentix-qwen-sys --example compare_sou
   /home/sam/home/agentix/.cache/agentix-qwen/iq3s-ed59f92082b1e93c0e96d60a8b11aab089b52f09/iq3s-00001.gguf \
   /home/sam/home/agentix/.cache/agentix-qwen/iq3s-ed59f92082b1e93c0e96d60a8b11aab089b52f09/iq3s-00002.gguf
 ```
+
+Run the same command with `qwen3_8_flash_next_lm_head_row1_source.bf16` as the
+first argument and `output.weight` as the tensor name to compare the output
+projection row.
 
 The comparator reports max absolute error, RMSE, relative RMSE, and cosine
 similarity. It compiles and passes strict Clippy, but its run failed before
