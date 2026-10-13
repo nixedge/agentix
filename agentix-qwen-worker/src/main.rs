@@ -74,10 +74,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let expected_hashes = env::var("AGENTIX_QWEN_EXPECTED_SHARD_SHA256")?;
     verify_shard_hashes(&shard_paths, &expected_hashes)?;
 
-    let config = QwenTextConfig::parse(&std::fs::read(&config_path)?)?;
-    let store = QwenGgufTensorStore::open(&shard_paths, &config)?;
-    let tokenizer = QwenTokenizer::from_files(&tokenizer_path, &template_path)?;
-    QwenGgufDecoder::open(&store, &config)?;
+    let config_bytes = read_artifact(&config_path, "Qwen config")?;
+    let config = QwenTextConfig::parse(&config_bytes)?;
+    let store = QwenGgufTensorStore::open(&shard_paths, &config).map_err(|error| {
+        std::io::Error::other(format!("cannot open Qwen GGUF shard set: {error}"))
+    })?;
+    let tokenizer =
+        QwenTokenizer::from_files(&tokenizer_path, &template_path).map_err(|error| {
+            std::io::Error::other(format!(
+                "cannot load Qwen tokenizer {} and chat template {}: {error}",
+                tokenizer_path.display(),
+                template_path.display()
+            ))
+        })?;
+    QwenGgufDecoder::open(&store, &config).map_err(|error| {
+        std::io::Error::other(format!("cannot initialize Qwen decoder: {error}"))
+    })?;
     if tokenizer.tokenizer_token_count() != 248_077
         || tokenizer.model_vocabulary_size() != config.vocab_size
     {
@@ -106,7 +118,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let socket = env_path("AGENTIX_QWEN_SOCKET", "/run/agentix/qwen.sock");
     prepare_socket_path(&socket)?;
-    let listener = UnixListener::bind(&socket)?;
+    let listener = UnixListener::bind(&socket).map_err(|error| {
+        std::io::Error::new(
+            error.kind(),
+            format!(
+                "cannot bind Qwen worker socket {}: {error}",
+                socket.display()
+            ),
+        )
+    })?;
     info!(
         socket = %socket.display(),
         model = %state.model_name,
@@ -133,10 +153,20 @@ fn verify_shard_hashes(paths: &[PathBuf], expected: &str) -> Result<(), Box<dyn 
     }
     let mut buffer = vec![0_u8; 1024 * 1024];
     for (path, expected_hash) in paths.iter().zip(expected_hashes) {
-        let mut file = File::open(path)?;
+        let mut file = File::open(path).map_err(|error| {
+            std::io::Error::new(
+                error.kind(),
+                format!("cannot open Qwen GGUF shard {}: {error}", path.display()),
+            )
+        })?;
         let mut digest = Sha256::new();
         loop {
-            let count = file.read(&mut buffer)?;
+            let count = file.read(&mut buffer).map_err(|error| {
+                std::io::Error::new(
+                    error.kind(),
+                    format!("cannot read Qwen GGUF shard {}: {error}", path.display()),
+                )
+            })?;
             if count == 0 {
                 break;
             }
@@ -148,6 +178,15 @@ fn verify_shard_hashes(paths: &[PathBuf], expected: &str) -> Result<(), Box<dyn 
         }
     }
     Ok(())
+}
+
+fn read_artifact(path: &std::path::Path, kind: &str) -> std::io::Result<Vec<u8>> {
+    std::fs::read(path).map_err(|error| {
+        std::io::Error::new(
+            error.kind(),
+            format!("cannot read {kind} {}: {error}", path.display()),
+        )
+    })
 }
 
 fn router(state: AppState) -> Router {
@@ -644,10 +683,40 @@ fn env_path_or_join(name: &str, base: &std::path::Path, filename: &str) -> PathB
 
 fn prepare_socket_path(path: &std::path::Path) -> Result<(), Box<dyn Error>> {
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
+        std::fs::create_dir_all(parent).map_err(|error| {
+            std::io::Error::new(
+                error.kind(),
+                format!(
+                    "cannot create Qwen socket directory {}: {error}",
+                    parent.display()
+                ),
+            )
+        })?;
     }
-    match std::fs::symlink_metadata(path) {
-        Ok(metadata) if metadata.file_type().is_socket() => std::fs::remove_file(path)?,
+    match std::fs::symlink_metadata(path).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            error
+        } else {
+            std::io::Error::new(
+                error.kind(),
+                format!(
+                    "cannot inspect Qwen socket path {}: {error}",
+                    path.display()
+                ),
+            )
+        }
+    }) {
+        Ok(metadata) if metadata.file_type().is_socket() => {
+            std::fs::remove_file(path).map_err(|error| {
+                std::io::Error::new(
+                    error.kind(),
+                    format!(
+                        "cannot remove stale Qwen socket {}: {error}",
+                        path.display()
+                    ),
+                )
+            })?
+        }
         Ok(_) => return Err("refusing to replace a non-socket Qwen path".into()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(error) => return Err(error.into()),
@@ -741,6 +810,22 @@ mod tests {
         .is_err());
         let _ = fs::remove_file(&path);
         Ok(())
+    }
+
+    #[test]
+    fn missing_shard_error_names_the_expected_path() {
+        let path = temporary_path("missing.gguf");
+        let result = verify_shard_hashes(
+            std::slice::from_ref(&path),
+            "0000000000000000000000000000000000000000000000000000000000000000",
+        );
+        let error = match result {
+            Err(error) => error,
+            Ok(()) => panic!("missing shard must fail startup validation"),
+        };
+        let message = error.to_string();
+        assert!(message.contains("cannot open Qwen GGUF shard"));
+        assert!(message.contains(path.to_string_lossy().as_ref()));
     }
 
     #[test]
