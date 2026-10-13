@@ -1,0 +1,400 @@
+Reading prompt from stdin...
+OpenAI Codex v0.162.1
+--------
+workdir: /tmp/nix-shell.sQ0kK4/agentix-bench-26504-1791933316369368192/task-07
+model: gpt-6-luna
+provider: openai
+approval: on-request
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: medium
+reasoning summaries: none
+session id: 01a1378c-7dcc-7c03-916e-f35a89e9476d
+--------
+user
+Task 7 — Configuration and documentation update
+
+Update the Qwen quickstart to document that the text tokenizer has 248,077
+addressable IDs while model embeddings are padded to 248,320, and explain that
+these sizes must not be used interchangeably. Keep the values consistent with
+the pinned configuration and tokenizer evidence.
+
+Acceptance commands:
+- `rg -n '248,077|248,320' specs/021-strata-inference-research/quickstart.md`
+
+Work only in this checkout. Do not commit. Make the requested changes and stop.
+warning: Codex could not find bubblewrap on PATH. Install bubblewrap with your OS package manager. See the sandbox prerequisites: https://developers.openai.com/codex/concepts/sandboxing#prerequisites. Codex will use the bundled bubblewrap in the meantime.
+codex
+I’ll inspect the quickstart and the pinned config/tokenizer evidence in this checkout, then make only the documentation edit and confirm the requested `rg` command.
+exec
+/run/current-system/sw/bin/bash -lc "cat instructions/imported-context.md 2>/dev/null; rg -n '248[,_]?(077|320)|vocab_size|vocab_size_padded' specs/021-strata-inference-research . --glob '"'!target/**'"' --glob '"'!*.lock'"' --glob '"'!Cargo.lock'"'" in /tmp/nix-shell.sQ0kK4/agentix-bench-26504-1791933316369368192/task-07
+ succeeded in 0ms:
+./agentix-qwen-sys/examples/compare_cuda_gguf_matvec.rs:52:        || usize::try_from(cpu_matrix.output_features()).ok() != Some(config.vocab_size)
+./agentix-qwen-sys/examples/validate_gguf_sample_rows.rs:333:    if generated.prompt_logits.len() != config.vocab_size
+specs/021-strata-inference-research/coding-task-fixtures.md:71:Update the Qwen quickstart to document that the text tokenizer has 248,077
+specs/021-strata-inference-research/coding-task-fixtures.md:72:addressable IDs while model embeddings are padded to 248,320, and explain that
+specs/021-strata-inference-research/coding-task-fixtures.md:76:Acceptance: `rg -n '248,077|248,320' specs/021-strata-inference-research/quickstart.md`.
+./agentix-qwen-sys/src/lib.rs:1325:            vocabulary: u32::try_from(config.vocab_size)
+./agentix-qwen-sys/src/lib.rs:1330:            vocabulary_base: u64::try_from(config.ngram_vocab_size_base)
+./agentix-qwen-sys/src/lib.rs:1937:            || usize::try_from(token_embeddings.row_count()).ok() != Some(config.vocab_size)
+./agentix-qwen-sys/src/lib.rs:1939:            || usize::try_from(output_projection.output_features()).ok() != Some(config.vocab_size)
+./agentix-qwen-sys/src/lib.rs:2037:        if usize::try_from(token_id).map_or(true, |id| id >= self.config.vocab_size)
+./agentix-qwen-sys/src/lib.rs:2203:        if logits.len() != self.config.vocab_size || logits.iter().any(|value| !value.is_finite()) {
+./agentix-qwen-sys/src/lib.rs:2701:        Kind::HeadVocabSizes => "qwen4exp.ple.head_vocab_sizes",
+./agentix-qwen-sys/src/lib.rs:3670:        config.vocab_size = 8;
+./agentix-qwen-sys/src/lib.rs:3674:        config.ngram_vocab_size_base = 20_000_000;
+./agentix-qwen-sys/src/lib.rs:3676:            vocabulary: u32::try_from(config.vocab_size)?,
+./agentix-qwen-sys/src/lib.rs:3680:            vocabulary_base: u64::try_from(config.ngram_vocab_size_base)?,
+./agentix-qwen-sys/src/lib.rs:3703:                values: as_i64(ngram.head_vocab_sizes())?,
+./agentix-qwen-worker/src/main.rs:91:    if tokenizer.tokenizer_token_count() != 248_077
+./agentix-qwen-worker/src/main.rs:92:        || tokenizer.model_vocabulary_size() != config.vocab_size
+./agentix-qwen/src/config.rs:38:    pub ngram_vocab_size_base: usize,
+./agentix-qwen/src/config.rs:45:    pub vocab_size: usize,
+./agentix-qwen/src/config.rs:205:            ("ngram_vocab_size_base", 20_000_000),
+./agentix-qwen/src/config.rs:207:            ("make_ngram_vocab_size_divisible_by", 128),
+./agentix-qwen/src/config.rs:211:            ("vocab_size", 248_320),
+./agentix-qwen/src/config.rs:259:            ngram_vocab_size_base: 20_000_000,
+./agentix-qwen/src/config.rs:266:            vocab_size: 248_320,
+specs/021-strata-inference-research/evidence/ggml-qwen-iq4nl-shard-2-tensors.tsv:1213:token_embd.weight	q8_0	2560	248320	1	1	675430400
+specs/021-strata-inference-research/evidence/ggml-qwen-iq4nl-shard-2-tensors.tsv:1224:output.weight	q8_0	2560	248320	1	1	675430400
+./agentix-qwen/src/lib.rs:113:            vocabulary: u32::try_from(config.vocab_size).map_err(|_| Error::Overflow)?,
+./agentix-qwen/src/lib.rs:117:            vocabulary_base: u64::try_from(config.ngram_vocab_size_base)
+./agentix-qwen/src/lib.rs:220:            &[hidden, config.vocab_size],
+./agentix-qwen/src/lib.rs:222:        add(&mut tensors, "output.weight", &[hidden, config.vocab_size])?;
+./agentix-qwen/src/lib.rs:600:                | "ple.ple_embedding.ngram_heads_vocab_sizes" => {
+specs/021-strata-inference-research/evidence/ggml-qwen-iq4nl-shards.json:80:        "ple_head_vocab_sizes_array_length": 16
+./agentix-qwen/src/ngram.rs:18:            vocabulary: 248_320,
+./agentix-qwen/src/ngram.rs:112:    pub fn head_vocab_sizes(&self) -> &[u64] {
+specs/021-strata-inference-research/quickstart.md:215:The pinned tokenizer artifact contains 248,077 token IDs, while the model's
+specs/021-strata-inference-research/quickstart.md:216:input/output embedding vocabulary is padded to 248,320 rows. Use the tokenizer
+./agentix-qwen/src/ple.rs:79:            "model.language_model.layers.1.ple.ple_embedding.ngram_heads_vocab_sizes",
+./agentix-qwen/src/ple.rs:596:        config.vocab_size = 8;
+./agentix-qwen/src/ple.rs:600:        config.ngram_vocab_size_base = 2;
+./agentix-qwen/src/ple.rs:646:        config.vocab_size = 8;
+./agentix-qwen/src/ple.rs:650:        config.ngram_vocab_size_base = 20_000_000;
+./agentix-qwen/src/ple.rs:652:            vocabulary: u32::try_from(config.vocab_size).map_err(|_| Error::Overflow)?,
+./agentix-qwen/src/ple.rs:656:            vocabulary_base: u64::try_from(config.ngram_vocab_size_base)
+./agentix-qwen/src/ple.rs:669:        let sizes_name = "model.language_model.layers.1.ple.ple_embedding.ngram_heads_vocab_sizes";
+./agentix-qwen/src/ple.rs:672:        let sizes = as_i64(ngram.head_vocab_sizes())?;
+specs/021-strata-inference-research/evidence/qwen3_8_flash_next_source_to_gguf.tsv:190:model.language_model.layers.1.ple.ple_embedding.ngram_heads_vocab_sizes		PLEHashMetadata
+specs/021-strata-inference-research/qwen-design.md:8:- Tokenizer artifact: `tokenizer.json` from the same immutable checkpoint revision; pinned Nix hash `sha256-CZf0EMV6H05TsJ5L6PShctkO3ZVkNo+whHAwk3IpufM=`. It contains 248,077 addressable IDs (maximum ID 248,076), while the model embedding vocabulary is padded to 248,320. These are distinct dimensions and must not be conflated.
+specs/021-strata-inference-research/qwen-design.md:81:248,077 tokenizer IDs, 248,320 model vocabulary rows, and stop IDs 248,046 and
+specs/021-strata-inference-research/qwen-design.md:247:  `[248320,2560]`, `lm_head.weight` `[248320,2560]` (untied), and
+specs/021-strata-inference-research/qwen-design.md:372:`output.weight` as Q6_K `[2560, 248320]`; this establishes the dispatch's input
+specs/021-strata-inference-research/qwen-design.md:412:`step` calls produce finite 248,320-value logits; the first greedy token is
+specs/021-strata-inference-research/sources.md:16:| Qwen tokenizer | `de4b8e4d43b917e7706784d8bb445c9af86a3540` | `tokenizer.json`, pinned Nix hash `sha256-CZf0EMV6H05TsJ5L6PShctkO3ZVkNo+whHAwk3IpufM=`; addressable token count 248,077 |
+./agentix-qwen/src/reference.rs:3382:            vocabulary: u32::try_from(config.vocab_size).map_err(|_| Error::Overflow)?,
+./agentix-qwen/src/reference.rs:3386:            vocabulary_base: u64::try_from(config.ngram_vocab_size_base)
+./agentix-qwen/src/reference.rs:3402:            || !matches_layout(sizes, ngram.head_vocab_sizes())
+./agentix-qwen/src/reference.rs:3444:            } else if source_name.ends_with("ple_embedding.ngram_heads_vocab_sizes") {
+specs/021-strata-inference-research/evidence/ista_iq3s_full_payload_sample_rows.tsv:22:output.weight	q6_K	2560	248320	true
+specs/021-strata-inference-research/evidence/ista_iq3s_full_payload_sample_rows.tsv:25:token_embd.weight	iq4_xs	2560	248320	true
+specs/021-strata-inference-research/evidence/ista_iq3s_full_payload_sample_rows.tsv:42:# decoder_model=full blocks=48 input_token_id=1 output_logits=248320 greedy_token_id=79104 greedy_logit=11.96474266 second_input_token_id=79104 second_greedy_token_id=245228 cached_position=2 finite=true synthetic_input=false
+specs/021-strata-inference-research/tasks.md:162:- Additional T018 full-graph check: the IQ3_S sampler carries token ID 1 through all 48 blocks, including block-1 PLE, all GatedDeltaNet/QSA layers and routed/shared experts, then final stream combine and output projection. The reusable decoder processes greedy token 79104 in a second full pass, preserves per-layer state, and emits 248,320 finite logits at both positions. Evidence is in `evidence/ista_iq3s_full_payload_sample_rows.tsv`. This verifies stateful execution, not independent reference parity or full-model acceptance.
+specs/021-strata-inference-research/tasks.md:163:- Additional T018 boundary check: an exhaustive pass over all 248,320 model vocabulary IDs with evolving n-gram history confirms each of the 16 emitted PLE row IDs is less than the 320,001,446 logical rows. The 90 source-alignment padding rows in the 320,001,536-row physical table are therefore not reachable through `Ngram` addressing.
+./agentix-qwen/src/tokenizer.rs:9:const TOKENIZER_TOKEN_COUNT: usize = 248_077;
+./agentix-qwen/src/tokenizer.rs:10:const MODEL_VOCABULARY_SIZE: usize = 248_320;
+./agentix-qwen/src/tokenizer.rs:120:        if tokenizer.get_vocab_size(true) != TOKENIZER_TOKEN_COUNT {
+./agentix-qwen/src/tokenizer.rs:278:        self.tokenizer.get_vocab_size(true)
+specs/021-strata-inference-research/implementation-log.md:28:- The tokenizer artifact exposes 248,077 token IDs (max ID 248,076), while model embeddings and n-gram state use 248,320 rows. The tokenizer API now exposes those as separate counts; the user approved this distinction.
+specs/021-strata-inference-research/implementation-log.md:184:- Completed the coding-suite vocabulary documentation and dependency-boundary audit in `quickstart.md`: the pinned tokenizer represents 248,077 token IDs while the model embedding/output vocabulary is padded to 248,320 rows; the exact `cargo tree` commands show pure `agentix-qwen` has no GGML/GGUF native dependency, while `agentix-qwen-sys` owns GGUF parsing/row decoding through `llama-cpp-sys-2 0.1.154`. Both trees contain no Strata. The tokenizer values are confirmed by the checked tokenizer integration test, and the normal dependency trees were rerun after documenting them. The benchmark fixture remains draft because its baseline commit/evaluator are not yet available.
+specs/021-strata-inference-research/implementation-log.md:254:- Extended the artifact sampler from the first QSA block through the remaining configured layers. A single actual token embedding now traverses all 48 blocks, including each recurrent/QSA state update, PLE at block 1, all attention/FFN residual mixers, all routed/shared MoE paths, final stream combine, and `output.weight`. The resulting 248,320 logits are finite; greedy token ID 79104 has logit 11.96474266. Refreshed evidence TSV SHA256: `fdf8b108f59530d135161a81e4bd447145300a1f13ebd2598b4f5fbf66214869`. This is a full one-token CPU forward smoke run, not independent expected-logit parity or a stateful generation/serving backend.
+specs/021-strata-inference-research/implementation-log.md:256:- Added reusable `QwenGgufDecoder` over shared per-shard file handles and lazy tensor-row readers. It preserves all per-layer GatedDeltaNet/QSA caches, PLE n-gram/convolution state, and sequential position across calls; a failed partial step poisons the decoder rather than allowing corrupted state reuse. The IQ3_S full-model sampler now feeds token ID 1, selects greedy ID 79104, then feeds that token through a second complete 48-block step; both 248,320-value logits vectors are finite and the decoder reaches position 2, with second greedy ID 245228. The verified full sampler output is checked in; its refreshed evidence TSV SHA256 is recorded in the inventory JSON. This validates stateful two-token CPU execution, not an independent logit oracle.
+specs/021-strata-inference-research/evidence/qwen3_8_flash_next_text_tensor_headers.tsv:2:lm_head.weight	output.weight	Direct	BF16	248320x2560	model-00131-of-00131.safetensors	0	1271398400
+specs/021-strata-inference-research/evidence/qwen3_8_flash_next_text_tensor_headers.tsv:3:model.language_model.embed_tokens.weight	token_embd.weight	Direct	BF16	248320x2560	model-00130-of-00131.safetensors	0	1271398400
+specs/021-strata-inference-research/evidence/qwen3_8_flash_next_text_tensor_headers.tsv:190:model.language_model.layers.1.ple.ple_embedding.ngram_heads_vocab_sizes		PLEHashMetadata	I64	16	model-00037-of-00131.safetensors	128	256
+./agentix-qwen/tests/config.rs:182:                "ple.ple_embedding.ngram_heads_vocab_sizes",
+specs/021-strata-inference-research/evidence/ista_iq3s_shard1_tensor_headers.tsv:3:output.weight	q6_K	2560	248320	1	1	0	521472000	11024384
+specs/021-strata-inference-research/evidence/ista_iq3s_shard1_tensor_headers.tsv:7:token_embd.weight	iq4_xs	2560	248320	1	1	534620160	337715200	545644544
+./agentix-qwen/tests/fixtures/qwen3_8_flash_next_config.json:82:        "make_ngram_vocab_size_divisible_by": 128,
+./agentix-qwen/tests/fixtures/qwen3_8_flash_next_config.json:99:        "ngram_vocab_size_base": 20000000,
+./agentix-qwen/tests/fixtures/qwen3_8_flash_next_config.json:131:        "vocab_size": 248320
+./agentix-qwen/tests/ngram.rs:62:    assert!(ngram.extend(&[99, 248_320]).is_err());
+./agentix-qwen/tests/tokenizer.rs:27:    assert_eq!(tokenizer.tokenizer_token_count(), 248_077);
+./agentix-qwen/tests/tokenizer.rs:28:    assert_eq!(tokenizer.model_vocabulary_size(), 248_320);
+./agentix-qwen/tests/source.rs:475:    let vocab_sizes = vec![20_000_001_i64; 16];
+./agentix-qwen/tests/source.rs:477:        "model.language_model.layers.1.ple.ple_embedding.ngram_heads_vocab_sizes",
+./agentix-qwen/tests/source.rs:479:        &vocab_sizes,
+./agentix-qwen/tests/source.rs:483:    assert_eq!(converted.values, vocab_sizes);
+./specs/021-strata-inference-research/coding-task-fixtures.md:71:Update the Qwen quickstart to document that the text tokenizer has 248,077
+./specs/021-strata-inference-research/coding-task-fixtures.md:72:addressable IDs while model embeddings are padded to 248,320, and explain that
+./specs/021-strata-inference-research/coding-task-fixtures.md:76:Acceptance: `rg -n '248,077|248,320' specs/021-strata-inference-research/quickstart.md`.
+./specs/021-strata-inference-research/qwen-design.md:8:- Tokenizer artifact: `tokenizer.json` from the same immutable checkpoint revision; pinned Nix hash `sha256-CZf0EMV6H05TsJ5L6PShctkO3ZVkNo+whHAwk3IpufM=`. It contains 248,077 addressable IDs (maximum ID 248,076), while the model embedding vocabulary is padded to 248,320. These are distinct dimensions and must not be conflated.
+./specs/021-strata-inference-research/qwen-design.md:81:248,077 tokenizer IDs, 248,320 model vocabulary rows, and stop IDs 248,046 and
+./specs/021-strata-inference-research/qwen-design.md:247:  `[248320,2560]`, `lm_head.weight` `[248320,2560]` (untied), and
+./specs/021-strata-inference-research/qwen-design.md:372:`output.weight` as Q6_K `[2560, 248320]`; this establishes the dispatch's input
+./specs/021-strata-inference-research/qwen-design.md:412:`step` calls produce finite 248,320-value logits; the first greedy token is
+./specs/021-strata-inference-research/sources.md:16:| Qwen tokenizer | `de4b8e4d43b917e7706784d8bb445c9af86a3540` | `tokenizer.json`, pinned Nix hash `sha256-CZf0EMV6H05TsJ5L6PShctkO3ZVkNo+whHAwk3IpufM=`; addressable token count 248,077 |
+./specs/021-strata-inference-research/tasks.md:162:- Additional T018 full-graph check: the IQ3_S sampler carries token ID 1 through all 48 blocks, including block-1 PLE, all GatedDeltaNet/QSA layers and routed/shared experts, then final stream combine and output projection. The reusable decoder processes greedy token 79104 in a second full pass, preserves per-layer state, and emits 248,320 finite logits at both positions. Evidence is in `evidence/ista_iq3s_full_payload_sample_rows.tsv`. This verifies stateful execution, not independent reference parity or full-model acceptance.
+./specs/021-strata-inference-research/tasks.md:163:- Additional T018 boundary check: an exhaustive pass over all 248,320 model vocabulary IDs with evolving n-gram history confirms each of the 16 emitted PLE row IDs is less than the 320,001,446 logical rows. The 90 source-alignment padding rows in the 320,001,536-row physical table are therefore not reachable through `Ngram` addressing.
+./specs/021-strata-inference-research/evidence/ggml-qwen-iq4nl-shard-2-tensors.tsv:1213:token_embd.weight	q8_0	2560	248320	1	1	675430400
+./specs/021-strata-inference-research/evidence/ggml-qwen-iq4nl-shard-2-tensors.tsv:1224:output.weight	q8_0	2560	248320	1	1	675430400
+./specs/021-strata-inference-research/evidence/ggml-qwen-iq4nl-shards.json:80:        "ple_head_vocab_sizes_array_length": 16
+./specs/021-strata-inference-research/evidence/ista_iq3s_full_payload_sample_rows.tsv:22:output.weight	q6_K	2560	248320	true
+./specs/021-strata-inference-research/evidence/ista_iq3s_full_payload_sample_rows.tsv:25:token_embd.weight	iq4_xs	2560	248320	true
+./specs/021-strata-inference-research/evidence/ista_iq3s_full_payload_sample_rows.tsv:42:# decoder_model=full blocks=48 input_token_id=1 output_logits=248320 greedy_token_id=79104 greedy_logit=11.96474266 second_input_token_id=79104 second_greedy_token_id=245228 cached_position=2 finite=true synthetic_input=false
+./specs/021-strata-inference-research/evidence/qwen3_8_flash_next_source_to_gguf.tsv:190:model.language_model.layers.1.ple.ple_embedding.ngram_heads_vocab_sizes		PLEHashMetadata
+./specs/021-strata-inference-research/evidence/ista_iq3s_shard1_tensor_headers.tsv:3:output.weight	q6_K	2560	248320	1	1	0	521472000	11024384
+./specs/021-strata-inference-research/evidence/ista_iq3s_shard1_tensor_headers.tsv:7:token_embd.weight	iq4_xs	2560	248320	1	1	534620160	337715200	545644544
+./specs/021-strata-inference-research/quickstart.md:215:The pinned tokenizer artifact contains 248,077 token IDs, while the model's
+./specs/021-strata-inference-research/quickstart.md:216:input/output embedding vocabulary is padded to 248,320 rows. Use the tokenizer
+./specs/021-strata-inference-research/implementation-log.md:28:- The tokenizer artifact exposes 248,077 token IDs (max ID 248,076), while model embeddings and n-gram state use 248,320 rows. The tokenizer API now exposes those as separate counts; the user approved this distinction.
+./specs/021-strata-inference-research/implementation-log.md:184:- Completed the coding-suite vocabulary documentation and dependency-boundary audit in `quickstart.md`: the pinned tokenizer represents 248,077 token IDs while the model embedding/output vocabulary is padded to 248,320 rows; the exact `cargo tree` commands show pure `agentix-qwen` has no GGML/GGUF native dependency, while `agentix-qwen-sys` owns GGUF parsing/row decoding through `llama-cpp-sys-2 0.1.154`. Both trees contain no Strata. The tokenizer values are confirmed by the checked tokenizer integration test, and the normal dependency trees were rerun after documenting them. The benchmark fixture remains draft because its baseline commit/evaluator are not yet available.
+./specs/021-strata-inference-research/implementation-log.md:254:- Extended the artifact sampler from the first QSA block through the remaining configured layers. A single actual token embedding now traverses all 48 blocks, including each recurrent/QSA state update, PLE at block 1, all attention/FFN residual mixers, all routed/shared MoE paths, final stream combine, and `output.weight`. The resulting 248,320 logits are finite; greedy token ID 79104 has logit 11.96474266. Refreshed evidence TSV SHA256: `fdf8b108f59530d135161a81e4bd447145300a1f13ebd2598b4f5fbf66214869`. This is a full one-token CPU forward smoke run, not independent expected-logit parity or a stateful generation/serving backend.
+./specs/021-strata-inference-research/implementation-log.md:256:- Added reusable `QwenGgufDecoder` over shared per-shard file handles and lazy tensor-row readers. It preserves all per-layer GatedDeltaNet/QSA caches, PLE n-gram/convolution state, and sequential position across calls; a failed partial step poisons the decoder rather than allowing corrupted state reuse. The IQ3_S full-model sampler now feeds token ID 1, selects greedy ID 79104, then feeds that token through a second complete 48-block step; both 248,320-value logits vectors are finite and the decoder reaches position 2, with second greedy ID 245228. The verified full sampler output is checked in; its refreshed evidence TSV SHA256 is recorded in the inventory JSON. This validates stateful two-token CPU execution, not an independent logit oracle.
+./specs/021-strata-inference-research/evidence/qwen3_8_flash_next_text_tensor_headers.tsv:2:lm_head.weight	output.weight	Direct	BF16	248320x2560	model-00131-of-00131.safetensors	0	1271398400
+./specs/021-strata-inference-research/evidence/qwen3_8_flash_next_text_tensor_headers.tsv:3:model.language_model.embed_tokens.weight	token_embd.weight	Direct	BF16	248320x2560	model-00130-of-00131.safetensors	0	1271398400
+./specs/021-strata-inference-research/evidence/qwen3_8_flash_next_text_tensor_headers.tsv:190:model.language_model.layers.1.ple.ple_embedding.ngram_heads_vocab_sizes		PLEHashMetadata	I64	16	model-00037-of-00131.safetensors	128	256
+specs/021-strata-inference-research/fixtures/benchmark_prompts.json:3:  "model_vocabulary_size": 248320,
+specs/021-strata-inference-research/fixtures/benchmark_prompts.json:102456:  "tokenizer_token_count": 248077
+./specs/021-strata-inference-research/fixtures/benchmark_prompts.json:3:  "model_vocabulary_size": 248320,
+./specs/021-strata-inference-research/fixtures/benchmark_prompts.json:102456:  "tokenizer_token_count": 248077
+
+exec
+/run/current-system/sw/bin/bash -lc "sed -n '200,230p' specs/021-strata-inference-research/quickstart.md; sed -n '1,30p' specs/021-strata-inference-research/qwen-design.md; sed -n '1,45p' agentix-qwen/tests/tokenizer.rs; git status --short" in /tmp/nix-shell.sQ0kK4/agentix-bench-26504-1791933316369368192/task-07
+ succeeded in 0ms:
+Reproduce the
+actual-artifact validation with:
+
+```sh
+nix develop path:. --command cargo run -p agentix-qwen-sys --example validate_gguf_sample_rows -- \
+  agentix-qwen/tests/fixtures/qwen3_8_flash_next_config.json \
+  /home/sam/home/agentix/.cache/agentix-qwen/iq3s-ed59f92082b1e93c0e96d60a8b11aab089b52f09/iq3s-00001.gguf \
+  /home/sam/home/agentix/.cache/agentix-qwen/iq3s-ed59f92082b1e93c0e96d60a8b11aab089b52f09/iq3s-00002.gguf
+```
+
+This checks header schema, one finite row from each observed storage type, and
+the listed row-backed operator paths; it does not verify each tensor's numeric
+values or run full-model inference. Synthetic GGUF unit fixtures continue to
+cover malformed metadata and reader errors.
+
+The pinned tokenizer artifact contains 248,077 token IDs, while the model's
+input/output embedding vocabulary is padded to 248,320 rows. Use the tokenizer
+to encode and decode text; use the configured model vocabulary for tensor
+geometry and logits. Do not treat these counts as interchangeable. The pinned
+tokenizer test checks both values and exercises special-token IDs near the
+upper end of the tokenizer vocabulary.
+
+### Normal dependency tree audit
+
+These exact commands were run in the Nix development shell:
+
+```sh
+nix develop path:. --command cargo tree -p agentix-qwen --edges normal
+nix develop path:. --command cargo tree -p agentix-qwen-sys --edges normal
+```
+
+# Independent Qwen execution design
+
+**Implementation status**: a reusable CPU GGUF decoder traverses all 48 blocks and preserves state across tokens; a two-token full-artifact smoke pass produces vocabulary logits. The MiniJinja tokenizer and Unix-socket worker are integrated. An optional CUDA matvec reaches only the final quantized vocabulary projection, and has not run on a GPU. Independent full-model parity, full rendered-prompt execution against the artifact, and CUDA execution for the remaining model operators are still open.
+
+## Authorities and provenance
+
+- Original checkpoint: Qwen/Qwen3.8-Flash-Next revision `de4b8e4d43b917e7706784d8bb445c9af86a3540` (`config.json`, SHA256 `889658f2508e8c61d409b02e70e0d78d8d4452ec65aaafbe129805d213d2e74b`, verified against the immutable upstream bytes).
+- Tokenizer artifact: `tokenizer.json` from the same immutable checkpoint revision; pinned Nix hash `sha256-CZf0EMV6H05TsJ5L6PShctkO3ZVkNo+whHAwk3IpufM=`. It contains 248,077 addressable IDs (maximum ID 248,076), while the model embedding vocabulary is padded to 248,320. These are distinct dimensions and must not be conflated.
+- Chat template: `chat_template.jinja` from the same immutable checkpoint revision; pinned Nix hash `sha256-w8+eNKv0+eNsLXIWWqnBMtPipyW2wlhqqjqK+deoEEE=`. The exact template is retained as the semantic authority. MiniJinja 2.24 does not provide the template's `startswith`/`endswith` string methods by default, so the tokenizer registers a narrow unknown-method callback for those two string operations; the pinned template fixtures pass. Full-model tokenization and generation conformance remain unverified.
+
+`tokenizer::generate_greedy` provides the ordinary greedy control loop over a
+caller-supplied logits function. It uses deterministic lower-token-ID tie
+breaking, stops on the pinned turn-end or EOS IDs, and enforces the requested
+new-token limit. The closure receives prompt plus prior generated tokens; a stop
+token is retained in the generated IDs. The IQ3_S artifact sampler now supplies
+actual logits for one token after traversing all 48 blocks. It does not yet
+retain state across generated tokens or connect prompt preparation to a
+multi-token model loop, so full chat decoding remains incomplete.
+- Independent operator authority: Hugging Face Transformers revision `2fa1fdd5b27ae54bdcee0516848c7963393a5f5c`, `src/transformers/models/qwen4_exp/{modeling,configuration}_qwen4_exp.py`, Apache-2.0. Captured modeling/configuration files have SHA256 `f94401c10c1bbafd814cc174ba6f40dde1f40b35715ce1ae827ccf8ee3cd81fa` / `ac0950ab34516d26fe4f6b28cffe0649d763449effe44e42b5913463806f7e0b`; both independently match raw files fetched from that exact GitHub commit. The earlier 5.8.0 package guess is not a verified implementation source; the pinned Git source is authoritative here.
+- Direct pinned upstream reads were authorized after ingestion failed. No Strata code is used.
+
+## Execution contract
+
+The checkpoint specifies 48 layers: three recurrent GatedDeltaNet layers followed by one QSA layer, repeated twelve times. The hidden width is 2560, four residual streams, 512 routed experts with ten selected per token, and a shared expert. PLE is applied at one-based layer 2 before the attention residual mixer. The final mixer collapses the four streams; there is no conventional final RMSNorm substitution.
+
+Ordinary norms multiply by `1 + checkpoint_weight`, groupwise for residual/PLE norms. Gated recurrent output norms instead use their direct weight and the configured output activation (sigmoid in this checkpoint). MoE routing is a float32 softmax followed by top-k and selected-weight normalization controlled by `norm_topk_prob`; the pinned Transformers config defaults it to true when omitted, and the Agentix parser preserves that default while rejecting a non-boolean value. Shared expert output has an independent sigmoid gate. Tie ordering is deterministic in the Rust reference but may differ from accelerator top-k; compare nontied fixtures and explicitly test tied behavior.
+
+The CPU reference implements one-token MoE assembly using router weights `[experts, hidden]`, fused expert gate/up weights `[2*intermediate, hidden]`, expert down weights `[hidden, intermediate]`, and separate shared-expert gate/up/down projections. Each routed expert applies `SiLU(gate) * up`, down-projects, scales by its selected router probability, and accumulates. The shared expert uses the same SwiGLU equation, then its output is scaled by `sigmoid(shared_expert_gate(input))` and added. `reference::moe_block_from_rows` computes router scores and the shared path from bounded row readers, and opens only selected experts. `agentix-qwen-sys::MoeGgufLayer` now validates router/shared/expert-stack geometry and drives that reference from the configured normalization setting. The full IQ3_S artifact runs it on block 17 for a constant-vector input and returns finite output; it has no independent expected-logit oracle. This remains a CPU operator smoke path, not full-layer graph execution, batched expert dispatch, or expert cache placement.
+
+QSA pools complete visible-token blocks of four, normalizes and rotates pooled keys at block-start positions, scores them with positive query/key dot products summed over indexer heads, selects up to 512 blocks and always includes the incomplete tail. Main attention uses 24 query heads, two KV heads and 256 dimensions; query projection interleaves query and sigmoid-gate features per head. Text-only RoPE uses equal position coordinates; vision is excluded.
+use agentix_qwen::tokenizer::{
+    generate_greedy, greedy_next_token, GreedyStopReason, PromptRequest, QwenTokenizer,
+};
+use serde_json::{json, Value};
+use std::{error::Error, io, path::PathBuf};
+
+fn fixture(name: &str) -> Result<PathBuf, Box<dyn Error>> {
+    std::env::var_os(name).map(PathBuf::from).ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("missing Nix-pinned fixture {name}"),
+        )
+        .into()
+    })
+}
+
+fn tokenizer() -> Result<QwenTokenizer, Box<dyn Error>> {
+    Ok(QwenTokenizer::from_files(
+        &fixture("AGENTIX_QWEN_TOKENIZER_PATH")?,
+        &fixture("AGENTIX_QWEN_TEMPLATE_PATH")?,
+    )?)
+}
+
+#[test]
+fn pinned_vocabulary_chat_template_and_generation_stops() -> Result<(), Box<dyn Error>> {
+    let tokenizer = tokenizer()?;
+    assert_eq!(tokenizer.tokenizer_token_count(), 248_077);
+    assert_eq!(tokenizer.model_vocabulary_size(), 248_320);
+    assert_eq!(tokenizer.stop_token_ids(), [248_046, 248_044]);
+    let messages = [json!({"role":"user", "content":"Hi!"})];
+    let rendered = tokenizer.render(&messages, &[], "medium", true, true, true)?;
+    assert_eq!(
+        rendered,
+        "<|im_start|>user\nHi!<|im_end|>\n<|im_start|>assistant\n<think>\n"
+    );
+    let encoding = tokenizer.encode_rendered(&rendered)?;
+    assert_eq!(
+        encoding.get_ids(),
+        &[248_045, 846, 198, 12_675, 0, 248_046, 198, 248_045, 74_455, 198, 248_068, 198]
+    );
+    let decoded = tokenizer.decode(encoding.get_ids())?;
+    assert_eq!(decoded, rendered);
+    Ok(())
+}
+
+
+apply patch
+patch: completed
+/tmp/nix-shell.sQ0kK4/agentix-bench-26504-1791933316369368192/task-07/specs/021-strata-inference-research/quickstart.md
+diff --git a/specs/021-strata-inference-research/quickstart.md b/specs/021-strata-inference-research/quickstart.md
+index c7ba4c2a3a10196f46b1a60e337786c661f8c84a..a2e648f6592dba2ca1341c13d6339bc3ebc1c509
+--- a/specs/021-strata-inference-research/quickstart.md
++++ b/specs/021-strata-inference-research/quickstart.md
+@@ -212,12 +212,13 @@
+ values or run full-model inference. Synthetic GGUF unit fixtures continue to
+ cover malformed metadata and reader errors.
+ 
+-The pinned tokenizer artifact contains 248,077 token IDs, while the model's
+-input/output embedding vocabulary is padded to 248,320 rows. Use the tokenizer
+-to encode and decode text; use the configured model vocabulary for tensor
+-geometry and logits. Do not treat these counts as interchangeable. The pinned
+-tokenizer test checks both values and exercises special-token IDs near the
+-upper end of the tokenizer vocabulary.
++The pinned tokenizer artifact has 248,077 addressable token IDs, while the
++model's input/output embedding vocabulary is padded to 248,320 rows. These
++sizes describe different things and must not be used interchangeably: use the
++tokenizer's addressable IDs to encode and decode text, and the configured model
++vocabulary for tensor geometry and logits. The pinned tokenizer test checks
++both values and exercises special-token IDs near the upper end of the
++tokenizer vocabulary.
+ 
+ ### Normal dependency tree audit
+ 
+
+diff --git a/specs/021-strata-inference-research/quickstart.md b/specs/021-strata-inference-research/quickstart.md
+index c7ba4c2a3a10196f46b1a60e337786c661f8c84a..a2e648f6592dba2ca1341c13d6339bc3ebc1c509
+--- a/specs/021-strata-inference-research/quickstart.md
++++ b/specs/021-strata-inference-research/quickstart.md
+@@ -212,12 +212,13 @@
+ values or run full-model inference. Synthetic GGUF unit fixtures continue to
+ cover malformed metadata and reader errors.
+ 
+-The pinned tokenizer artifact contains 248,077 token IDs, while the model's
+-input/output embedding vocabulary is padded to 248,320 rows. Use the tokenizer
+-to encode and decode text; use the configured model vocabulary for tensor
+-geometry and logits. Do not treat these counts as interchangeable. The pinned
+-tokenizer test checks both values and exercises special-token IDs near the
+-upper end of the tokenizer vocabulary.
++The pinned tokenizer artifact has 248,077 addressable token IDs, while the
++model's input/output embedding vocabulary is padded to 248,320 rows. These
++sizes describe different things and must not be used interchangeably: use the
++tokenizer's addressable IDs to encode and decode text, and the configured model
++vocabulary for tensor geometry and logits. The pinned tokenizer test checks
++both values and exercises special-token IDs near the upper end of the
++tokenizer vocabulary.
+ 
+ ### Normal dependency tree audit
+ 
+
+exec
+/run/current-system/sw/bin/bash -lc "rg -n '248,077|248,320' specs/021-strata-inference-research/quickstart.md; git diff -- specs/021-strata-inference-research/quickstart.md" in /tmp/nix-shell.sQ0kK4/agentix-bench-26504-1791933316369368192/task-07
+ succeeded in 0ms:
+215:The pinned tokenizer artifact has 248,077 addressable token IDs, while the
+216:model's input/output embedding vocabulary is padded to 248,320 rows. These
+diff --git a/specs/021-strata-inference-research/quickstart.md b/specs/021-strata-inference-research/quickstart.md
+index c7ba4c2..a2e648f 100644
+--- a/specs/021-strata-inference-research/quickstart.md
++++ b/specs/021-strata-inference-research/quickstart.md
+@@ -212,12 +212,13 @@ the listed row-backed operator paths; it does not verify each tensor's numeric
+ values or run full-model inference. Synthetic GGUF unit fixtures continue to
+ cover malformed metadata and reader errors.
+ 
+-The pinned tokenizer artifact contains 248,077 token IDs, while the model's
+-input/output embedding vocabulary is padded to 248,320 rows. Use the tokenizer
+-to encode and decode text; use the configured model vocabulary for tensor
+-geometry and logits. Do not treat these counts as interchangeable. The pinned
+-tokenizer test checks both values and exercises special-token IDs near the
+-upper end of the tokenizer vocabulary.
++The pinned tokenizer artifact has 248,077 addressable token IDs, while the
++model's input/output embedding vocabulary is padded to 248,320 rows. These
++sizes describe different things and must not be used interchangeably: use the
++tokenizer's addressable IDs to encode and decode text, and the configured model
++vocabulary for tensor geometry and logits. The pinned tokenizer test checks
++both values and exercises special-token IDs near the upper end of the
++tokenizer vocabulary.
+ 
+ ### Normal dependency tree audit
+ 
+
+diff --git a/specs/021-strata-inference-research/quickstart.md b/specs/021-strata-inference-research/quickstart.md
+index c7ba4c2a3a10196f46b1a60e337786c661f8c84a..a2e648f6592dba2ca1341c13d6339bc3ebc1c509
+--- a/specs/021-strata-inference-research/quickstart.md
++++ b/specs/021-strata-inference-research/quickstart.md
+@@ -212,12 +212,13 @@
+ values or run full-model inference. Synthetic GGUF unit fixtures continue to
+ cover malformed metadata and reader errors.
+ 
+-The pinned tokenizer artifact contains 248,077 token IDs, while the model's
+-input/output embedding vocabulary is padded to 248,320 rows. Use the tokenizer
+-to encode and decode text; use the configured model vocabulary for tensor
+-geometry and logits. Do not treat these counts as interchangeable. The pinned
+-tokenizer test checks both values and exercises special-token IDs near the
+-upper end of the tokenizer vocabulary.
++The pinned tokenizer artifact has 248,077 addressable token IDs, while the
++model's input/output embedding vocabulary is padded to 248,320 rows. These
++sizes describe different things and must not be used interchangeably: use the
++tokenizer's addressable IDs to encode and decode text, and the configured model
++vocabulary for tensor geometry and logits. The pinned tokenizer test checks
++both values and exercises special-token IDs near the upper end of the
++tokenizer vocabulary.
+ 
+ ### Normal dependency tree audit
+ 
+
+codex
+Updated [quickstart.md](/tmp/nix-shell.sQ0kK4/agentix-bench-26504-1791933316369368192/task-07/specs/021-strata-inference-research/quickstart.md:215) to distinguish the tokenizer’s 248,077 addressable IDs from the model’s 248,320 embedding rows and explain their separate uses.
+
+The requested `rg` command returned both values. No tests run; no commit made.
+diff --git a/specs/021-strata-inference-research/quickstart.md b/specs/021-strata-inference-research/quickstart.md
+index c7ba4c2a3a10196f46b1a60e337786c661f8c84a..a2e648f6592dba2ca1341c13d6339bc3ebc1c509
+--- a/specs/021-strata-inference-research/quickstart.md
++++ b/specs/021-strata-inference-research/quickstart.md
+@@ -212,12 +212,13 @@
+ values or run full-model inference. Synthetic GGUF unit fixtures continue to
+ cover malformed metadata and reader errors.
+ 
+-The pinned tokenizer artifact contains 248,077 token IDs, while the model's
+-input/output embedding vocabulary is padded to 248,320 rows. Use the tokenizer
+-to encode and decode text; use the configured model vocabulary for tensor
+-geometry and logits. Do not treat these counts as interchangeable. The pinned
+-tokenizer test checks both values and exercises special-token IDs near the
+-upper end of the tokenizer vocabulary.
++The pinned tokenizer artifact has 248,077 addressable token IDs, while the
++model's input/output embedding vocabulary is padded to 248,320 rows. These
++sizes describe different things and must not be used interchangeably: use the
++tokenizer's addressable IDs to encode and decode text, and the configured model
++vocabulary for tensor geometry and logits. The pinned tokenizer test checks
++both values and exercises special-token IDs near the upper end of the
++tokenizer vocabulary.
+ 
+ ### Normal dependency tree audit
+ 
+
+tokens used
+18,178

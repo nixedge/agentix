@@ -1,0 +1,3 @@
+Updated [quickstart.md](/tmp/nix-shell.sQ0kK4/agentix-bench-26504-1791933316369368192/task-07/specs/021-strata-inference-research/quickstart.md:215) to distinguish the tokenizer’s 248,077 addressable IDs from the model’s 248,320 embedding rows and explain their separate uses.
+
+The requested `rg` command returned both values. No tests run; no commit made.

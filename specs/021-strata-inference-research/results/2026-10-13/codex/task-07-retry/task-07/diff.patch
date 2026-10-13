@@ -1,0 +1,24 @@
+diff --git a/specs/021-strata-inference-research/quickstart.md b/specs/021-strata-inference-research/quickstart.md
+index c7ba4c2..a2e648f 100644
+--- a/specs/021-strata-inference-research/quickstart.md
++++ b/specs/021-strata-inference-research/quickstart.md
+@@ -212,12 +212,13 @@ the listed row-backed operator paths; it does not verify each tensor's numeric
+ values or run full-model inference. Synthetic GGUF unit fixtures continue to
+ cover malformed metadata and reader errors.
+ 
+-The pinned tokenizer artifact contains 248,077 token IDs, while the model's
+-input/output embedding vocabulary is padded to 248,320 rows. Use the tokenizer
+-to encode and decode text; use the configured model vocabulary for tensor
+-geometry and logits. Do not treat these counts as interchangeable. The pinned
+-tokenizer test checks both values and exercises special-token IDs near the
+-upper end of the tokenizer vocabulary.
++The pinned tokenizer artifact has 248,077 addressable token IDs, while the
++model's input/output embedding vocabulary is padded to 248,320 rows. These
++sizes describe different things and must not be used interchangeably: use the
++tokenizer's addressable IDs to encode and decode text, and the configured model
++vocabulary for tensor geometry and logits. The pinned tokenizer test checks
++both values and exercises special-token IDs near the upper end of the
++tokenizer vocabulary.
+ 
+ ### Normal dependency tree audit
+ 

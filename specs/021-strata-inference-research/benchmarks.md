@@ -46,7 +46,7 @@ nix run .#agentix-bench -- \
   --output /path/to/results/2026-10-13/engine/model-id
 ```
 
-No baseline or candidate engine runs have been recorded yet. T009 remains partial until the runner is exercised against each engine, result diffs are reviewed, and baseline records are retained.
+One baseline-checkout evaluator task has been exercised. Codex CLI 0.162.1 completed Task 7 from baseline `13f2a5cb52ebc801eab154b009b0ab01f19e7a6a` in 15.4 seconds; its exact `rg` acceptance command passed, and manual review confirmed the diff only clarifies the 248,077 tokenizer IDs versus 248,320 padded embedding rows. The accepted run is retained under `results/2026-10-13/codex/task-07-retry/`. The first invocation used incompatible CLI flags and is retained separately under `results/2026-10-13/codex/task-07/`; it failed before the engine ran. This is one task, not a ten-task baseline/candidate result, and it provides no model-runtime benchmark. T009 remains partial until both engines complete the frozen suite, all diffs are reviewed, and the records are retained.
 
 ## Comparison and reporting rules
 

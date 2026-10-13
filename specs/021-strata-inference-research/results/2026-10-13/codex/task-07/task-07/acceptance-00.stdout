@@ -1,0 +1,2 @@
+215:The pinned tokenizer artifact contains 248,077 token IDs, while the model's
+216:input/output embedding vocabulary is padded to 248,320 rows. Use the tokenizer
