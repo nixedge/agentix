@@ -1,7 +1,7 @@
 # Decision: independently implement Qwen Flash Next in agentix
 
 **Updated**: 2026-10-13
-**Status**: Direction selected by user. A stateful CPU GGUF decoder and isolated Unix-socket worker now execute greedy text generation, with exact-model daemon routing. Independent output parity, CUDA kernels, optimization stages and target-host acceptance remain pending.
+**Status**: Direction selected by user. A stateful CPU GGUF decoder and isolated Unix-socket worker now execute greedy text generation, with exact-model daemon routing. An opt-in CUDA path now dispatches only the quantized vocabulary projection; it streams weights each token and remains unverified on a GPU. Independent output parity, full CUDA execution, optimization stages and target-host acceptance remain pending.
 
 ## Selected direction
 

@@ -40,6 +40,7 @@ struct AppState {
     tokenizer: Arc<QwenTokenizer>,
     model_name: Arc<str>,
     context_limit: usize,
+    cuda_output_device: Option<usize>,
     generation_slot: Arc<Semaphore>,
 }
 
@@ -87,9 +88,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 template_path.display()
             ))
         })?;
-    QwenGgufDecoder::open(&store, &config).map_err(|error| {
-        std::io::Error::other(format!("cannot initialize Qwen decoder: {error}"))
-    })?;
     if tokenizer.tokenizer_token_count() != 248_077
         || tokenizer.model_vocabulary_size() != config.vocab_size
     {
@@ -104,6 +102,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
     if context_limit == 0 {
         return Err("Qwen context limit must be positive".into());
     }
+    let cuda_output_device = env::var("AGENTIX_QWEN_CUDA_OUTPUT_DEVICE")
+        .ok()
+        .map(|value| value.parse::<usize>())
+        .transpose()?;
+    let mut decoder = QwenGgufDecoder::open(&store, &config).map_err(|error| {
+        std::io::Error::other(format!("cannot initialize Qwen decoder: {error}"))
+    })?;
+    configure_decoder(&mut decoder, cuda_output_device).map_err(std::io::Error::other)?;
+    drop(decoder);
 
     let state = AppState {
         store: Arc::new(store),
@@ -113,6 +120,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             env::var("AGENTIX_QWEN_MODEL").unwrap_or_else(|_| "qwen3.8-flash-next".into()),
         ),
         context_limit,
+        cuda_output_device,
         generation_slot: Arc::new(Semaphore::new(1)),
     };
 
@@ -132,6 +140,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         model = %state.model_name,
         shards = shard_paths.len(),
         context_limit,
+        cuda_output_device = ?state.cuda_output_device,
         "Qwen worker ready"
     );
 
@@ -397,6 +406,7 @@ async fn chat_completions(State(state): State<AppState>, body: Bytes) -> Respons
         let _permit = permit;
         let mut decoder = QwenGgufDecoder::open(&model_state.store, &model_state.config)
             .map_err(|_| "Model initialization failed")?;
+        configure_decoder(&mut decoder, model_state.cuda_output_device)?;
         let output = decoder
             .generate_prepared_greedy(&prepared, &model_state.tokenizer.stop_token_ids())
             .map_err(|_| "Model generation failed")?;
@@ -556,6 +566,7 @@ fn stream_generation(
 ) -> Result<(), &'static str> {
     let mut decoder = QwenGgufDecoder::open(&state.store, &state.config)
         .map_err(|_| "Model initialization failed")?;
+    configure_decoder(&mut decoder, state.cuda_output_device)?;
     let mut logits = None;
     for token_id in &prepared.token_ids {
         if sender.is_closed() {
@@ -675,6 +686,31 @@ fn api_error(status: StatusCode, code: &str, message: &str) -> Response {
 
 fn env_path(name: &str, default: &str) -> PathBuf {
     env::var_os(name).map_or_else(|| PathBuf::from(default), PathBuf::from)
+}
+
+#[cfg(feature = "cuda")]
+fn configure_decoder(
+    decoder: &mut QwenGgufDecoder<'_>,
+    device: Option<usize>,
+) -> Result<(), &'static str> {
+    if let Some(device) = device {
+        decoder
+            .enable_cuda_output_projection(device)
+            .map_err(|_| "cannot enable the requested CUDA output projection")?;
+    }
+    Ok(())
+}
+
+#[cfg(not(feature = "cuda"))]
+fn configure_decoder(
+    _decoder: &mut QwenGgufDecoder<'_>,
+    device: Option<usize>,
+) -> Result<(), &'static str> {
+    if device.is_some() {
+        Err("CUDA output projection requested from a worker built without CUDA")
+    } else {
+        Ok(())
+    }
 }
 
 fn env_path_or_join(name: &str, base: &std::path::Path, filename: &str) -> PathBuf {

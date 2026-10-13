@@ -1,6 +1,6 @@
 # Independent Qwen execution design
 
-**Implementation status**: a reusable CPU GGUF decoder traverses all 48 blocks and preserves state across tokens; a two-token full-artifact smoke pass produces vocabulary logits. Independent full-model parity, tokenizer-backed prompt generation, worker integration, and GPU kernels remain unimplemented.
+**Implementation status**: a reusable CPU GGUF decoder traverses all 48 blocks and preserves state across tokens; a two-token full-artifact smoke pass produces vocabulary logits. The MiniJinja tokenizer and Unix-socket worker are integrated. An optional CUDA matvec reaches only the final quantized vocabulary projection, and has not run on a GPU. Independent full-model parity, full rendered-prompt execution against the artifact, and CUDA execution for the remaining model operators are still open.
 
 ## Authorities and provenance
 
@@ -360,9 +360,19 @@ uses the tensor's native GGML storage type for each graph. A focused test covers
 raw row byte preservation and range validation; the CUDA test executable builds
 but cannot launch in this environment because `libcuda.so.1` is absent. Neither
 matvec has passed device execution or numeric CPU/device parity here. The
-quantized path does not retain weights on the GPU across calls, compose any Qwen
-layer, or integrate with `QwenGgufDecoder`. T019 still requires target-device
-operator parity, stateful layer execution, residency, and decoder integration.
+`compare_cuda_gguf_matvec` example runs both paths over the pinned Q6_K
+`output.weight` and reports logit error/top-1 agreement without imposing an
+unverified tolerance; it is ready for the RTX 3090 host but has not run there.
+Qwen decoder can opt into CUDA for its final quantized vocabulary projection,
+and the worker exposes that mode through the unset-by-default
+`AGENTIX_QWEN_CUDA_OUTPUT_DEVICE` setting. This streams/uploads the full output
+matrix for every token; all attention, recurrent, PLE, residual-mixer, and MoE
+operators remain on CPU. It is an experimental operator integration, not a
+performance path. The pinned IQ3_S artifact inventory identifies
+`output.weight` as Q6_K `[2560, 248320]`; this establishes the dispatch's input
+type and shape, not target-device support. T019 still requires target-device
+operator parity, stateful layer execution, practical GPU residency, and CUDA
+support across the decoder.
 
 The native dependency is independently sourced from the crates.io
 `llama-cpp-sys-2` package and its bundled upstream llama.cpp/ggml tree; it is not

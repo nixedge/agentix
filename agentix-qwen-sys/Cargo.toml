@@ -9,6 +9,10 @@ description = "Isolated GGUF/GGML bindings for the agentix Qwen worker"
 default = []
 cuda = ["llama-cpp-sys-2/cuda"]
 
+[[example]]
+name = "compare_cuda_gguf_matvec"
+required-features = ["cuda"]
+
 [dependencies]
 agentix-qwen = { path = "../agentix-qwen" }
 llama-cpp-sys-2 = { version = "=0.1.154", default-features = false }

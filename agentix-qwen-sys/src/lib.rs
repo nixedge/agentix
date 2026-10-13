@@ -980,7 +980,12 @@ impl QwenGgufTensorStore {
                 .remove(&split)
                 .ok_or(Error::Invalid("Qwen GGUF split path is missing"))?;
             shards.push(QwenGgufShard {
-                file: Arc::new(File::open(path)?),
+                file: Arc::new(File::open(&path).map_err(|error| {
+                    Error::Io(std::io::Error::new(
+                        error.kind(),
+                        format!("cannot open Qwen GGUF shard {}: {error}", path.display()),
+                    ))
+                })?),
                 info,
             });
         }
@@ -1898,6 +1903,8 @@ pub struct QwenGgufDecoder<'a> {
     blocks: Vec<QwenDecoderGgufBlock<'a>>,
     final_mixer: ResidualMixerGguf,
     output_projection: GgufMatrixRows,
+    #[cfg(feature = "cuda")]
+    cuda_output_device: Option<usize>,
     position: usize,
     poisoned: bool,
 }
@@ -1995,9 +2002,29 @@ impl<'a> QwenGgufDecoder<'a> {
             blocks,
             final_mixer,
             output_projection,
+            #[cfg(feature = "cuda")]
+            cuda_output_device: None,
             position: 0,
             poisoned: false,
         })
+    }
+
+    /// Route only the final quantized vocabulary projection through CUDA.
+    /// Earlier Qwen operators remain on the CPU. This experimental path streams
+    /// GGUF weight chunks for every token and is intended for correctness
+    /// evaluation, not a throughput claim.
+    #[cfg(feature = "cuda")]
+    pub fn enable_cuda_output_projection(&mut self, device_index: usize) -> Result<(), Error> {
+        if !matches!(&self.output_projection.rows, GgufRows::Quantized(_)) {
+            return Err(Error::Invalid(
+                "CUDA output projection requires quantized GGUF weights",
+            ));
+        }
+        if crate::cuda_devices().get(device_index).is_none() {
+            return Err(Error::Invalid("requested GGML CUDA device is unavailable"));
+        }
+        self.cuda_output_device = Some(device_index);
+        Ok(())
     }
 
     /// Processes one token and returns logits for the following token.
@@ -2156,6 +2183,18 @@ impl<'a> QwenGgufDecoder<'a> {
             }
         }
         let final_hidden = self.final_mixer.mix(&hidden)?.mixed_input;
+        #[cfg(feature = "cuda")]
+        let logits = if let Some(device_index) = self.cuda_output_device {
+            crate::cuda_quantized_gguf_matvec(device_index, &self.output_projection, &final_hidden)
+                .map_err(|_| agentix_qwen::Error::Invalid("CUDA output projection failed"))?
+        } else {
+            agentix_qwen::reference::linear_from_rows(
+                &final_hidden,
+                &mut self.output_projection,
+                None,
+            )?
+        };
+        #[cfg(not(feature = "cuda"))]
         let logits = agentix_qwen::reference::linear_from_rows(
             &final_hidden,
             &mut self.output_projection,
@@ -2478,7 +2517,14 @@ impl Drop for Context {
 /// Parses GGUF metadata without allocating tensor payloads and validates every
 /// advertised tensor byte range against the file length.
 pub fn inspect_gguf(path: &Path) -> Result<GgufInfo, Error> {
-    let file_size = std::fs::metadata(path)?.len();
+    let file_size = std::fs::metadata(path)
+        .map_err(|error| {
+            Error::Io(std::io::Error::new(
+                error.kind(),
+                format!("cannot inspect GGUF shard {}: {error}", path.display()),
+            ))
+        })?
+        .len();
     if !(24..=MAX_GGUF_BYTES).contains(&file_size) {
         return Err(Error::Invalid("file size outside supported bounds"));
     }

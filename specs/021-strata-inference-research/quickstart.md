@@ -88,10 +88,19 @@ options are required by the module:
       modelDir = "/var/lib/agentix/qwen";
       # Defaults: the verified IQ3_S shard names and publisher hashes.
       # context = 32768;
+      # Optional CUDA probe: requires a CUDA-enabled package and a working driver.
+      # This routes only the final vocabulary projection to CUDA; all Qwen block
+      # operators remain CPU-side and streamed weights are uploaded each token.
+      # extraEnv.AGENTIX_QWEN_CUDA_OUTPUT_DEVICE = "0";
     };
   };
 }
 ```
+
+`AGENTIX_QWEN_CUDA_OUTPUT_DEVICE` is an opt-in correctness probe, not a
+performance setting. The worker validates that the selected CUDA device exists
+before binding its socket. CUDA output projection has not been executed on the
+RTX 3090 target; leave the option unset until testing on that host.
 
 Place `iq3s-00001.gguf` and `iq3s-00002.gguf` in `/var/lib/agentix/qwen/`;
 the module creates that directory for the `agentix` service account. The worker
@@ -115,11 +124,29 @@ curl -sS http://127.0.0.1:11434/v1/chat/completions \\
   -d '{"model":"qwen3.8-flash-next","messages":[{"role":"user","content":"Reply with OK."}],"temperature":0,"max_tokens":4}'
 ```
 
-This is a CPU smoke deployment. The `cuda` Nix feature currently confirms a
-CUDA-enabled native package build; the decoder does not dispatch inference
-operators to CUDA. A successful package build therefore does not establish GPU
-inference, target-device correctness, or acceptable latency. Real chat prefill
-is also not batched, so the first request may be very slow.
+This is a CPU smoke deployment by default. The optional
+`AGENTIX_QWEN_CUDA_OUTPUT_DEVICE` setting routes only the final vocabulary
+projection through CUDA; all attention, recurrent, PLE, residual-mixer, and MoE
+operators remain on CPU. GGUF output weights are streamed and uploaded for each
+token, so this path is a correctness probe rather than an expected speedup. A
+successful package build does not establish GPU execution or target-device
+correctness. Real chat prefill is also not batched, so the first request may be
+very slow.
+
+For a direct output-projection comparison on the GPU host, run the pinned
+Q6_K `output.weight` through the CPU row reference and CUDA matvec:
+
+```sh
+nix develop path:. --command cargo run -p agentix-qwen-sys --features cuda \
+  --example compare_cuda_gguf_matvec -- \
+  agentix-qwen/tests/fixtures/qwen3_8_flash_next_config.json \
+  /var/lib/agentix/qwen/iq3s-00001.gguf \
+  /var/lib/agentix/qwen/iq3s-00002.gguf 0
+```
+
+The example reports max absolute/relative logit error and top-1 agreement. It
+does not choose a numerical acceptance threshold; record its output before
+freezing the operator tolerance.
 
 ## Current dependency and Nix boundary
 

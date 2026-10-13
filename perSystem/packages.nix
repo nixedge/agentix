@@ -71,6 +71,8 @@
         cp ${stubLib} $out/agentix-qwen/src/lib.rs
         mkdir -p $out/agentix-qwen-sys/src
         cp ${stubLib} $out/agentix-qwen-sys/src/lib.rs
+        mkdir -p $out/agentix-qwen-sys/examples
+        cp ${stubMain} $out/agentix-qwen-sys/examples/compare_cuda_gguf_matvec.rs
         mkdir -p $out/agentix-qwen-worker/src
         cp ${stubMain} $out/agentix-qwen-worker/src/main.rs
         mkdir -p $out/agentix-search/src
@@ -258,7 +260,7 @@
       agentix-ax = "mkdir -p $out/agentix-ax/src;         cp ${stubMain} $out/agentix-ax/src/main.rs";
       agentix-infer = "mkdir -p $out/agentix-infer/src;      cp ${stubLib}  $out/agentix-infer/src/lib.rs";
       agentix-qwen = "mkdir -p $out/agentix-qwen/src; cp ${stubLib} $out/agentix-qwen/src/lib.rs";
-      agentix-qwen-sys = "mkdir -p $out/agentix-qwen-sys/src; cp ${stubLib} $out/agentix-qwen-sys/src/lib.rs";
+      agentix-qwen-sys = "mkdir -p $out/agentix-qwen-sys/src $out/agentix-qwen-sys/examples; cp ${stubLib} $out/agentix-qwen-sys/src/lib.rs; cp ${stubMain} $out/agentix-qwen-sys/examples/compare_cuda_gguf_matvec.rs";
       agentix-qwen-worker = "mkdir -p $out/agentix-qwen-worker/src; cp ${stubMain} $out/agentix-qwen-worker/src/main.rs";
       agentix-search = "mkdir -p $out/agentix-search/src;     cp ${stubLib}  $out/agentix-search/src/lib.rs";
       # agentix-indexer is both a lib (used by mcp-server) and a bin.
