@@ -347,6 +347,19 @@ helper; target-host builds must include 8.6. A capability mismatch must fail the
 CUDA package rather than silently compiling for the current build machine. GPU
 results and full format support remain unverified until executed on the target.
 
+The pinned `llama-cpp-sys-2` 0.1.154 bindings expose the generic GGML backend
+registry, device, tensor allocation, graph compute and tensor transfer APIs.
+The CUDA feature now has a checked `cuda_f32_matvec` primitive that selects
+devices from the registry named `CUDA`, allocates row-major F32 weights, input,
+and output tensors under a 64 MiB payload cap, executes `ggml_mul_mat` through
+`ggml_backend_graph_compute`, and copies the result back. Its ignored
+CPU/device parity test must be run explicitly on a host with a CUDA runtime.
+This is a single F32 operator probe; it does not decode IQ3_S weights on-device,
+retain model tensors on the GPU, implement any Qwen layer, or establish target
+runtime availability. Completing T019 still requires quantized row upload and
+bounded device residency, supported model operators/state, device/CPU parity
+for those operators, and integration with `QwenGgufDecoder`.
+
 The native dependency is independently sourced from the crates.io
 `llama-cpp-sys-2` package and its bundled upstream llama.cpp/ggml tree; it is not
 obtained from Strata and no Strata source or runtime artifact is used as an

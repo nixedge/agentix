@@ -5,6 +5,12 @@
 
 #![forbid(unsafe_op_in_unsafe_fn)]
 
+#[cfg(feature = "cuda")]
+mod cuda;
+
+#[cfg(feature = "cuda")]
+pub use cuda::{cuda_devices, cuda_f32_matvec, CudaDeviceInfo, CudaError};
+
 use llama_cpp_sys_2 as ffi;
 use std::{
     collections::{HashMap, HashSet},
