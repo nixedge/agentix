@@ -1,0 +1,31 @@
+{
+  "source_model": "Qwen/Qwen3.8-Flash-Next",
+  "source_model_revision": "de4b8e4d43b917e7706784d8bb445c9af86a3540",
+  "source_file": "model-00052-of-00131.safetensors",
+  "source_file_header_bytes": 168,
+  "source_data_start": 176,
+  "source_tensor": "model.language_model.layers.17.mlp.experts.gate_up_proj",
+  "source_dtype": "BF16",
+  "source_shape": [512, 1280, 2560],
+  "source_tensor_offsets": [0, 3355443200],
+  "source_coordinates": {"expert": 0, "projection": "gate", "row": 0},
+  "source_file_byte_range_inclusive": [176, 5295],
+  "source_row_bytes": 5120,
+  "source_row_sha256": "bfc1fedeaf7b5f00377d8ebe108c3ed00bf3fbfc4d8fb57268da231c2b8fadf3",
+  "target_tensor": "blk.17.ffn_gate_exps.weight",
+  "target_shape": [2560, 640, 512],
+  "target_row_index": 0,
+  "transform": "Split each source expert's fused [gate | up] rows; compare gate expert 0 row 0 directly against GGUF row 0.",
+  "candidate_revision": "ed59f92082b1e93c0e96d60a8b11aab089b52f09",
+  "candidate_quantization": "IQ3_S",
+  "comparison_metrics": {
+    "max_abs_error": 0.01179808378,
+    "rmse": 0.001797218049,
+    "relative_rmse": 0.1447303596,
+    "cosine_similarity": 0.989542543
+  },
+  "limitations": [
+    "This is one BF16 source row compared with one quantized IQ3_S row, not expert-matrix or model-wide parity.",
+    "The comparison checks decoded GGUF numeric values and source-to-target row mapping; it does not validate CUDA kernels."
+  ]
+}

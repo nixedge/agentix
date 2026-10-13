@@ -50,7 +50,7 @@
   },
   "limitations": [
     "Only the 16 MiB header range and one 1100-byte tensor row were acquired; the full shard was not downloaded or hash-verified.",
-    "The decoded row confirms the reader accepts a real IQ3_S expert tensor and rank-three expert geometry. It is not a full model load, model output, independent numeric reference, or CUDA kernel validation.",
+    "The decoded row confirms the reader accepts a real IQ3_S expert tensor and rank-three expert geometry. Its numeric values have since been compared with BF16 source row 0 for expert 0; this is not a full model load/output, expert-matrix parity, or CUDA kernel validation.",
     "The native callback is the pinned upstream GGML CPU decoder; this evidence does not establish an Agentix-owned IQ3_S CUDA kernel."
   ]
 }

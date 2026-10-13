@@ -344,8 +344,9 @@ align to the type block and payload byte counts inconsistent with shape/type.
 Synthetic tests execute one-block CPU dequantization through pinned GGML
 callbacks and verify the type/block geometry used by the reader. One real IQ3_S
 expert row has also been read through the bounded GGUF adapter from the pinned
-candidate, but has not been compared with an independent numeric oracle; no CUDA
-kernel has been compared yet. GGML reports IQ2_XS quantization requires an
+candidate and compared against a raw BF16 source gate row at cosine similarity
+`0.989543`; this single-row check does not establish matrix-wide or model-wide
+parity. No CUDA kernel has been compared yet. GGML reports IQ2_XS quantization requires an
 importance matrix, while IQ3_S does not; converter provenance/calibration and
 the resulting checkpoint tensor map are still unresolved.
 

@@ -283,6 +283,25 @@ RMSE `2.0096e-2`, and cosine similarity `0.999798`. These two sampled rows
 provide source-to-candidate evidence only; they do not establish whole-tensor
 or full-model numerical parity.
 
+A separate real expert gate row was fetched by HTTP range from the pinned
+original checkpoint and compared with the first row of expert 0 in block 17:
+
+```sh
+nix develop --command cargo run -p agentix-qwen-sys --example compare_source_bf16_gguf_row -- \
+  specs/021-strata-inference-research/evidence/qwen3_8_flash_next_blk17_expert0_gate_row0_source.bf16 \
+  agentix-qwen/tests/fixtures/qwen3_8_flash_next_config.json \
+  blk.17.ffn_gate_exps.weight 0 \
+  /home/sam/home/agentix/.cache/agentix-qwen/iq3s-ed59f92082b1e93c0e96d60a8b11aab089b52f09/iq3s-00001.gguf \
+  /home/sam/home/agentix/.cache/agentix-qwen/iq3s-ed59f92082b1e93c0e96d60a8b11aab089b52f09/iq3s-00002.gguf
+```
+
+Its max absolute error is `1.1798e-2`, RMSE is `1.7972e-3`, relative RMSE is
+`1.4473e-1`, and cosine similarity is `0.989543`. Source header/offset and
+mapping details are in
+`evidence/qwen3_8_flash_next_blk17_expert0_gate_row0_source.json`. This sample
+checks one real IQ3_S expert row against its BF16 source values; it is not
+expert-matrix or full-model parity.
+
 The pinned tokenizer artifact contains 248,077 token IDs, while the model's
 input/output embedding vocabulary is padded to 248,320 rows. Use the tokenizer
 to encode and decode text; use the configured model vocabulary for tensor

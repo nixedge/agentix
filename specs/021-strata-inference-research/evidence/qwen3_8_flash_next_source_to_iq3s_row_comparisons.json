@@ -16,6 +16,17 @@
   ],
   "method": "Decode GGUF row with the pinned native GGML CPU conversion callback and compare against the raw BF16 source row converted to f32.",
   "metrics": {
+    "blk.17.ffn_gate_exps.weight": {
+      "source_tensor": "model.language_model.layers.17.mlp.experts.gate_up_proj",
+      "source_coordinates": {"expert": 0, "projection": "gate", "row": 0},
+      "row": 0,
+      "width": 2560,
+      "source_row_sha256": "bfc1fedeaf7b5f00377d8ebe108c3ed00bf3fbfc4d8fb57268da231c2b8fadf3",
+      "max_abs_error": 0.01179808378,
+      "rmse": 0.001797218049,
+      "relative_rmse": 0.1447303596,
+      "cosine_similarity": 0.989542543
+    },
     "token_embd.weight": {
       "source_tensor": "model.language_model.embed_tokens.weight",
       "row": 1,
@@ -38,7 +49,7 @@
     }
   },
   "limits": [
-    "These are two sampled vocabulary rows, not whole-tensor or whole-model numerical parity.",
+    "These are two sampled vocabulary rows and one sampled expert row, not whole-tensor or whole-model numerical parity.",
     "The IQ3_S quantized values are compared with original BF16 values; nonzero error is expected from quantization."
   ]
 }
