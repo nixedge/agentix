@@ -354,11 +354,15 @@ devices from the registry named `CUDA`, allocates row-major F32 weights, input,
 and output tensors under a 64 MiB payload cap, executes `ggml_mul_mat` through
 `ggml_backend_graph_compute`, and copies the result back. Its ignored
 CPU/device parity test must be run explicitly on a host with a CUDA runtime.
-This is a single F32 operator probe; it does not decode IQ3_S weights on-device,
-retain model tensors on the GPU, implement any Qwen layer, or establish target
-runtime availability. Completing T019 still requires quantized row upload and
-bounded device residency, supported model operators/state, device/CPU parity
-for those operators, and integration with `QwenGgufDecoder`.
+`cuda_quantized_gguf_matvec` additionally accepts the validated GGUF matrix-row
+view, streams its original quantized row bytes in bounded output chunks, and
+uses the tensor's native GGML storage type for each graph. A focused test covers
+raw row byte preservation and range validation; the CUDA test executable builds
+but cannot launch in this environment because `libcuda.so.1` is absent. Neither
+matvec has passed device execution or numeric CPU/device parity here. The
+quantized path does not retain weights on the GPU across calls, compose any Qwen
+layer, or integrate with `QwenGgufDecoder`. T019 still requires target-device
+operator parity, stateful layer execution, residency, and decoder integration.
 
 The native dependency is independently sourced from the crates.io
 `llama-cpp-sys-2` package and its bundled upstream llama.cpp/ggml tree; it is not

@@ -9,7 +9,9 @@
 mod cuda;
 
 #[cfg(feature = "cuda")]
-pub use cuda::{cuda_devices, cuda_f32_matvec, CudaDeviceInfo, CudaError};
+pub use cuda::{
+    cuda_devices, cuda_f32_matvec, cuda_quantized_gguf_matvec, CudaDeviceInfo, CudaError,
+};
 
 use llama_cpp_sys_2 as ffi;
 use std::{
