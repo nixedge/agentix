@@ -249,6 +249,28 @@ the pinned tokenizer/template. Neither mode verifies every tensor's numeric
 values or independent full-model parity. Synthetic GGUF unit fixtures continue
 to cover malformed metadata and reader errors.
 
+### Original source-to-IQ3_S row comparison
+
+One raw BF16 row from the pinned original checkpoint is captured at
+`evidence/qwen3_8_flash_next_token_embd_row1_source.bf16` (SHA256
+`f6965babadc297161d7fa20e1afeba62083ee8b9c40c427fe2c2e17e88e3f7db`). It is
+row 1 of `model.language_model.embed_tokens.weight` and maps directly to
+`token_embd.weight`. Compare the source values with the IQ3_S row using:
+
+```sh
+nix develop path:. --command cargo run -p agentix-qwen-sys --example compare_source_bf16_gguf_row -- \
+  specs/021-strata-inference-research/evidence/qwen3_8_flash_next_token_embd_row1_source.bf16 \
+  agentix-qwen/tests/fixtures/qwen3_8_flash_next_config.json \
+  token_embd.weight 1 \
+  /home/sam/home/agentix/.cache/agentix-qwen/iq3s-ed59f92082b1e93c0e96d60a8b11aab089b52f09/iq3s-00001.gguf \
+  /home/sam/home/agentix/.cache/agentix-qwen/iq3s-ed59f92082b1e93c0e96d60a8b11aab089b52f09/iq3s-00002.gguf
+```
+
+The comparator reports max absolute error, RMSE, relative RMSE, and cosine
+similarity. It compiles and passes strict Clippy, but its run failed before
+execution when the 99%-full Nix store ran out of space snapshotting the flake.
+No comparison metrics are recorded yet.
+
 The pinned tokenizer artifact contains 248,077 token IDs, while the model's
 input/output embedding vocabulary is padded to 248,320 rows. Use the tokenizer
 to encode and decode text; use the configured model vocabulary for tensor

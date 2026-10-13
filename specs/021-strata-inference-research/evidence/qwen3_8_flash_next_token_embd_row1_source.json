@@ -1,0 +1,23 @@
+{
+  "source_model_revision": "de4b8e4d43b917e7706784d8bb445c9af86a3540",
+  "source_file": "model-00130-of-00131.safetensors",
+  "source_file_header_bytes": 1568,
+  "source_data_start": 1576,
+  "source_tensor": "model.language_model.embed_tokens.weight",
+  "target_tensor": "token_embd.weight",
+  "transform": "Direct",
+  "dtype": "BF16",
+  "shape": [
+    248320,
+    2560
+  ],
+  "row_index": 1,
+  "row_bytes": 5120,
+  "source_file_byte_range_inclusive": [
+    6696,
+    11815
+  ],
+  "sample_sha256": "f6965babadc297161d7fa20e1afeba62083ee8b9c40c427fe2c2e17e88e3f7db",
+  "sample_file": "qwen3_8_flash_next_token_embd_row1_source.bf16",
+  "target_comparison": "pending; the Nix flake snapshot failed with ENOSPC before the comparator could run"
+}
