@@ -19,5 +19,5 @@
   ],
   "sample_sha256": "473c560c9b79c870b9cddd12c1ad8453dfb2293455cfee296af2deb3d9df299f",
   "sample_file": "qwen3_8_flash_next_lm_head_row1_source.bf16",
-  "target_comparison": "pending; the Nix flake snapshot failed with ENOSPC before the comparator could run"
+  "target_comparison": "recorded in qwen3_8_flash_next_source_to_iq3s_row_comparisons.json"
 }

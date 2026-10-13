@@ -7,12 +7,12 @@ generation worker, target host, and finalized coding-task evaluator.
 Run from the persistent `021-strata-inference-research` worktree:
 
 ```sh
-nix develop path:. --command cargo test -p agentix-qwen
-nix develop path:. --command cargo test -p agentix-qwen-sys
-nix develop path:. --command cargo fmt -p agentix-qwen -p agentix-qwen-sys --check
-nix develop path:. --command cargo clippy -p agentix-qwen -p agentix-qwen-sys --all-targets -- -D warnings
-nix build path:.#agentix-qwen
-nix build path:.#agentix-qwen-sys
+nix develop --command cargo test -p agentix-qwen
+nix develop --command cargo test -p agentix-qwen-sys
+nix develop --command cargo fmt -p agentix-qwen -p agentix-qwen-sys --check
+nix develop --command cargo clippy -p agentix-qwen -p agentix-qwen-sys --all-targets -- -D warnings
+nix build .#agentix-qwen
+nix build .#agentix-qwen-sys
 ```
 
 These commands validate CPU reference operators, artifact identity, tokenizer
@@ -30,8 +30,8 @@ Regenerate and verify the exact benchmark prompt fixtures with the Nix-pinned
 tokenizer and template:
 
 ```sh
-nix develop path:. --command cargo run -p agentix-qwen --example build_benchmark_prompt_fixtures
-nix develop path:. --command cargo test -p agentix-qwen --test benchmark_prompts
+nix develop --command cargo run -p agentix-qwen --example build_benchmark_prompt_fixtures
+nix develop --command cargo test -p agentix-qwen --test benchmark_prompts
 ```
 
 The checked-in artifact records rendered prompts, exact token IDs and hashes
@@ -50,7 +50,7 @@ strategy remain open. This document covers the current foundation package.
 
 ## Qwen worker package
 
-`nix build path:.#agentix-qwen-worker` builds the isolated worker. The wrapper
+`nix build .#agentix-qwen-worker` builds the isolated worker. The wrapper
 uses the pinned tokenizer/template and text-config fixtures and expects the two
 IQ3_S shards in `AGENTIX_QWEN_MODEL_DIR` as `iq3s-00001.gguf` and
 `iq3s-00002.gguf` by default. Startup hashes every shard against the pinned
@@ -74,7 +74,7 @@ Run the deterministic four-block synthetic GGUF through the complete stateful
 CPU decoder with:
 
 ```sh
-nix develop path:. --command cargo test -p agentix-qwen-sys \
+nix develop --command cargo test -p agentix-qwen-sys \
   compact_qwen4exp_gguf_runs_the_full_stateful_decoder
 ```
 
@@ -168,7 +168,7 @@ For a direct output-projection comparison on the GPU host, run the pinned
 Q6_K `output.weight` through the CPU row reference and CUDA matvec:
 
 ```sh
-nix develop path:. --command cargo run -p agentix-qwen-sys --features cuda \
+nix develop --command cargo run -p agentix-qwen-sys --features cuda \
   --example compare_cuda_gguf_matvec -- \
   agentix-qwen/tests/fixtures/qwen3_8_flash_next_config.json \
   /var/lib/agentix/qwen/iq3s-00001.gguf \
@@ -236,7 +236,7 @@ Reproduce the
 actual-artifact validation with:
 
 ```sh
-nix develop path:. --command env AGENTIX_QWEN_CHAT_SMOKE=1 cargo run -p agentix-qwen-sys --example validate_gguf_sample_rows -- \
+nix develop --command env AGENTIX_QWEN_CHAT_SMOKE=1 cargo run -p agentix-qwen-sys --example validate_gguf_sample_rows -- \
   agentix-qwen/tests/fixtures/qwen3_8_flash_next_config.json \
   /home/sam/home/agentix/.cache/agentix-qwen/iq3s-ed59f92082b1e93c0e96d60a8b11aab089b52f09/iq3s-00001.gguf \
   /home/sam/home/agentix/.cache/agentix-qwen/iq3s-ed59f92082b1e93c0e96d60a8b11aab089b52f09/iq3s-00002.gguf
@@ -255,26 +255,33 @@ Raw BF16 row 1 from the pinned original checkpoint is captured for both
 `model.language_model.embed_tokens.weight` → `token_embd.weight` and
 `lm_head.weight` → `output.weight`. Their hashes and source offsets are in
 `evidence/qwen3_8_flash_next_token_embd_row1_source.json` and
-`evidence/qwen3_8_flash_next_lm_head_row1_source.json`. Compare the embedding
-source values with the IQ3_S row using:
+`evidence/qwen3_8_flash_next_lm_head_row1_source.json`. Both rows were compared
+with the pinned IQ3_S shards using:
 
 ```sh
-nix develop path:. --command cargo run -p agentix-qwen-sys --example compare_source_bf16_gguf_row -- \
+nix develop --command cargo run -p agentix-qwen-sys --example compare_source_bf16_gguf_row -- \
   specs/021-strata-inference-research/evidence/qwen3_8_flash_next_token_embd_row1_source.bf16 \
   agentix-qwen/tests/fixtures/qwen3_8_flash_next_config.json \
   token_embd.weight 1 \
   /home/sam/home/agentix/.cache/agentix-qwen/iq3s-ed59f92082b1e93c0e96d60a8b11aab089b52f09/iq3s-00001.gguf \
   /home/sam/home/agentix/.cache/agentix-qwen/iq3s-ed59f92082b1e93c0e96d60a8b11aab089b52f09/iq3s-00002.gguf
+
+nix develop --command cargo run -p agentix-qwen-sys --example compare_source_bf16_gguf_row -- \
+  specs/021-strata-inference-research/evidence/qwen3_8_flash_next_lm_head_row1_source.bf16 \
+  agentix-qwen/tests/fixtures/qwen3_8_flash_next_config.json \
+  output.weight 1 \
+  /home/sam/home/agentix/.cache/agentix-qwen/iq3s-ed59f92082b1e93c0e96d60a8b11aab089b52f09/iq3s-00001.gguf \
+  /home/sam/home/agentix/.cache/agentix-qwen/iq3s-ed59f92082b1e93c0e96d60a8b11aab089b52f09/iq3s-00002.gguf
 ```
 
-Run the same command with `qwen3_8_flash_next_lm_head_row1_source.bf16` as the
-first argument and `output.weight` as the tensor name to compare the output
-projection row.
-
-The comparator reports max absolute error, RMSE, relative RMSE, and cosine
-similarity. It compiles and passes strict Clippy, but its run failed before
-execution when the 99%-full Nix store ran out of space snapshotting the flake.
-No comparison metrics are recorded yet.
+The row metrics are recorded in
+`evidence/qwen3_8_flash_next_source_to_iq3s_row_comparisons.json`. The embedding
+row comparison reports max absolute error `7.0190e-4`, RMSE `2.2747e-4`,
+relative RMSE `9.1546e-2`, and cosine similarity `0.995814`. The output row
+comparison reports max absolute error `1.7242e-3`, RMSE `3.9618e-4`, relative
+RMSE `2.0096e-2`, and cosine similarity `0.999798`. These two sampled rows
+provide source-to-candidate evidence only; they do not establish whole-tensor
+or full-model numerical parity.
 
 The pinned tokenizer artifact contains 248,077 token IDs, while the model's
 input/output embedding vocabulary is padded to 248,320 rows. Use the tokenizer
@@ -288,8 +295,8 @@ upper end of the tokenizer vocabulary.
 These exact commands were run in the Nix development shell:
 
 ```sh
-nix develop path:. --command cargo tree -p agentix-qwen --edges normal
-nix develop path:. --command cargo tree -p agentix-qwen-sys --edges normal
+nix develop --command cargo tree -p agentix-qwen --edges normal
+nix develop --command cargo tree -p agentix-qwen-sys --edges normal
 ```
 
 The first tree's direct dependencies are `minijinja 2.24.0`, `safetensors

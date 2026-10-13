@@ -1,0 +1,44 @@
+{
+  "source_model": "Qwen/Qwen3.8-Flash-Next",
+  "source_model_revision": "de4b8e4d43b917e7706784d8bb445c9af86a3540",
+  "candidate_model": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF",
+  "candidate_revision": "ed59f92082b1e93c0e96d60a8b11aab089b52f09",
+  "quantization": "IQ3_S",
+  "candidate_shards": [
+    {
+      "path": "IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00001-of-00002.gguf",
+      "sha256": "4c1eb2ceb4915e1192f4f386021897bde56a97f40a0bb78bb86465e0f7d2aca3"
+    },
+    {
+      "path": "IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00002-of-00002.gguf",
+      "sha256": "316b46f3a2dbd68c900f43136ab9449f9dcc3725dfd8c794847c204bc161e113"
+    }
+  ],
+  "method": "Decode GGUF row with the pinned native GGML CPU conversion callback and compare against the raw BF16 source row converted to f32.",
+  "metrics": {
+    "token_embd.weight": {
+      "source_tensor": "model.language_model.embed_tokens.weight",
+      "row": 1,
+      "width": 2560,
+      "source_row_sha256": "f6965babadc297161d7fa20e1afeba62083ee8b9c40c427fe2c2e17e88e3f7db",
+      "max_abs_error": 0.0007019042969,
+      "rmse": 0.0002274692860,
+      "relative_rmse": 0.09154594438,
+      "cosine_similarity": 0.995814361
+    },
+    "output.weight": {
+      "source_tensor": "lm_head.weight",
+      "row": 1,
+      "width": 2560,
+      "source_row_sha256": "473c560c9b79c870b9cddd12c1ad8453dfb2293455cfee296af2deb3d9df299f",
+      "max_abs_error": 0.001724243164,
+      "rmse": 0.0003961809299,
+      "relative_rmse": 0.02009636637,
+      "cosine_similarity": 0.999798116
+    }
+  },
+  "limits": [
+    "These are two sampled vocabulary rows, not whole-tensor or whole-model numerical parity.",
+    "The IQ3_S quantized values are compared with original BF16 values; nonzero error is expected from quantization."
+  ]
+}
