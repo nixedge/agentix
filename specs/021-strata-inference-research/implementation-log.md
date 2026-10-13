@@ -1,5 +1,12 @@
 # Implementation progress
 
+## 2026-10-13 — coding benchmark evaluator
+
+- Added the `agentix-bench` Rust binary and Nix package. It enforces the frozen coding-task fixture SHA256, verifies and resolves the baseline commit, creates one detached disposable worktree per task, sends task text and acceptance commands to a configured engine, runs each pinned acceptance command, and captures engine/acceptance stdout and stderr, elapsed time, final status, and a binary diff. Per-command timeouts kill the spawned process group. Results flag the diff for human review; semantic unrelated-change detection is not automated.
+- Parser tests cover all ten task sections and wrapped multiple acceptance commands. `nix develop --command cargo test -p agentix-bench`, strict package Clippy, `nix build .#agentix-bench`, and `nix run .#agentix-bench -- --help` pass. No actual engine runs have been made; the baseline/candidate tool permissions, engine configuration, runs, and diff review remain open for T009/SC-004.
+- The run manifest records the configured engine label/arguments and timeout, while redacting common API-key, token, secret, password, credential and authorization flag values. A regression test covers argument redaction. The fixture remains pinned at SHA256 `423e6a8de7187fd20fdc4e7e80ce1f17b4997759f57a3a7ad7e187c1e24297c3`.
+- Current workspace `cargo fmt --all --check`, strict workspace Clippy and workspace tests pass with the evaluator; the evaluator's three focused tests and strict Clippy pass after the final code edits. Current Nix builds pass for Qwen, daemon, indexer and evaluator packages. Worker package rebuild against the expanded workspace remains active; T029 remains partial.
+
 ## 2026-10-13 — current checkout workspace verification
 
 - Re-ran `nix develop --command cargo fmt --all --check`, `nix develop --command cargo clippy --workspace -- -D warnings`, and `nix develop --command cargo test --workspace` after the Qwen worker tool-call changes and the user's unrelated working-tree edits. All three passed. The workspace suite reports model-dependent completion and Whisper integration tests as ignored when their model-path environment variables are unset.

@@ -117,6 +117,9 @@
         echo "  ck search 'query'              # ad-hoc hybrid search"
         echo "  ck --serve                     # lightweight MCP server"
         echo "  ccusage                        # Claude Code usage stats"
+        echo ""
+        echo "Benchmarking:"
+        echo "  nix run .#agentix-bench -- --help  # Run the pinned coding-task evaluator"
       '';
     };
   };

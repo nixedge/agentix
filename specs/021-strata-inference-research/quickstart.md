@@ -1,8 +1,9 @@
 # CPU foundation validation
 
 Benchmark protocol: [`benchmarks.md`](benchmarks.md). It defines the run matrix
-and records still needed; benchmark execution still needs a persistent
-generation worker, target host, and finalized coding-task evaluator.
+and records still needed. The pinned coding-task evaluator is available as
+`nix run .#agentix-bench`; runtime measurements still need a persistent
+generation worker and target host.
 
 Run from the persistent `021-strata-inference-research` worktree:
 

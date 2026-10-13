@@ -1,0 +1,15 @@
+[package]
+name = "agentix-bench"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Reproducible clean-worktree coding benchmark evaluator"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json.workspace = true
+sha2.workspace = true
+
+[lints]
+workspace = true

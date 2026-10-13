@@ -3,7 +3,7 @@
 **Status**: Protocol proposal frozen for implementation; no measurements recorded.
 **Target**: RTX 3090 24 GiB, Ryzen 9 9950X, 128 GiB RAM (target-host inventory still incomplete).
 
-This protocol is intended to keep runtime comparisons repeatable. Exact pinned prompt fixtures are now available, but the suite is not executable yet because the full model loader and target host are unavailable. Do not report projected values as measurements.
+This protocol is intended to keep runtime comparisons repeatable. Exact pinned prompt fixtures and a Rust coding-suite runner are available. Model runtime measurements still require the full-model loader and target host. Do not report projected values as measurements.
 
 ## Model and runtime identity
 
@@ -33,7 +33,20 @@ Before each run, record background GPU processes, RAM/VRAM availability, storage
 
 Use ten deterministic tasks against one pinned Agentix repository commit and a clean disposable worktree per task. Each task gets the same task statement, initial repository state, tool permissions, timeout, and maximum generated tokens for both engines. The evaluator runs the prescribed build/test/lint or scripted acceptance command and stores the diff, tool transcript, exit status, elapsed wall time, and evaluator output. A task passes only when its acceptance command succeeds and the diff has no unrelated changes. Report pass count and median completion time over successful tasks; include failures and timeouts in the denominator.
 
-The task set must cover: (1) Rust bug fix with regression test, (2) Rust API addition across library and caller, (3) multi-file refactor preserving behavior, (4) failing-test diagnosis, (5) Clippy repair, (6) Nix package/development-shell change, (7) configuration and documentation update, (8) streaming/cancellation bug fix, (9) dependency boundary investigation with cited source evidence, and (10) multi-step task using shell, test, and Git diff tools. Frozen statements and acceptance commands are in `coding-task-fixtures.md`. Baseline commit: `13f2a5cb52ebc801eab154b009b0ab01f19e7a6a`. Task-file SHA-256: `423e6a8de7187fd20fdc4e7e80ce1f17b4997759f57a3a7ad7e187c1e24297c3`. A clean-checkout evaluator, per-task transcripts/diffs, and baseline runs remain required before T009/T011 can be marked complete.
+The task set must cover: (1) Rust bug fix with regression test, (2) Rust API addition across library and caller, (3) multi-file refactor preserving behavior, (4) failing-test diagnosis, (5) Clippy repair, (6) Nix package/development-shell change, (7) configuration and documentation update, (8) streaming/cancellation bug fix, (9) dependency boundary investigation with cited source evidence, and (10) multi-step task using shell, test, and Git diff tools. Frozen statements and acceptance commands are in `coding-task-fixtures.md`. Baseline commit: `13f2a5cb52ebc801eab154b009b0ab01f19e7a6a`. Task-file SHA-256: `423e6a8de7187fd20fdc4e7e80ce1f17b4997759f57a3a7ad7e187c1e24297c3`.
+
+`agentix-bench` verifies this exact task-file hash, creates a detached disposable worktree at the pinned baseline for every task, sends the task text to a configured engine on stdin, runs the frozen acceptance commands, and saves stdout/stderr, elapsed time, final status, and a binary diff. The engine executable and arguments must be supplied by the operator, and the output directory must be empty. The diff is explicitly marked for review; the runner cannot decide whether edits are semantically unrelated. Example:
+
+```sh
+nix run .#agentix-bench -- \
+  --repo /path/to/agentix-checkout \
+  --engine /absolute/path/to/engine \
+  --engine-label 'engine-and-version' \
+  --engine-arg=exec --engine-arg=--full-auto \
+  --output /path/to/results/2026-10-13/engine/model-id
+```
+
+No baseline or candidate engine runs have been recorded yet. T009 remains partial until the runner is exercised against each engine, result diffs are reviewed, and baseline records are retained.
 
 ## Comparison and reporting rules
 

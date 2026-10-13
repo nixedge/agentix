@@ -30,6 +30,7 @@
       ../agentix-qwen/Cargo.toml
       ../agentix-qwen-sys/Cargo.toml
       ../agentix-qwen-worker/Cargo.toml
+      ../agentix-bench/Cargo.toml
       ../agentix-search/Cargo.toml
       ../agentix-indexer/Cargo.toml
       ../agentix-llama/Cargo.toml
@@ -75,6 +76,8 @@
         cp ${stubMain} $out/agentix-qwen-sys/examples/compare_cuda_gguf_matvec.rs
         mkdir -p $out/agentix-qwen-worker/src
         cp ${stubMain} $out/agentix-qwen-worker/src/main.rs
+        mkdir -p $out/agentix-bench/src
+        cp ${stubMain} $out/agentix-bench/src/main.rs
         mkdir -p $out/agentix-search/src
         cp ${stubLib} $out/agentix-search/src/lib.rs
         mkdir -p $out/agentix-indexer/src
@@ -262,6 +265,7 @@
       agentix-qwen = "mkdir -p $out/agentix-qwen/src; cp ${stubLib} $out/agentix-qwen/src/lib.rs";
       agentix-qwen-sys = "mkdir -p $out/agentix-qwen-sys/src $out/agentix-qwen-sys/examples; cp ${stubLib} $out/agentix-qwen-sys/src/lib.rs; cp ${stubMain} $out/agentix-qwen-sys/examples/compare_cuda_gguf_matvec.rs";
       agentix-qwen-worker = "mkdir -p $out/agentix-qwen-worker/src; cp ${stubMain} $out/agentix-qwen-worker/src/main.rs";
+      agentix-bench = "mkdir -p $out/agentix-bench/src; cp ${stubMain} $out/agentix-bench/src/main.rs";
       agentix-search = "mkdir -p $out/agentix-search/src;     cp ${stubLib}  $out/agentix-search/src/lib.rs";
       # agentix-indexer is both a lib (used by mcp-server) and a bin.
       agentix-indexer = "mkdir -p $out/agentix-indexer/src;    cp ${stubLib}  $out/agentix-indexer/src/lib.rs; cp ${stubMain} $out/agentix-indexer/src/main.rs";
@@ -368,6 +372,17 @@
         cargoArtifacts = agentixQwenWorkerDeps;
         cargoExtraArgs = "--package agentix-qwen-worker" + lib.optionalString withCuda " --features cuda";
         autoPatchelfIgnoreMissingDeps = lib.optional withCuda "libcuda.so.1";
+      });
+
+    agentixBenchPkg = craneLib.buildPackage (commonArgs
+      // {
+        pname = "agentix-bench";
+        src = mkWorkspaceSrcWithFiles ["agentix-bench"] [
+          ../specs/021-strata-inference-research/coding-task-fixtures.md
+        ];
+        cargoArtifacts = null;
+        cargoExtraArgs = "--package agentix-bench";
+        doCheck = true;
       });
 
     axPkg = craneLib.buildPackage (commonArgs
@@ -617,6 +632,10 @@
         runHook postInstall
       '';
     };
+    packages.agentix-bench = pkgs.writeShellScriptBin "agentix-bench" ''
+      export PATH="${lib.makeBinPath [pkgs.bash pkgs.git]}:$PATH"
+      exec ${agentixBenchPkg}/bin/agentix-bench "$@"
+    '';
     packages.agentix-qwen-sys = agentixQwenSysPkg;
     packages.agentix-qwen-worker = pkgs.writeShellScriptBin "agentix-qwen-worker" ''
       export LD_LIBRARY_PATH="/run/opengl-driver/lib:${cudaPackages.cuda_cudart}/lib:${cudaPackages.libcublas}/lib:''${LD_LIBRARY_PATH:-}"

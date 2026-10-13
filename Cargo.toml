@@ -9,6 +9,7 @@ members = [
   "agentix-qwen",
   "agentix-qwen-sys",
   "agentix-qwen-worker",
+  "agentix-bench",
   "agentix-search",
   "agentix-indexer",
   "agentix-llama",
