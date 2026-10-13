@@ -24,6 +24,31 @@ Evaluate the independent agentix Qwen backend's NVIDIA/CUDA path, CPU participat
 - Competing inference, embedding, voice, and other workloads.
 - Power/thermal settings and swap configuration relevant to reproducibility.
 
+### Read-only target inventory command
+
+Run on `kursk` after checking that the model directory has enough free space.
+The command enters a temporary Nix environment for common inspection tools and
+does not install them globally or change system configuration:
+
+```sh
+nix shell nixpkgs#procps nixpkgs#util-linux --command bash -c '
+  uname -a
+  lscpu
+  nvidia-smi --query-gpu=name,driver_version,memory.total,memory.free,pci.bus_id,pcie.link.gen.current,pcie.link.width.current --format=csv,noheader
+  free -b
+  swapon --show --bytes
+  df -B1 /var/lib/agentix/qwen
+  findmnt -T /var/lib/agentix/qwen -o SOURCE,FSTYPE,OPTIONS
+  nvidia-smi -q -d POWER,TEMPERATURE,PERFORMANCE
+'
+```
+
+Record the output alongside the active workloads and NixOS/Nixpkgs revision.
+The GPU query reports current available VRAM and PCIe link state; rerun it under
+the same concurrent workload conditions as the benchmark. This command does
+not measure RAM bandwidth; benchmark that separately before extrapolating
+throughput.
+
 The 2026-10-13 user-provided systemd journal identifies the deployment host as
 `kursk` and confirms that `agentix-qwen.service` is installed and attempting to
 start. Its failure is currently explained by the absent first IQ3_S shard at
