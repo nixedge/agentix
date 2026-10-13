@@ -143,6 +143,23 @@ fn open_indexed_bf16_shards(
 pub trait EmbeddingRowReader {
     /// Fills one decoded embedding row. Implementations must write every value.
     fn read_row(&mut self, row_id: u64, output: &mut [f32]) -> Result<()>;
+
+    /// Fills token n-gram rows in order; storage adapters may coalesce reads.
+    fn read_rows(&mut self, row_ids: &[u64], row_width: usize, output: &mut [f32]) -> Result<()> {
+        let expected = row_ids
+            .len()
+            .checked_mul(row_width)
+            .ok_or(Error::Overflow)?;
+        if output.len() != expected {
+            return Err(Error::Invalid("PLE embedding batch output width mismatch"));
+        }
+        for (index, &row_id) in row_ids.iter().enumerate() {
+            let start = index.checked_mul(row_width).ok_or(Error::Overflow)?;
+            let end = start.checked_add(row_width).ok_or(Error::Overflow)?;
+            self.read_row(row_id, &mut output[start..end])?;
+        }
+        Ok(())
+    }
 }
 
 /// Presents ordered PLE source shards as one logical row table without
@@ -396,18 +413,12 @@ fn load_rows(
     embedding
         .try_reserve_exact(output_len)
         .map_err(|_| Error::Capacity("PLE embedding output"))?;
-    let mut row = Vec::new();
-    row.try_reserve_exact(row_width)
-        .map_err(|_| Error::Capacity("PLE embedding row"))?;
-    row.resize(row_width, 0.0);
-    for &row_id in row_ids {
-        reader.read_row(row_id, &mut row)?;
-        if row.iter().any(|value| !value.is_finite()) {
-            return Err(Error::Invalid(
-                "PLE embedding row contains non-finite values",
-            ));
-        }
-        embedding.extend_from_slice(&row);
+    embedding.resize(output_len, 0.0);
+    reader.read_rows(row_ids, row_width, &mut embedding)?;
+    if embedding.iter().any(|value| !value.is_finite()) {
+        return Err(Error::Invalid(
+            "PLE embedding row contains non-finite values",
+        ));
     }
     Ok(embedding)
 }

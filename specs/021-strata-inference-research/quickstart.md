@@ -58,12 +58,14 @@ IQ3_S shards in `AGENTIX_QWEN_MODEL_DIR` as `iq3s-00001.gguf` and
 publisher SHA256 values before schema/layer validation and socket creation;
 set `AGENTIX_QWEN_GGUF_SHARDS` and
 `AGENTIX_QWEN_EXPECTED_SHARD_SHA256` together when names or artifacts change.
-Decoded routed expert rows are cached up to 256 MiB by default; set
-`AGENTIX_QWEN_EXPERT_CACHE_BYTES` in the worker service environment to change
-the cap (set it to `0` to disable). Cache counters are available from the
-tensor store for runtime instrumentation; this CPU path reports zero
-host-device transfer bytes. The NixOS module passes this through
-`services.agentix.qwen.extraEnv`. `/health` includes the current cache counters.
+Decoded routed expert rows are cached up to 256 MiB by default; PLE embedding
+rows have a separate 64 MiB cache. Set `AGENTIX_QWEN_EXPERT_CACHE_BYTES` or
+`AGENTIX_QWEN_PLE_CACHE_BYTES` in the worker service environment to change the
+respective cap (set either to `0` to disable). `/health` includes separate
+cache counters; this CPU path reports zero host-device transfer bytes. The
+NixOS module passes these variables through `services.agentix.qwen.extraEnv`.
+PLE lookup submits its n-gram row IDs together; adjacent uncached quantized
+rows are decoded from one positional file read.
 The worker serves `/health`, `/v1/models` and greedy text
 `/v1/chat/completions` over `AGENTIX_QWEN_SOCKET`. The daemon routes only the
 exact `AGENTIX_QWEN_MODEL` name to it. Text SSE is bounded. Non-streaming
@@ -88,9 +90,10 @@ nix develop --command cargo test -p agentix-qwen-sys \
 ```
 
 The test generates the fixture using the pinned `llama-cpp-sys-2` GGUF writer,
-validates its complete schema, and asserts the exact greedy output for all-zero
-weights. The generated artifact SHA-256 is
-`29ddcc30858e34f94259607a6695da7d9a216b70651ff0d89bf5e9b8221259d0`. This
+validates its complete schema, exercises separate bounded expert and IQ4_NL PLE
+row caches, compares cached and uncached full-decoder outputs, and asserts the
+exact greedy output for the zero-valued fixture tensors. The generated artifact SHA-256 is
+`10936b43281d37cad4243a6f343f40325255c6927e0e75dff9be5e70dc635fd5`. This
 checks full-decoder wiring and state traversal; it is not original-checkpoint
 numeric parity or a worker deployment test.
 

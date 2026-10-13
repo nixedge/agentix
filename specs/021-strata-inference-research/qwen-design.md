@@ -92,9 +92,10 @@ in for full tensor or full-model parity.
 
 The compact decoder fixture is generated from the Qwen4-Exp schema using the
 pinned GGML writer: four blocks (three GatedDeltaNet plus QSA), hidden width 256,
-eight vocabulary rows, two experts, and zero F32/Q4_0 tensors. Its generated
+eight vocabulary rows, two experts, zero F32/Q4_0 tensors, and an IQ4_NL PLE
+embedding table. Its generated
 GGUF SHA-256 is
-`29ddcc30858e34f94259607a6695da7d9a216b70651ff0d89bf5e9b8221259d0`. The
+`10936b43281d37cad4243a6f343f40325255c6927e0e75dff9be5e70dc635fd5`. The
 full stateful decoder must return eight zero logits and greedily generate token
 IDs `[0, 0]` from a one-token prompt. This is a deliberately simple end-to-end
 control-flow oracle; it checks schema loading, recurrent/QSA/PLE state traversal,

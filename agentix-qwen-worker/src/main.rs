@@ -85,10 +85,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .transpose()
         .map_err(|error| format!("invalid AGENTIX_QWEN_EXPERT_CACHE_BYTES: {error}"))?
         .unwrap_or(256 * 1024 * 1024);
-    let store = QwenGgufTensorStore::open_with_expert_cache_bytes(
+    let ple_cache_bytes = env::var("AGENTIX_QWEN_PLE_CACHE_BYTES")
+        .ok()
+        .map(|value| value.parse::<usize>())
+        .transpose()
+        .map_err(|error| format!("invalid AGENTIX_QWEN_PLE_CACHE_BYTES: {error}"))?
+        .unwrap_or(64 * 1024 * 1024);
+    let store = QwenGgufTensorStore::open_with_cache_bytes(
         &shard_paths,
         &config,
         expert_cache_bytes,
+        ple_cache_bytes,
     )
     .map_err(|error| std::io::Error::other(format!("cannot open Qwen GGUF shard set: {error}")))?;
     let tokenizer =
@@ -218,7 +225,7 @@ fn router(state: AppState) -> Router {
 }
 
 async fn health(State(state): State<AppState>) -> Json<Value> {
-    let expert_row_cache = state.store.expert_row_cache_stats().ok().map(|stats| {
+    let cache_stats_json = |stats: agentix_qwen_sys::DecodedRowCacheStats| {
         json!({
             "hits": stats.hits,
             "misses": stats.misses,
@@ -228,11 +235,18 @@ async fn health(State(state): State<AppState>) -> Json<Value> {
             "peak_retained_bytes": stats.peak_retained_bytes,
             "transfer_bytes": stats.transfer_bytes,
         })
-    });
+    };
+    let expert_row_cache = state
+        .store
+        .expert_row_cache_stats()
+        .ok()
+        .map(cache_stats_json);
+    let ple_row_cache = state.store.ple_row_cache_stats().ok().map(cache_stats_json);
     Json(json!({
         "status": "ready",
         "model": state.model_name.as_ref(),
         "expert_row_cache": expert_row_cache,
+        "ple_row_cache": ple_row_cache,
     }))
 }
 

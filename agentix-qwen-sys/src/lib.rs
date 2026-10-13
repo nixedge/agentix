@@ -284,11 +284,11 @@ pub struct QuantizedRows {
     row_width: usize,
     row_bytes: usize,
     quantization: RowQuantization,
-    expert_cache: Option<Arc<Mutex<ExpertRowCache>>>,
+    row_cache: Option<Arc<Mutex<DecodedRowCache>>>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct ExpertRowCacheStats {
+pub struct DecodedRowCacheStats {
     pub hits: u64,
     pub misses: u64,
     pub evictions: u64,
@@ -299,21 +299,21 @@ pub struct ExpertRowCacheStats {
     pub transfer_bytes: u64,
 }
 
-struct ExpertRowCacheEntry {
+struct DecodedRowCacheEntry {
     values: Vec<f32>,
     referenced: bool,
 }
-struct ExpertRowCache {
+struct DecodedRowCache {
     capacity_bytes: usize,
     retained_bytes: usize,
-    entries: HashMap<(usize, u64), ExpertRowCacheEntry>,
+    entries: HashMap<(usize, u64), DecodedRowCacheEntry>,
     clock: Vec<Option<(usize, u64)>>,
     free_slots: Vec<usize>,
     hand: usize,
-    stats: ExpertRowCacheStats,
+    stats: DecodedRowCacheStats,
 }
 
-impl ExpertRowCache {
+impl DecodedRowCache {
     fn new(capacity_bytes: usize) -> Self {
         Self {
             capacity_bytes,
@@ -322,7 +322,7 @@ impl ExpertRowCache {
             clock: Vec::new(),
             free_slots: Vec::new(),
             hand: 0,
-            stats: ExpertRowCacheStats::default(),
+            stats: DecodedRowCacheStats::default(),
         }
     }
 
@@ -338,11 +338,11 @@ impl ExpertRowCache {
     }
 
     fn insert(&mut self, key: (usize, u64), values: &[f32], bytes_read: usize) {
+        self.stats.misses = self.stats.misses.saturating_add(1);
+        self.stats.bytes_read = self.stats.bytes_read.saturating_add(bytes_read as u64);
         if self.entries.contains_key(&key) {
             return;
         }
-        self.stats.misses = self.stats.misses.saturating_add(1);
-        self.stats.bytes_read = self.stats.bytes_read.saturating_add(bytes_read as u64);
         let Some(bytes) = values.len().checked_mul(std::mem::size_of::<f32>()) else {
             return;
         };
@@ -383,7 +383,7 @@ impl ExpertRowCache {
         retained.extend_from_slice(values);
         self.entries.insert(
             key,
-            ExpertRowCacheEntry {
+            DecodedRowCacheEntry {
                 values: retained,
                 referenced: true,
             },
@@ -495,7 +495,7 @@ impl QuantizedRows {
         info: &GgufInfo,
         tensor: &TensorInfo,
         row_width: usize,
-        expert_cache: Option<Arc<Mutex<ExpertRowCache>>>,
+        row_cache: Option<Arc<Mutex<DecodedRowCache>>>,
     ) -> Result<Self, Error> {
         if row_width == 0
             || row_width > MAX_Q4_0_ROW_VALUES
@@ -573,7 +573,7 @@ impl QuantizedRows {
             row_width,
             row_bytes,
             quantization,
-            expert_cache,
+            row_cache,
         })
     }
 
@@ -621,10 +621,10 @@ impl QuantizedRows {
             .and_then(|row_bytes| row.checked_mul(row_bytes))
             .and_then(|relative| self.data_offset.checked_add(relative))
             .ok_or(Error::Invalid("quantized row offset overflow"))?;
-        if let Some(cache) = &self.expert_cache {
+        if let Some(cache) = &self.row_cache {
             let mut guard = cache
                 .lock()
-                .map_err(|_| Error::Invalid("expert row cache lock poisoned"))?;
+                .map_err(|_| Error::Invalid("decoded row cache lock poisoned"))?;
             let key = (Arc::as_ptr(&self.file) as usize, offset);
             if guard.get(key, output) {
                 return Ok(());
@@ -644,15 +644,136 @@ impl QuantizedRows {
                 decode_native_quantized_row_into(ggml_type, &bytes, output)
             }
         }?;
-        if let Some(cache) = &self.expert_cache {
+        if let Some(cache) = &self.row_cache {
             let mut guard = cache
                 .lock()
-                .map_err(|_| Error::Invalid("expert row cache lock poisoned"))?;
+                .map_err(|_| Error::Invalid("decoded row cache lock poisoned"))?;
             guard.insert(
                 (Arc::as_ptr(&self.file) as usize, offset),
                 output,
                 self.row_bytes,
             );
+        }
+        Ok(())
+    }
+
+    fn read_rows_into(&self, row_ids: &[u64], output: &mut [f32]) -> Result<(), Error> {
+        let output_len = row_ids
+            .len()
+            .checked_mul(self.row_width)
+            .ok_or(Error::Invalid("quantized batch output size overflow"))?;
+        if output.len() != output_len {
+            return Err(Error::Invalid(
+                "quantized batch output has unexpected length",
+            ));
+        }
+        let mut order = Vec::new();
+        order
+            .try_reserve_exact(row_ids.len())
+            .map_err(|_| Error::Invalid("cannot allocate quantized batch index"))?;
+        for (index, &row) in row_ids.iter().enumerate() {
+            if row >= self.rows {
+                return Err(Error::Invalid("quantized row index outside tensor"));
+            }
+            let start = index
+                .checked_mul(self.row_width)
+                .ok_or(Error::Invalid("quantized batch output offset overflow"))?;
+            let end = start
+                .checked_add(self.row_width)
+                .ok_or(Error::Invalid("quantized batch output offset overflow"))?;
+            let row_output = &mut output[start..end];
+            let relative_offset = u64::try_from(self.row_bytes)
+                .ok()
+                .and_then(|bytes| row.checked_mul(bytes))
+                .ok_or(Error::Invalid("quantized row offset overflow"))?;
+            let offset = self
+                .data_offset
+                .checked_add(relative_offset)
+                .ok_or(Error::Invalid("quantized row offset overflow"))?;
+            if let Some(cache) = &self.row_cache {
+                let mut guard = cache
+                    .lock()
+                    .map_err(|_| Error::Invalid("decoded row cache lock poisoned"))?;
+                if guard.get((Arc::as_ptr(&self.file) as usize, offset), row_output) {
+                    continue;
+                }
+            }
+            order.push((row, index));
+        }
+        order.sort_unstable_by_key(|(row, _)| *row);
+        let mut cursor = 0;
+        while cursor < order.len() {
+            let first_row = order[cursor].0;
+            let mut end_cursor = cursor + 1;
+            while end_cursor < order.len()
+                && order[end_cursor].0 == order[end_cursor - 1].0.saturating_add(1)
+            {
+                end_cursor += 1;
+            }
+            let batch_rows = end_cursor - cursor;
+            let batch_bytes = batch_rows
+                .checked_mul(self.row_bytes)
+                .ok_or(Error::Invalid("quantized batch byte size overflow"))?;
+            let mut bytes = Vec::new();
+            bytes
+                .try_reserve_exact(batch_bytes)
+                .map_err(|_| Error::Invalid("cannot allocate quantized batch buffer"))?;
+            bytes.resize(batch_bytes, 0);
+            let first_offset = u64::try_from(self.row_bytes)
+                .ok()
+                .and_then(|size| first_row.checked_mul(size))
+                .and_then(|relative| self.data_offset.checked_add(relative))
+                .ok_or(Error::Invalid("quantized batch offset overflow"))?;
+            self.file.read_exact_at(&mut bytes, first_offset)?;
+            for (position, (_, output_index)) in
+                order.iter().enumerate().take(end_cursor).skip(cursor)
+            {
+                let row_start = (position - cursor)
+                    .checked_mul(self.row_bytes)
+                    .ok_or(Error::Invalid("quantized batch row offset overflow"))?;
+                let row_end = row_start
+                    .checked_add(self.row_bytes)
+                    .ok_or(Error::Invalid("quantized batch row offset overflow"))?;
+                let input = &bytes[row_start..row_end];
+                let output_start = output_index
+                    .checked_mul(self.row_width)
+                    .ok_or(Error::Invalid("quantized batch output offset overflow"))?;
+                let output_end = output_start
+                    .checked_add(self.row_width)
+                    .ok_or(Error::Invalid("quantized batch output offset overflow"))?;
+                let row_output = &mut output[output_start..output_end];
+                match self.quantization {
+                    RowQuantization::Q4_0 => {
+                        decode_q4_0_row_into(input, self.row_width, row_output)?
+                    }
+                    RowQuantization::Iq4Nl => {
+                        decode_iq4_nl_row_into(input, self.row_width, row_output)?
+                    }
+                    RowQuantization::Q8_0 => {
+                        decode_q8_0_row_into(input, self.row_width, row_output)?
+                    }
+                    RowQuantization::Native(ggml_type) => {
+                        decode_native_quantized_row_into(ggml_type, input, row_output)?
+                    }
+                }
+                if let Some(cache) = &self.row_cache {
+                    let absolute_offset =
+                        first_offset
+                            .checked_add(u64::try_from(row_start).map_err(|_| {
+                                Error::Invalid("quantized batch row offset overflow")
+                            })?)
+                            .ok_or(Error::Invalid("quantized batch row offset overflow"))?;
+                    let mut guard = cache
+                        .lock()
+                        .map_err(|_| Error::Invalid("decoded row cache lock poisoned"))?;
+                    guard.insert(
+                        (Arc::as_ptr(&self.file) as usize, absolute_offset),
+                        row_output,
+                        self.row_bytes,
+                    );
+                }
+            }
+            cursor = end_cursor;
         }
         Ok(())
     }
@@ -1073,19 +1194,41 @@ impl GgufRows {
         }
     }
 
-    fn open_with_file(
-        file: Arc<File>,
-        info: &GgufInfo,
-        tensor: &TensorInfo,
-    ) -> Result<Self, Error> {
-        Self::open_with_file_and_cache(file, info, tensor, None)
+    fn read_rows_into(
+        &self,
+        row_ids: &[u64],
+        row_width: usize,
+        output: &mut [f32],
+    ) -> Result<(), Error> {
+        let expected = row_ids
+            .len()
+            .checked_mul(row_width)
+            .ok_or(Error::Invalid("GGUF batch output size overflow"))?;
+        if row_width != self.row_width() || output.len() != expected {
+            return Err(Error::Invalid("GGUF batch output has unexpected geometry"));
+        }
+        match self {
+            Self::Quantized(rows) => rows.read_rows_into(row_ids, output),
+            Self::Dense(_) => {
+                for (index, &row) in row_ids.iter().enumerate() {
+                    let start = index
+                        .checked_mul(row_width)
+                        .ok_or(Error::Invalid("GGUF batch output offset overflow"))?;
+                    let end = start
+                        .checked_add(row_width)
+                        .ok_or(Error::Invalid("GGUF batch output offset overflow"))?;
+                    self.read_row_into(row, &mut output[start..end])?;
+                }
+                Ok(())
+            }
+        }
     }
 
     fn open_with_file_and_cache(
         file: Arc<File>,
         info: &GgufInfo,
         tensor: &TensorInfo,
-        expert_cache: Option<Arc<Mutex<ExpertRowCache>>>,
+        row_cache: Option<Arc<Mutex<DecodedRowCache>>>,
     ) -> Result<Self, Error> {
         let row_width = usize::try_from(tensor.extents[0])
             .map_err(|_| Error::Invalid("GGUF tensor row width exceeds usize"))?;
@@ -1094,18 +1237,14 @@ impl GgufRows {
                 file, info, tensor, row_width,
             )?)),
             _ => Ok(Self::Quantized(QuantizedRows::open_with_file_and_cache(
-                file,
-                info,
-                tensor,
-                row_width,
-                expert_cache,
+                file, info, tensor, row_width, row_cache,
             )?)),
         }
     }
 
     #[cfg(test)]
     fn open_from_info(path: &Path, info: &GgufInfo, tensor: &TensorInfo) -> Result<Self, Error> {
-        Self::open_with_file(Arc::new(File::open(path)?), info, tensor)
+        Self::open_with_file_and_cache(Arc::new(File::open(path)?), info, tensor, None)
     }
 }
 
@@ -1120,7 +1259,8 @@ pub struct QwenGgufTensorStore {
     shards: Vec<QwenGgufShard>,
     index: QwenTensorIndex,
     locations: HashMap<String, (usize, usize)>,
-    expert_cache: Arc<Mutex<ExpertRowCache>>,
+    expert_cache: Arc<Mutex<DecodedRowCache>>,
+    ple_cache: Arc<Mutex<DecodedRowCache>>,
 }
 
 impl QwenGgufTensorStore {
@@ -1129,13 +1269,22 @@ impl QwenGgufTensorStore {
         paths: &[PathBuf],
         config: &agentix_qwen::config::QwenTextConfig,
     ) -> Result<Self, Error> {
-        Self::open_with_expert_cache_bytes(paths, config, 256 * 1024 * 1024)
+        Self::open_with_cache_bytes(paths, config, 256 * 1024 * 1024, 64 * 1024 * 1024)
     }
 
     pub fn open_with_expert_cache_bytes(
         paths: &[PathBuf],
         config: &agentix_qwen::config::QwenTextConfig,
         cache_capacity_bytes: usize,
+    ) -> Result<Self, Error> {
+        Self::open_with_cache_bytes(paths, config, cache_capacity_bytes, 64 * 1024 * 1024)
+    }
+
+    pub fn open_with_cache_bytes(
+        paths: &[PathBuf],
+        config: &agentix_qwen::config::QwenTextConfig,
+        expert_cache_capacity_bytes: usize,
+        ple_cache_capacity_bytes: usize,
     ) -> Result<Self, Error> {
         if paths.is_empty() {
             return Err(Error::Invalid("Qwen GGUF tensor store has no shards"));
@@ -1218,7 +1367,10 @@ impl QwenGgufTensorStore {
                 entries: index_entries,
             },
             locations,
-            expert_cache: Arc::new(Mutex::new(ExpertRowCache::new(cache_capacity_bytes))),
+            expert_cache: Arc::new(Mutex::new(DecodedRowCache::new(
+                expert_cache_capacity_bytes,
+            ))),
+            ple_cache: Arc::new(Mutex::new(DecodedRowCache::new(ple_cache_capacity_bytes))),
         })
     }
 
@@ -1226,7 +1378,7 @@ impl QwenGgufTensorStore {
         &self.index
     }
 
-    pub fn expert_row_cache_stats(&self) -> Result<ExpertRowCacheStats, Error> {
+    pub fn expert_row_cache_stats(&self) -> Result<DecodedRowCacheStats, Error> {
         let cache = self
             .expert_cache
             .lock()
@@ -1236,8 +1388,30 @@ impl QwenGgufTensorStore {
         Ok(stats)
     }
 
+    pub fn ple_row_cache_stats(&self) -> Result<DecodedRowCacheStats, Error> {
+        let cache = self
+            .ple_cache
+            .lock()
+            .map_err(|_| Error::Invalid("PLE row cache lock poisoned"))?;
+        let mut stats = cache.stats;
+        stats.retained_bytes = cache.retained_bytes;
+        Ok(stats)
+    }
+
     /// Opens one named dense or quantized tensor as an on-demand row reader.
     pub fn open_rows(&self, tensor_name: &str) -> Result<GgufRows, Error> {
+        self.open_rows_with_cache(tensor_name, None)
+    }
+
+    pub fn open_ple_rows(&self, tensor_name: &str) -> Result<GgufRows, Error> {
+        self.open_rows_with_cache(tensor_name, Some(Arc::clone(&self.ple_cache)))
+    }
+
+    fn open_rows_with_cache(
+        &self,
+        tensor_name: &str,
+        cache: Option<Arc<Mutex<DecodedRowCache>>>,
+    ) -> Result<GgufRows, Error> {
         let &(shard_index, tensor_index) = self
             .locations
             .get(tensor_name)
@@ -1251,7 +1425,7 @@ impl QwenGgufTensorStore {
             .tensors
             .get(tensor_index)
             .ok_or(Error::Invalid("Qwen GGUF tensor index is invalid"))?;
-        GgufRows::open_with_file(Arc::clone(&shard.file), &shard.info, tensor)
+        GgufRows::open_with_file_and_cache(Arc::clone(&shard.file), &shard.info, tensor, cache)
     }
 
     /// Opens a rank-one or rank-two tensor as matrix rows for streamed linear ops.
@@ -1475,7 +1649,7 @@ impl PleGgufLayer {
             .map_err(|_| Error::Invalid("invalid Qwen PLE row geometry"))?;
         let expected_table_rows = agentix_qwen::schema::ple_table_rows(config)
             .map_err(|_| Error::Invalid("invalid Qwen PLE table geometry"))?;
-        let embedding = store.open_rows("per_layer_token_embd.weight")?;
+        let embedding = store.open_ple_rows("per_layer_token_embd.weight")?;
         let key_projection = store.open_matrix_rows(&tensor_name("ple_key.weight"))?;
         let value_projection = store.open_matrix_rows(&tensor_name("ple_value.weight"))?;
         let key_norm = store
@@ -2463,6 +2637,16 @@ impl agentix_qwen::ple::EmbeddingRowReader for GgufRows {
     fn read_row(&mut self, row: u64, output: &mut [f32]) -> agentix_qwen::Result<()> {
         self.read_row_into(row, output)
             .map_err(|_| agentix_qwen::Error::Invalid("GGUF PLE embedding row read failed"))
+    }
+
+    fn read_rows(
+        &mut self,
+        row_ids: &[u64],
+        row_width: usize,
+        output: &mut [f32],
+    ) -> agentix_qwen::Result<()> {
+        self.read_rows_into(row_ids, row_width, output)
+            .map_err(|_| agentix_qwen::Error::Invalid("GGUF PLE embedding batch read failed"))
     }
 }
 
@@ -3722,9 +3906,12 @@ mod tests {
             }
             let storage_type = if expert_stack {
                 ffi::GGML_TYPE_Q4_0
+            } else if geometry.name == "per_layer_token_embd.weight" {
+                ffi::GGML_TYPE_IQ4_NL
             } else {
                 ffi::GGML_TYPE_F32
             };
+            let quantized = expert_stack || geometry.name == "per_layer_token_embd.weight";
             // SAFETY: rank is 1-3, dimensions are positive and fit in i64, and the context is live.
             let tensor = unsafe {
                 ffi::ggml_new_tensor(
@@ -3740,8 +3927,8 @@ mod tests {
             if payload.is_null() {
                 return Err("GGML fixture tensor has no payload allocation".into());
             }
-            let payload_bytes = if expert_stack {
-                // SAFETY: Q4_0 is a validated GGML type and the row width is block-aligned.
+            let payload_bytes = if quantized {
+                // SAFETY: both fixture quantizers have validated block-aligned row widths.
                 let row_bytes = unsafe { ffi::ggml_row_size(storage_type, dimensions[0]) };
                 row_bytes
                     .checked_mul(element_count / usize::try_from(dimensions[0])?)
@@ -3783,12 +3970,13 @@ mod tests {
         let fixture_sha256 = agentix_qwen::identity::sha256_file(&file.0)?;
         assert_eq!(
             fixture_sha256,
-            "29ddcc30858e34f94259607a6695da7d9a216b70651ff0d89bf5e9b8221259d0"
+            "10936b43281d37cad4243a6f343f40325255c6927e0e75dff9be5e70dc635fd5"
         );
 
-        let store = QwenGgufTensorStore::open_with_expert_cache_bytes(
+        let store = QwenGgufTensorStore::open_with_cache_bytes(
             std::slice::from_ref(&file.0),
             &config,
+            1024,
             1024,
         )?;
         let expert = store
@@ -3807,15 +3995,44 @@ mod tests {
         assert!(cache_stats.evictions >= 1);
         assert!(cache_stats.retained_bytes <= 1024);
         assert_eq!(cache_stats.transfer_bytes, 0);
-        let uncached_store = QwenGgufTensorStore::open_with_expert_cache_bytes(
+        let ple_rows = store.open_ple_rows("per_layer_token_embd.weight")?;
+        let ple_row = ple_rows.read_row(0)?;
+        assert_eq!(ple_row, ple_rows.read_row(0)?);
+        let _ = ple_rows.read_row(1)?;
+        let _ = ple_rows.read_row(2)?;
+        let _ = ple_rows.read_row(3)?;
+        let ple_stats = store.ple_row_cache_stats()?;
+        assert_eq!(ple_stats.hits, 1);
+        assert!(ple_stats.evictions >= 1);
+        assert!(ple_stats.retained_bytes <= 1024);
+        assert_eq!(ple_stats.transfer_bytes, 0);
+        let uncached_store = QwenGgufTensorStore::open_with_cache_bytes(
             std::slice::from_ref(&file.0),
             &config,
             0,
+            0,
         )?;
+        let ple_rows = ple_rows;
+        let ple_width = ple_rows.row_width();
+        let ple_batch_row_ids = [2, 0, 1];
+        let mut ple_batch = vec![0.0; ple_width * 3];
+        ple_rows.read_rows_into(&ple_batch_row_ids, ple_width, &mut ple_batch)?;
+        let uncached_ple_rows = uncached_store.open_ple_rows("per_layer_token_embd.weight")?;
+        for (index, &row_id) in ple_batch_row_ids.iter().enumerate() {
+            let start = index * uncached_ple_rows.row_width();
+            let end = start + uncached_ple_rows.row_width();
+            assert_eq!(&ple_batch[start..end], uncached_ple_rows.read_row(row_id)?,);
+        }
         assert_eq!(
             cached_row,
             uncached_store
                 .open_group_matrix_rows("blk.0.ffn_gate_exps.weight", 0)?
+                .read_row(0)?,
+        );
+        assert_eq!(
+            ple_row,
+            uncached_store
+                .open_ple_rows("per_layer_token_embd.weight")?
                 .read_row(0)?,
         );
         let mut decoder = QwenGgufDecoder::open(&store, &config)?;
