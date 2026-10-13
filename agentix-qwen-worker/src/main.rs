@@ -79,9 +79,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let config_bytes = read_artifact(&config_path, "Qwen config")?;
     let config = QwenTextConfig::parse(&config_bytes)?;
-    let store = QwenGgufTensorStore::open(&shard_paths, &config).map_err(|error| {
-        std::io::Error::other(format!("cannot open Qwen GGUF shard set: {error}"))
-    })?;
+    let expert_cache_bytes = env::var("AGENTIX_QWEN_EXPERT_CACHE_BYTES")
+        .ok()
+        .map(|value| value.parse::<usize>())
+        .transpose()
+        .map_err(|error| format!("invalid AGENTIX_QWEN_EXPERT_CACHE_BYTES: {error}"))?
+        .unwrap_or(256 * 1024 * 1024);
+    let store = QwenGgufTensorStore::open_with_expert_cache_bytes(
+        &shard_paths,
+        &config,
+        expert_cache_bytes,
+    )
+    .map_err(|error| std::io::Error::other(format!("cannot open Qwen GGUF shard set: {error}")))?;
     let tokenizer =
         QwenTokenizer::from_files(&tokenizer_path, &template_path).map_err(|error| {
             std::io::Error::other(format!(

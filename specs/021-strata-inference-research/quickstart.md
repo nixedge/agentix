@@ -58,6 +58,12 @@ IQ3_S shards in `AGENTIX_QWEN_MODEL_DIR` as `iq3s-00001.gguf` and
 publisher SHA256 values before schema/layer validation and socket creation;
 set `AGENTIX_QWEN_GGUF_SHARDS` and
 `AGENTIX_QWEN_EXPECTED_SHARD_SHA256` together when names or artifacts change.
+Decoded routed expert rows are cached up to 256 MiB by default; set
+`AGENTIX_QWEN_EXPERT_CACHE_BYTES` in the worker service environment to change
+the cap (set it to `0` to disable). Cache counters are available from the
+tensor store for runtime instrumentation; this CPU path reports zero
+host-device transfer bytes. The NixOS module passes this through
+`services.agentix.qwen.extraEnv`.
 The worker serves `/health`, `/v1/models` and greedy text
 `/v1/chat/completions` over `AGENTIX_QWEN_SOCKET`. The daemon routes only the
 exact `AGENTIX_QWEN_MODEL` name to it. Text SSE is bounded. Non-streaming

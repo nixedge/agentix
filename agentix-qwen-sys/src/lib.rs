@@ -23,7 +23,7 @@ use std::{
     os::unix::fs::FileExt,
     path::{Path, PathBuf},
     ptr::{self, NonNull},
-    sync::Arc,
+    sync::{Arc, Mutex},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -284,6 +284,115 @@ pub struct QuantizedRows {
     row_width: usize,
     row_bytes: usize,
     quantization: RowQuantization,
+    expert_cache: Option<Arc<Mutex<ExpertRowCache>>>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ExpertRowCacheStats {
+    pub hits: u64,
+    pub misses: u64,
+    pub evictions: u64,
+    pub bytes_read: u64,
+    pub retained_bytes: usize,
+    pub peak_retained_bytes: usize,
+    /// CPU decoding currently transfers no data to an accelerator.
+    pub transfer_bytes: u64,
+}
+
+struct ExpertRowCacheEntry {
+    values: Vec<f32>,
+    referenced: bool,
+}
+struct ExpertRowCache {
+    capacity_bytes: usize,
+    retained_bytes: usize,
+    entries: HashMap<(usize, u64), ExpertRowCacheEntry>,
+    clock: Vec<Option<(usize, u64)>>,
+    free_slots: Vec<usize>,
+    hand: usize,
+    stats: ExpertRowCacheStats,
+}
+
+impl ExpertRowCache {
+    fn new(capacity_bytes: usize) -> Self {
+        Self {
+            capacity_bytes,
+            retained_bytes: 0,
+            entries: HashMap::new(),
+            clock: Vec::new(),
+            free_slots: Vec::new(),
+            hand: 0,
+            stats: ExpertRowCacheStats::default(),
+        }
+    }
+
+    fn get(&mut self, key: (usize, u64), output: &mut [f32]) -> bool {
+        if let Some(entry) = self.entries.get_mut(&key) {
+            output.copy_from_slice(&entry.values);
+            entry.referenced = true;
+            self.stats.hits = self.stats.hits.saturating_add(1);
+            true
+        } else {
+            false
+        }
+    }
+
+    fn insert(&mut self, key: (usize, u64), values: &[f32], bytes_read: usize) {
+        if self.entries.contains_key(&key) {
+            return;
+        }
+        self.stats.misses = self.stats.misses.saturating_add(1);
+        self.stats.bytes_read = self.stats.bytes_read.saturating_add(bytes_read as u64);
+        let Some(bytes) = values.len().checked_mul(std::mem::size_of::<f32>()) else {
+            return;
+        };
+        if bytes > self.capacity_bytes || self.capacity_bytes == 0 {
+            return;
+        }
+        while self.retained_bytes.saturating_add(bytes) > self.capacity_bytes {
+            if self.clock.is_empty() {
+                break;
+            }
+            let slot = self.hand % self.clock.len();
+            self.hand = (slot + 1) % self.clock.len();
+            let Some(old_key) = self.clock[slot] else {
+                continue;
+            };
+            if let Some(entry) = self.entries.get_mut(&old_key) {
+                if entry.referenced {
+                    entry.referenced = false;
+                    continue;
+                }
+            }
+            self.clock[slot] = None;
+            self.free_slots.push(slot);
+            if let Some(entry) = self.entries.remove(&old_key) {
+                self.retained_bytes = self
+                    .retained_bytes
+                    .saturating_sub(entry.values.len() * std::mem::size_of::<f32>());
+                self.stats.evictions = self.stats.evictions.saturating_add(1);
+            }
+        }
+        let slot = if let Some(slot) = self.free_slots.pop() {
+            slot
+        } else {
+            self.clock.push(None);
+            self.clock.len() - 1
+        };
+        let mut retained = Vec::with_capacity(values.len());
+        retained.extend_from_slice(values);
+        self.entries.insert(
+            key,
+            ExpertRowCacheEntry {
+                values: retained,
+                referenced: true,
+            },
+        );
+        self.clock[slot] = Some(key);
+        self.retained_bytes += bytes;
+        self.stats.retained_bytes = self.retained_bytes;
+        self.stats.peak_retained_bytes = self.stats.peak_retained_bytes.max(self.retained_bytes);
+    }
 }
 
 #[repr(C)]
@@ -378,6 +487,16 @@ impl QuantizedRows {
         tensor: &TensorInfo,
         row_width: usize,
     ) -> Result<Self, Error> {
+        Self::open_with_file_and_cache(file, info, tensor, row_width, None)
+    }
+
+    fn open_with_file_and_cache(
+        file: Arc<File>,
+        info: &GgufInfo,
+        tensor: &TensorInfo,
+        row_width: usize,
+        expert_cache: Option<Arc<Mutex<ExpertRowCache>>>,
+    ) -> Result<Self, Error> {
         if row_width == 0
             || row_width > MAX_Q4_0_ROW_VALUES
             || row_width.checked_rem(Q4_0_BLOCK_VALUES) != Some(0)
@@ -454,6 +573,7 @@ impl QuantizedRows {
             row_width,
             row_bytes,
             quantization,
+            expert_cache,
         })
     }
 
@@ -501,6 +621,15 @@ impl QuantizedRows {
             .and_then(|row_bytes| row.checked_mul(row_bytes))
             .and_then(|relative| self.data_offset.checked_add(relative))
             .ok_or(Error::Invalid("quantized row offset overflow"))?;
+        if let Some(cache) = &self.expert_cache {
+            let mut guard = cache
+                .lock()
+                .map_err(|_| Error::Invalid("expert row cache lock poisoned"))?;
+            let key = (Arc::as_ptr(&self.file) as usize, offset);
+            if guard.get(key, output) {
+                return Ok(());
+            }
+        }
         let mut bytes = Vec::new();
         bytes
             .try_reserve_exact(self.row_bytes)
@@ -514,7 +643,18 @@ impl QuantizedRows {
             RowQuantization::Native(ggml_type) => {
                 decode_native_quantized_row_into(ggml_type, &bytes, output)
             }
+        }?;
+        if let Some(cache) = &self.expert_cache {
+            let mut guard = cache
+                .lock()
+                .map_err(|_| Error::Invalid("expert row cache lock poisoned"))?;
+            guard.insert(
+                (Arc::as_ptr(&self.file) as usize, offset),
+                output,
+                self.row_bytes,
+            );
         }
+        Ok(())
     }
 }
 
@@ -880,6 +1020,28 @@ impl GgufMatrixRows {
     pub fn input_features(&self) -> usize {
         self.input_features
     }
+
+    pub fn read_row(&self, row: u64) -> Result<Vec<f32>, Error> {
+        let absolute_row = self
+            .first_row
+            .checked_add(row)
+            .ok_or(Error::Invalid("Qwen GGUF matrix row offset overflow"))?;
+        if row >= self.output_features {
+            return Err(Error::Invalid("Qwen GGUF matrix row outside view"));
+        }
+        self.rows.read_row(absolute_row)
+    }
+
+    pub fn read_row_into(&self, row: u64, output: &mut [f32]) -> Result<(), Error> {
+        let absolute_row = self
+            .first_row
+            .checked_add(row)
+            .ok_or(Error::Invalid("Qwen GGUF matrix row offset overflow"))?;
+        if row >= self.output_features {
+            return Err(Error::Invalid("Qwen GGUF matrix row outside view"));
+        }
+        self.rows.read_row_into(absolute_row, output)
+    }
 }
 
 impl GgufRows {
@@ -916,14 +1078,27 @@ impl GgufRows {
         info: &GgufInfo,
         tensor: &TensorInfo,
     ) -> Result<Self, Error> {
+        Self::open_with_file_and_cache(file, info, tensor, None)
+    }
+
+    fn open_with_file_and_cache(
+        file: Arc<File>,
+        info: &GgufInfo,
+        tensor: &TensorInfo,
+        expert_cache: Option<Arc<Mutex<ExpertRowCache>>>,
+    ) -> Result<Self, Error> {
         let row_width = usize::try_from(tensor.extents[0])
             .map_err(|_| Error::Invalid("GGUF tensor row width exceeds usize"))?;
         match tensor.type_name.as_str() {
             "f32" | "f16" | "bf16" => Ok(Self::Dense(DenseRows::open_with_file(
                 file, info, tensor, row_width,
             )?)),
-            _ => Ok(Self::Quantized(QuantizedRows::open_with_file(
-                file, info, tensor, row_width,
+            _ => Ok(Self::Quantized(QuantizedRows::open_with_file_and_cache(
+                file,
+                info,
+                tensor,
+                row_width,
+                expert_cache,
             )?)),
         }
     }
@@ -945,6 +1120,7 @@ pub struct QwenGgufTensorStore {
     shards: Vec<QwenGgufShard>,
     index: QwenTensorIndex,
     locations: HashMap<String, (usize, usize)>,
+    expert_cache: Arc<Mutex<ExpertRowCache>>,
 }
 
 impl QwenGgufTensorStore {
@@ -952,6 +1128,14 @@ impl QwenGgufTensorStore {
     pub fn open(
         paths: &[PathBuf],
         config: &agentix_qwen::config::QwenTextConfig,
+    ) -> Result<Self, Error> {
+        Self::open_with_expert_cache_bytes(paths, config, 256 * 1024 * 1024)
+    }
+
+    pub fn open_with_expert_cache_bytes(
+        paths: &[PathBuf],
+        config: &agentix_qwen::config::QwenTextConfig,
+        cache_capacity_bytes: usize,
     ) -> Result<Self, Error> {
         if paths.is_empty() {
             return Err(Error::Invalid("Qwen GGUF tensor store has no shards"));
@@ -1034,11 +1218,22 @@ impl QwenGgufTensorStore {
                 entries: index_entries,
             },
             locations,
+            expert_cache: Arc::new(Mutex::new(ExpertRowCache::new(cache_capacity_bytes))),
         })
     }
 
     pub fn tensor_index(&self) -> &QwenTensorIndex {
         &self.index
+    }
+
+    pub fn expert_row_cache_stats(&self) -> Result<ExpertRowCacheStats, Error> {
+        let cache = self
+            .expert_cache
+            .lock()
+            .map_err(|_| Error::Invalid("expert row cache lock poisoned"))?;
+        let mut stats = cache.stats;
+        stats.retained_bytes = cache.retained_bytes;
+        Ok(stats)
     }
 
     /// Opens one named dense or quantized tensor as an on-demand row reader.
@@ -1108,8 +1303,15 @@ impl QwenGgufTensorStore {
         let first_row = group_index
             .checked_mul(rows_per_group)
             .ok_or(Error::Invalid("Qwen GGUF expert row offset overflow"))?;
+        let shard = &self.shards[shard_index];
+        let tensor = &shard.info.tensors[tensor_index];
         Ok(GgufMatrixRows {
-            rows: self.open_rows(tensor_name)?,
+            rows: GgufRows::open_with_file_and_cache(
+                Arc::clone(&shard.file),
+                &shard.info,
+                tensor,
+                Some(Arc::clone(&self.expert_cache)),
+            )?,
             first_row,
             output_features: rows_per_group,
             input_features: usize::try_from(tensor.extents[0])
@@ -3584,7 +3786,11 @@ mod tests {
             "29ddcc30858e34f94259607a6695da7d9a216b70651ff0d89bf5e9b8221259d0"
         );
 
-        let store = QwenGgufTensorStore::open(std::slice::from_ref(&file.0), &config)?;
+        let store = QwenGgufTensorStore::open_with_expert_cache_bytes(
+            std::slice::from_ref(&file.0),
+            &config,
+            1024,
+        )?;
         let expert = store
             .tensor_index()
             .entries
@@ -3592,9 +3798,26 @@ mod tests {
             .find(|entry| entry.name == "blk.0.ffn_gate_exps.weight")
             .ok_or("compact fixture has no expert tensor")?;
         assert_eq!(&expert.extents[..3], &[256, 256, 2]);
-        if let Err(error) = store.open_group_matrix_rows("blk.0.ffn_gate_exps.weight", 0) {
-            return Err(format!("compact fixture expert row open failed: {error:?}").into());
-        }
+        let expert_rows = store.open_group_matrix_rows("blk.0.ffn_gate_exps.weight", 0)?;
+        let cached_row = expert_rows.read_row(0)?;
+        assert_eq!(cached_row, expert_rows.read_row(0)?);
+        let _ = expert_rows.read_row(1)?;
+        let cache_stats = store.expert_row_cache_stats()?;
+        assert_eq!(cache_stats.hits, 1);
+        assert!(cache_stats.evictions >= 1);
+        assert!(cache_stats.retained_bytes <= 1024);
+        assert_eq!(cache_stats.transfer_bytes, 0);
+        let uncached_store = QwenGgufTensorStore::open_with_expert_cache_bytes(
+            std::slice::from_ref(&file.0),
+            &config,
+            0,
+        )?;
+        assert_eq!(
+            cached_row,
+            uncached_store
+                .open_group_matrix_rows("blk.0.ffn_gate_exps.weight", 0)?
+                .read_row(0)?,
+        );
         let mut decoder = QwenGgufDecoder::open(&store, &config)?;
         let prompt = agentix_qwen::tokenizer::PreparedPrompt {
             rendered: "fixture".to_owned(),
@@ -3610,6 +3833,13 @@ mod tests {
         assert_eq!(output.generation.generated_token_ids, [0, 0]);
         assert_eq!(output.prompt_logits, [0.0; 8]);
         assert_eq!(decoder.position, 2);
+        let mut uncached_decoder = QwenGgufDecoder::open(&uncached_store, &config)?;
+        let uncached_output = uncached_decoder.generate_prepared_greedy(&prompt, &[7])?;
+        assert_eq!(
+            output.generation.generated_token_ids,
+            uncached_output.generation.generated_token_ids
+        );
+        assert_eq!(output.prompt_logits, uncached_output.prompt_logits);
         Ok(())
     }
 
