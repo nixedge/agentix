@@ -218,7 +218,22 @@ fn router(state: AppState) -> Router {
 }
 
 async fn health(State(state): State<AppState>) -> Json<Value> {
-    Json(json!({"status": "ready", "model": state.model_name.as_ref()}))
+    let expert_row_cache = state.store.expert_row_cache_stats().ok().map(|stats| {
+        json!({
+            "hits": stats.hits,
+            "misses": stats.misses,
+            "evictions": stats.evictions,
+            "bytes_read": stats.bytes_read,
+            "retained_bytes": stats.retained_bytes,
+            "peak_retained_bytes": stats.peak_retained_bytes,
+            "transfer_bytes": stats.transfer_bytes,
+        })
+    });
+    Json(json!({
+        "status": "ready",
+        "model": state.model_name.as_ref(),
+        "expert_row_cache": expert_row_cache,
+    }))
 }
 
 async fn models(State(state): State<AppState>) -> Json<Value> {

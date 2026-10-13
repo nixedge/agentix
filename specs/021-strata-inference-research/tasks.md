@@ -168,7 +168,7 @@ model-derived cache continuation remain unimplemented.
 
 ## Optimization implementation
 
-- [ ] T022 [US2] Implement bounded expert placement/cache and instrument hits, evictions, memory and transfer bytes; compare outputs against ordinary baseline (depends T021). Partial: the CPU GGUF expert-row path has a configurable decoded F32 clock cache (default 256 MiB; `AGENTIX_QWEN_EXPERT_CACHE_BYTES`), with hit/miss/eviction/read-byte/retained/peak/transfer counters. A compact fixture verifies a hit, eviction under a 1 KiB cap, strict retained-byte bound, zero CPU transfer bytes, and exact row equality with cache disabled. GPU placement and target-host performance evidence remain open.
+- [ ] T022 [US2] Implement bounded expert placement/cache and instrument hits, evictions, memory and transfer bytes; compare outputs against ordinary baseline (depends T021). Partial: the CPU GGUF expert-row path has a configurable decoded F32 clock cache (default 256 MiB; `AGENTIX_QWEN_EXPERT_CACHE_BYTES`), with hit/miss/eviction/read-byte/retained/peak/transfer counters exported on `/health`. A compact fixture verifies a hit, eviction under a 1 KiB cap, strict retained-byte bound, zero CPU transfer bytes, and exact full-decoder output equality with cache disabled. GPU placement and target-host performance evidence remain open.
 - [ ] T023 [US2] Implement CPU/GPU/transfer overlap with event-owned staging buffers; test cancellation and reuse races; profile cost and numerical equivalence (depends T022).
 - [ ] T024 [US2] Implement bounded PLE row cache/read batching and separate prefill scheduling/scratch budgets; compare uncached results and measure TTFT (depends T023).
 - [ ] T025 [US2] Implement prefix-state reuse and identity/eviction validation (depends T024).
