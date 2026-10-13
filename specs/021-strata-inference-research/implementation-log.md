@@ -1,5 +1,10 @@
 # Implementation progress
 
+## 2026-10-13 — current checkout workspace verification
+
+- Re-ran `nix develop --command cargo fmt --all --check`, `nix develop --command cargo clippy --workspace -- -D warnings`, and `nix develop --command cargo test --workspace` after the Qwen worker tool-call changes and the user's unrelated working-tree edits. All three passed. The workspace suite reports model-dependent completion and Whisper integration tests as ignored when their model-path environment variables are unset.
+- `nix build .#agentix-qwen` and `nix build .#agentix-daemon` passed on this checkout. The worker package build has not yet returned a result. T029 remains partial pending that result, the sys package/build matrix, and the unresolved CUDA check-phase gate.
+
 ## Recovery checkpoint — 2026-10-12
 
 The worktree directory was mistakenly created on the jail tmpfs; only `master` and `.bare` are persistent mounts. This commit preserves all project files in the persistent bare repository on branch `021-strata-inference-research`. Restore a host-visible checkout before further implementation. A separate archive also exists at `/home/sam/.codex/agentix-021-recovery.XZnpn3/worktree-files.tar.gz`.
