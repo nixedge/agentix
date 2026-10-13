@@ -1,0 +1,56 @@
+{
+  "repository": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF",
+  "revision": "ed59f92082b1e93c0e96d60a8b11aab089b52f09",
+  "artifact": {
+    "path": "IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00001-of-00002.gguf",
+    "bytes": 54817524224,
+    "publisher_sha256": "4c1eb2ceb4915e1192f4f386021897bde56a97f40a0bb78bb86465e0f7d2aca3",
+    "xet_hash": "692a40d0341816e7a902267bb139f4efd00e047aa132d07490a14d75f8620fb3",
+    "acquired_ranges": [
+      {
+        "offset": 0,
+        "bytes": 16777216,
+        "purpose": "GGUF header and tensor directory"
+      },
+      {
+        "offset": 19192385920,
+        "bytes": 1100,
+        "purpose": "row 0 of blk.17.ffn_gate_exps.weight"
+      }
+    ]
+  },
+  "header_inventory": {
+    "file": "ista_iq3s_shard1_tensor_headers.tsv",
+    "sha256": "3d426fabc3e15f081c9f29ce835ce49c86033cc3ae766dfc23112ed2fb21985e",
+    "gguf_version": 3,
+    "architecture": "qwen4exp",
+    "split": [0, 2],
+    "tensor_count": 1223,
+    "iq3_s_tensor_count": 20
+  },
+  "tensor": {
+    "name": "blk.17.ffn_gate_exps.weight",
+    "type": "iq3_s",
+    "extents": [2560, 640, 512, 1],
+    "tensor_offset": 19181361536,
+    "file_offset": 19192385920,
+    "row_index": 0,
+    "row_width": 2560,
+    "rows_per_group": 640,
+    "group_count": 512,
+    "row_bytes": 1100,
+    "row_sha256": "b5304348611545861dfeb2ccd7976f50eb439590f2293320bec81f54bce652ea"
+  },
+  "decoder": {
+    "implementation": "agentix-qwen-sys::QuantizedRows through pinned llama-cpp-sys-2 0.1.154 GGML CPU to_float",
+    "decoded_tsv": "ista_iq3s_blk17_ffn_gate_exps_row0_decoded.tsv",
+    "decoded_tsv_sha256": "ed7d804f5acef5a33f6a42cb96e35e837c4095f39237f550a141d4344f6b0d5b",
+    "decoded_values": 2560,
+    "all_values_finite": true
+  },
+  "limitations": [
+    "Only the 16 MiB header range and one 1100-byte tensor row were acquired; the full shard was not downloaded or hash-verified.",
+    "The decoded row confirms the reader accepts a real IQ3_S expert tensor and rank-three expert geometry. It is not a full model load, model output, independent numeric reference, or CUDA kernel validation.",
+    "The native callback is the pinned upstream GGML CPU decoder; this evidence does not establish an Agentix-owned IQ3_S CUDA kernel."
+  ]
+}

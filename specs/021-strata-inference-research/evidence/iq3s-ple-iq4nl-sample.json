@@ -1,0 +1,49 @@
+{
+  "repository": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF",
+  "revision": "ed59f92082b1e93c0e96d60a8b11aab089b52f09",
+  "file": "IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00002-of-00002.gguf",
+  "publisher_lfs_sha256": "316b46f3a2dbd68c900f43136ab9449f9dcc3725dfd8c794847c204bc161e113",
+  "metadata_inspection": {
+    "method": "Full split-2 payload acquired and SHA256 verified; complete-file metadata inspection",
+    "inspector": "agentix-qwen-sys::inspect_gguf",
+    "gguf_version": 3,
+    "file_size": 28800138432,
+    "tensor_count": 1,
+    "split_index": 1,
+    "split_count": 2,
+    "data_offset": 192,
+    "tensor": {
+      "name": "per_layer_token_embd.weight",
+      "ggml_type": "iq4_nl",
+      "extents": [160, 320001536, 1, 1],
+      "tensor_offset": 0,
+      "payload_bytes": 28800138240,
+      "row_bytes": 90
+    }
+  },
+  "sample_row": {
+    "row_index": 0,
+    "file_offset": 192,
+    "bytes": 90,
+    "sha256": "4b067ea426d9767a81185b36042c6612de8a5f41fca76b97feb4bc5b8298f1ab",
+    "decoder_result": {
+      "values": 160,
+      "all_finite": true,
+      "minimum": -0.037017345,
+      "maximum": 0.041603565
+    },
+    "independent_parity": {
+      "reference": "pinned llama.cpp GGML IQ4_NL type-traits to_float callback",
+      "binding": "llama-cpp-sys-2 0.1.154",
+      "compared_values": 160,
+      "absolute_error_bound": 1e-7,
+      "test": "agentix-qwen-sys::tests::sampled_published_iq4_nl_row_matches_pinned_ggml_dequantizer",
+      "fixture_storage": "embedded 90-byte array in agentix-qwen-sys/src/lib.rs for Nix source reproducibility"
+    }
+  },
+  "limitations": [
+    "Only one 90-byte PLE row was independently hashed for decode comparison; split 2's full-file SHA256 is verified.",
+    "This is shard 2 of 2; split 1 is still downloading and full model completeness is not yet verified.",
+    "Parity covers one sampled IQ4_NL PLE row and synthetic bytes; it does not establish the full tensor mapping or other quantized tensor decoders."
+  ]
+}

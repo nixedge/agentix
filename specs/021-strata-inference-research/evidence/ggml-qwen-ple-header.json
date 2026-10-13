@@ -1,0 +1,64 @@
+{
+  "repository": "ggml-org/Qwen3.8-Flash-Next-GGUF",
+  "revision": "052beeaca7bec4a303e59cc7bc630c4f3a1b845d",
+  "file": "Qwen3.8-Flash-Next-IQ4_NL-00002-of-00002.gguf",
+  "file_size": 102037973504,
+  "lfs_sha256": "0299b147e42517ff8fa3a4fa66d370c77ce01c44ed8cbc3451b7a42caad5fc10",
+  "inspection": {
+    "method": "HTTP byte range 0-16777215; sparse local file used only for metadata parsing",
+    "inspector": "agentix-qwen-sys::inspect_gguf",
+    "gguf_version": 3,
+    "tensor_count": 1224,
+    "split_index": 1,
+    "split_count": 2,
+    "data_offset": 77824
+  },
+  "tensor_inventory": {
+    "path": "ggml-qwen-iq4nl-shard-2-tensors.tsv",
+    "sha256": "0e30eceac18ca86427036971818405dad3f5492e3e741d27797e0b45b52b28a0",
+    "rows": 1224,
+    "columns": ["name", "ggml_type", "dim0", "dim1", "dim2", "dim3", "payload_bytes"],
+    "type_counts": {
+      "bf16": 24,
+      "f16": 1,
+      "f32": 388,
+      "iq4_nl": 292,
+      "q4_0": 1,
+      "q8_0": 518
+    }
+  },
+  "tensor": {
+    "name": "per_layer_token_embd.weight",
+    "ggml_type": "q4_0",
+    "extents": [160, 320001536, 1, 1],
+    "data_offset": 77824,
+    "tensor_offset": 3015784192,
+    "payload_bytes": 28800138240,
+    "row_bytes": 90
+  },
+  "sample_row": {
+    "row_index": 0,
+    "file_offset": 3015862016,
+    "bytes": 90,
+    "sha256": "34098719c5d2b94c40150f2fbf5e04859571d27a1df605134e8deadb0d01cf73",
+    "decoder_result": {
+      "values": 160,
+      "all_finite": true,
+      "minimum": -0.03503418,
+      "maximum": 0.040039063
+    },
+    "independent_parity": {
+      "reference": "pinned llama.cpp GGML Q4_0 type-traits to_float callback",
+      "binding": "llama-cpp-sys-2 0.1.154",
+      "compared_values": 160,
+      "absolute_error_bound": 1e-7,
+      "test": "agentix-qwen-sys::tests::sampled_published_q4_0_row_matches_pinned_ggml_dequantizer",
+      "fixture_storage": "embedded 90-byte array in agentix-qwen-sys/src/lib.rs for Nix source reproducibility"
+    }
+  },
+  "limitations": [
+    "Only the first 90-byte PLE row was downloaded and hashed; the remaining weight payload was not downloaded or verified.",
+    "This file records only shard 2 metadata; split index ordering and cross-shard tensor-name uniqueness are checked separately in ggml-qwen-iq4nl-shards.json. The large shard-2 payload is not fully verified.",
+    "This verifies Q4_0 row decoding against GGML on one sample, but does not establish complete tensor mapping, model-loader support, or target-GPU kernel parity for Qwen4-Exp."
+  ]
+}

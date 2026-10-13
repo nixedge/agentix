@@ -1,0 +1,33 @@
+{
+  "source": {
+    "repository": "Qwen/Qwen3.8-Flash-Next",
+    "revision": "de4b8e4d43b917e7706784d8bb445c9af86a3540",
+    "file": "model-00001-of-00131.safetensors",
+    "tensor": "model.language_model.layers.0.linear_attn.dt_bias",
+    "dtype": "BF16",
+    "shape": [48],
+    "tensor_data_offsets": [26419296, 26419392],
+    "file_byte_range_inclusive": [26458600, 26458695],
+    "sample_bytes": 96,
+    "sample_sha256": "e7e2aaccdf79b62e05bc72c88fe044ac389bcb61b9d70cbf9d93956919dfefb9"
+  },
+  "target": {
+    "repository": "ggml-org/Qwen3.8-Flash-Next-GGUF",
+    "revision": "052beeaca7bec4a303e59cc7bc630c4f3a1b845d",
+    "file": "Qwen3.8-Flash-Next-IQ4_NL-00002-of-00002.gguf",
+    "tensor": "blk.0.ssm_dt.bias",
+    "ggml_type": "f32",
+    "extents": [48, 1, 1, 1],
+    "gguf_data_offset": 77824,
+    "tensor_offset": 10939072,
+    "file_byte_range_inclusive": [11016896, 11017087],
+    "sample_bytes": 192,
+    "sample_sha256": "61f670e1bfb6524a4ea2aa4bb8f9dbaeaba94c752f7485380ca626b336b8f0c6"
+  },
+  "comparison": {
+    "pinned_converter_behavior": "Reorder dt_bias values by the GatedDeltaNet value-head layout without nonlinear transformation.",
+    "offset_method": "Tensor directory order and 32-byte alignment computed from the pinned shard-2 inventory; computed ssm_a and ssm_norm offsets reproduce previously captured offsets exactly.",
+    "agentix_test": "sampled_published_dt_bias_vector_matches_gated_delta_reorder",
+    "scope_limit": "Only this vector was range-read. The complete source and GGUF shard payloads were not downloaded or hash-verified. The test wraps these captured samples in small synthetic files to exercise the bounded source and GGUF row readers."
+  }
+}

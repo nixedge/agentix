@@ -18,6 +18,8 @@ async fn main() -> Result<()> {
     info!(
         port = cfg.gateway_port,
         llama_socket = %cfg.llama_socket.display(),
+        qwen_socket = %cfg.qwen_socket.display(),
+        qwen_model = %cfg.qwen_model,
         whisper_socket = %cfg.whisper_socket.display(),
         "agentix-daemon starting",
     );

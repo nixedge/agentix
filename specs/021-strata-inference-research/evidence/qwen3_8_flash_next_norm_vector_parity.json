@@ -1,0 +1,37 @@
+{
+  "source": {
+    "repository": "Qwen/Qwen3.8-Flash-Next",
+    "revision": "de4b8e4d43b917e7706784d8bb445c9af86a3540",
+    "file": "model-00001-of-00131.safetensors",
+    "tensor": "model.language_model.layers.0.linear_attn.norm.weight",
+    "dtype": "BF16",
+    "shape": [128],
+    "tensor_data_offsets": [110796992, 110797248],
+    "file_byte_range_inclusive": [110836296, 110836551],
+    "sample_bytes": 256,
+    "sample_sha256": "ba3568fc54135876bd054177a12d0742fd3fbab5689633a775d0740c834725c2"
+  },
+  "target": {
+    "repository": "ggml-org/Qwen3.8-Flash-Next-GGUF",
+    "revision": "052beeaca7bec4a303e59cc7bc630c4f3a1b845d",
+    "file": "Qwen3.8-Flash-Next-IQ4_NL-00002-of-00002.gguf",
+    "tensor": "blk.0.ssm_norm.weight",
+    "ggml_type": "f32",
+    "extents": [128, 1, 1, 1],
+    "gguf_data_offset": 77824,
+    "tensor_offset": 55764864,
+    "file_byte_range_inclusive": [55842688, 55843199],
+    "sample_bytes": 512,
+    "sample_sha256": "d27dd7b8d5dae1f3cc9880dd0367825008d8d7873ea0030aa92175634ae08e17"
+  },
+  "comparison": {
+    "mapping": "Direct",
+    "agentix_transform": "source::transform_qwen4exp_f32_tensor",
+    "agentix_target_reader": "agentix-qwen-sys::DenseRows",
+    "values_compared": 128,
+    "maximum_absolute_error": 0.0,
+    "result": "exact equality after BF16-to-F32 conversion",
+    "test": "sampled_published_norm_vector_matches_direct_source_transform",
+    "scope_limit": "Only this 128-value vector was range-read. The complete source and GGUF shard payloads were not downloaded or hash-verified. The test wraps these captured payload bytes in small synthetic files to exercise the readers and mapping; it does not parse the full remote shard payloads."
+  }
+}

@@ -24,6 +24,16 @@
       url = "https://huggingface.co/second-state/All-MiniLM-L6-v2-Embedding-GGUF/resolve/main/all-MiniLM-L6-v2-Q8_0.gguf";
       sha256 = "sha256-JjIVw8rdbhZ0B0GnYkq0y7bI53doi9UzHs+/VoHC+O0=";
     };
+    qwenTokenizerFixture = pkgs.fetchurl {
+      name = "qwen-flash-next-tokenizer.json";
+      url = "https://huggingface.co/Qwen/Qwen3.8-Flash-Next/resolve/de4b8e4d43b917e7706784d8bb445c9af86a3540/tokenizer.json";
+      hash = "sha256-CZf0EMV6H05TsJ5L6PShctkO3ZVkNo+whHAwk3IpufM=";
+    };
+    qwenTemplateFixture = pkgs.fetchurl {
+      name = "qwen-flash-next-chat-template.jinja";
+      url = "https://huggingface.co/Qwen/Qwen3.8-Flash-Next/resolve/de4b8e4d43b917e7706784d8bb445c9af86a3540/chat_template.jinja";
+      hash = "sha256-w8+eNKv0+eNsLXIWWqnBMtPipyW2wlhqqjqK+deoEEE=";
+    };
   in {
     devShells.default = pkgs.mkShell {
       packages = with pkgs; [
@@ -85,6 +95,8 @@
         export PATH="$_CARGO_WRAP_DIR:$PATH"
         # Fixture GGUF for integration tests — pinned FOD derivation, no network needed
         export AGENTIX_TEST_MODEL_PATH="${fixture-model}"
+        export AGENTIX_QWEN_TOKENIZER_PATH="${qwenTokenizerFixture}"
+        export AGENTIX_QWEN_TEMPLATE_PATH="${qwenTemplateFixture}"
         echo "Agentic RAG Stack"
         echo ""
         echo "Services:"

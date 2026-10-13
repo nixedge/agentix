@@ -1,0 +1,84 @@
+{
+  "repository": "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF",
+  "revision": "ed59f92082b1e93c0e96d60a8b11aab089b52f09",
+  "candidate": "IQ3_S",
+  "download_scope": "Both split payloads are fully acquired at manifest size; full-shard SHA256 values match publisher manifests",
+  "shards": [
+    {
+      "index": 0,
+      "bytes": 54817524224,
+      "acquired_bytes": 54817524224,
+      "publisher_sha256": "4c1eb2ceb4915e1192f4f386021897bde56a97f40a0bb78bb86465e0f7d2aca3",
+      "verified_sha256": "4c1eb2ceb4915e1192f4f386021897bde56a97f40a0bb78bb86465e0f7d2aca3",
+      "sha256_verified": true,
+      "full_header_inventory_sha256": "3d426fabc3e15f081c9f29ce835ce49c86033cc3ae766dfc23112ed2fb21985e",
+      "tensors": 1223
+    },
+    {
+      "index": 1,
+      "bytes": 28800138432,
+      "acquired_bytes": 28800138432,
+      "publisher_sha256": "316b46f3a2dbd68c900f43136ab9449f9dcc3725dfd8c794847c204bc161e113",
+      "verified_sha256": "316b46f3a2dbd68c900f43136ab9449f9dcc3725dfd8c794847c204bc161e113",
+      "sha256_verified": true,
+      "full_header_inventory_sha256": "2b1374d06940668d6d5f458c05f6f928afc6606453cb77cf8c8b4b455070e52f",
+      "tensors": 1
+    }
+  ],
+  "schema_validation": {
+    "architecture": "qwen4exp",
+    "tensor_count": 1224,
+    "schema_tensor_count": 1224,
+    "missing": 0,
+    "unexpected": 0,
+    "duplicate": 0,
+    "shape_mismatch": 0,
+    "unsupported_storage_types": 0
+  },
+  "storage_type_counts": {
+    "bf16": 484,
+    "f16": 1,
+    "f32": 292,
+    "iq2_s": 40,
+    "iq3_s": 20,
+    "iq3_xxs": 34,
+    "iq4_nl": 87,
+    "iq4_xs": 45,
+    "q2_0": 9,
+    "q4_K": 47,
+    "q5_K": 35,
+    "q6_K": 129,
+    "q8_0": 1
+  },
+  "row_readers": [
+    "f32",
+    "f16",
+    "bf16",
+    "q4_0",
+    "iq4_nl",
+    "q8_0",
+    "iq2_xs",
+    "iq3_s",
+    "iq2_s",
+    "iq3_xxs",
+    "iq4_xs",
+    "q2_0",
+    "q4_K",
+    "q5_K",
+    "q6_K"
+  ],
+  "validation_command": "nix develop --command cargo run -p agentix-qwen-sys --example validate_gguf_sample_rows -- agentix-qwen/tests/fixtures/qwen3_8_flash_next_config.json <full-shard-0> <full-shard-1>",
+  "hash_command": "sha256sum <full-shard-0> <full-shard-1>",
+  "sample_row_validation": {
+    "sampled_storage_types": 13,
+    "all_sample_rows_finite": true,
+    "evidence": "ista_iq3s_full_payload_sample_rows.tsv",
+    "evidence_sha256": "63749ee074251307f5c790cd699992f274a93b602bda9e1dff47e21e8b31d16f",
+    "scope": "one row from one tensor per storage type; a 320x10240 BF16 matrix and actual token ID 1 execute through all 48 configured decoder blocks, including block-1 PLE lookup/projections/convolution over 16 actual hashed rows, every GatedDeltaNet/QSA attention path, each residual mixer, and each routed/shared MoE; final stream combine and vocabulary projection produce finite logits. The reusable decoder runs the existing PreparedPrompt greedy-generation adapter and preserves per-layer recurrent, QSA, n-gram PLE, and position state across token 1 and greedy token 79104, reaching cached_position=2; first-step greedy token is 79104 (logit 11.96474266), and second-step greedy token is 245228. This uses token ID 1 as a minimal prepared prompt, not rendered chat text, and has no independent expected-logit oracle; separate block-0 prefill and long synthetic-past QSA checks remain operator checks; sparse selector retains 2,049 of 4,097 visible tokens under 2,048 budget; invalid expert groups rejected"
+  },
+  "limits": [
+    "Sample-row validation is not a full-tensor numeric parity test",
+    "Native row readers use pinned GGML CPU type-traits callbacks",
+    "No CUDA decoder or independent full-model output parity is established"
+  ]
+}

@@ -211,6 +211,42 @@ dependencies = [
 ]
 
 [[package]]
+name = "agentix-qwen"
+version = "0.1.0"
+dependencies = [
+ "minijinja",
+ "safetensors",
+ "serde_json",
+ "sha2 0.10.9",
+ "tokenizers",
+]
+
+[[package]]
+name = "agentix-qwen-sys"
+version = "0.1.0"
+dependencies = [
+ "agentix-qwen",
+ "llama-cpp-sys-2",
+]
+
+[[package]]
+name = "agentix-qwen-worker"
+version = "0.1.0"
+dependencies = [
+ "agentix-api",
+ "agentix-qwen",
+ "agentix-qwen-sys",
+ "axum",
+ "serde_json",
+ "sha2 0.10.9",
+ "tokio",
+ "tokio-stream",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "agentix-router"
 version = "0.1.0"
 dependencies = [
@@ -766,12 +802,27 @@ dependencies = [
 
 [[package]]
 name = "bit-set"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "08807e080ed7f9d5433fa9b275196cfc35414f66a0c79d864dc51a0d825231a3"
+dependencies = [
+ "bit-vec 0.8.0",
+]
+
+[[package]]
+name = "bit-set"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "56d87354e4229f54a44f7bf2435906a4656dba36026ab6eaca629a2c436a691c"
 dependencies = [
- "bit-vec",
+ "bit-vec 0.10.1",
 ]
+
+[[package]]
+name = "bit-vec"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5e764a1d40d510daf35e07be9eb06e75770908c27d411ee6c92109c9840eaaf7"
 
 [[package]]
 name = "bit-vec"
@@ -2129,6 +2180,17 @@ name = "extended"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af9673d8203fcb076b19dfd17e38b3d4ae9f44959416ea532ce72415a6020365"
+
+[[package]]
+name = "fancy-regex"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6e24cb5a94bcae1e5408b0effca5cd7172ea3c5755049c5f3af4cd283a165298"
+dependencies = [
+ "bit-set 0.8.0",
+ "regex-automata",
+ "regex-syntax",
+]
 
 [[package]]
 name = "fastembed"
@@ -3672,6 +3734,7 @@ checksum = "86886cf6dbf4e614b19c9a1eec9775f021869d7eadde0fc73921a81b90c9b4c9"
 dependencies = [
  "memo-map",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -6459,6 +6522,7 @@ dependencies = [
  "dary_heap",
  "derive_builder",
  "esaxx-rs",
+ "fancy-regex",
  "getrandom 0.3.4",
  "itertools 0.14.0",
  "log",
@@ -6742,7 +6806,7 @@ checksum = "123353d6cbb5175d3753dbfa6b62ec04a4ea1ad8cdddde040854c4463de8f96f"
 dependencies = [
  "anyhow",
  "anymap3",
- "bit-set",
+ "bit-set 0.11.1",
  "derive-new",
  "downcast-rs",
  "dyn-clone",

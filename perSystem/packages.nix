@@ -27,6 +27,9 @@
       ../agentix-harness/Cargo.toml
       ../agentix-ax/Cargo.toml
       ../agentix-infer/Cargo.toml
+      ../agentix-qwen/Cargo.toml
+      ../agentix-qwen-sys/Cargo.toml
+      ../agentix-qwen-worker/Cargo.toml
       ../agentix-search/Cargo.toml
       ../agentix-indexer/Cargo.toml
       ../agentix-llama/Cargo.toml
@@ -64,6 +67,12 @@
         cp ${stubMain} $out/agentix-ax/src/main.rs
         mkdir -p $out/agentix-infer/src
         cp ${stubLib} $out/agentix-infer/src/lib.rs
+        mkdir -p $out/agentix-qwen/src
+        cp ${stubLib} $out/agentix-qwen/src/lib.rs
+        mkdir -p $out/agentix-qwen-sys/src
+        cp ${stubLib} $out/agentix-qwen-sys/src/lib.rs
+        mkdir -p $out/agentix-qwen-worker/src
+        cp ${stubMain} $out/agentix-qwen-worker/src/main.rs
         mkdir -p $out/agentix-search/src
         cp ${stubLib} $out/agentix-search/src/lib.rs
         mkdir -p $out/agentix-indexer/src
@@ -112,14 +121,54 @@
 
     # Per-package dep artifacts — each only compiles the external crates that
     # package actually needs, so changes to one package don't invalidate others.
-    agentixDaemonDeps   = craneLib.buildDepsOnly (commonArgs // { pname = "agentix-daemon-deps";     src = depsOnlySrc; cargoExtraArgs = "--package agentix-daemon"; });
-    agentixWhisperDeps  = craneLib.buildDepsOnly (commonArgs // { pname = "agentix-whisper-deps";    src = depsOnlySrc; cargoExtraArgs = "--package agentix-whisper"; });
-    agentixAxDeps       = craneLib.buildDepsOnly (commonArgs // { pname = "agentix-ax-deps";         src = depsOnlySrc; cargoExtraArgs = "--package agentix-ax"; });
-    agentixMcpDeps      = craneLib.buildDepsOnly (commonArgs // { pname = "agentix-mcp-deps";        src = depsOnlySrc; cargoExtraArgs = "--package agentix-mcp-server"; });
-    agentixIndexerDeps  = craneLib.buildDepsOnly (commonArgs // { pname = "agentix-indexer-deps";    src = depsOnlySrc; cargoExtraArgs = "--package agentix-indexer"; });
-    agentixAgentDeps    = craneLib.buildDepsOnly (commonArgs // { pname = "agentix-agent-deps";      src = depsOnlySrc; cargoExtraArgs = "--package agentix-agent"; });
-    agentixVoiceDeps    = craneLib.buildDepsOnly (commonArgs // { pname = "agentix-voice-deps";      src = depsOnlySrc; cargoExtraArgs = "--package agentix-voice"; });
-    agentixJailsDeps    = craneLib.buildDepsOnly (commonArgs // { pname = "agentix-jails-deps";      src = depsOnlySrc; cargoExtraArgs = "--package agentix-jails"; });
+    agentixDaemonDeps = craneLib.buildDepsOnly (commonArgs
+      // {
+        pname = "agentix-daemon-deps";
+        src = depsOnlySrc;
+        cargoExtraArgs = "--package agentix-daemon";
+      });
+    agentixWhisperDeps = craneLib.buildDepsOnly (commonArgs
+      // {
+        pname = "agentix-whisper-deps";
+        src = depsOnlySrc;
+        cargoExtraArgs = "--package agentix-whisper";
+      });
+    agentixAxDeps = craneLib.buildDepsOnly (commonArgs
+      // {
+        pname = "agentix-ax-deps";
+        src = depsOnlySrc;
+        cargoExtraArgs = "--package agentix-ax";
+      });
+    agentixMcpDeps = craneLib.buildDepsOnly (commonArgs
+      // {
+        pname = "agentix-mcp-deps";
+        src = depsOnlySrc;
+        cargoExtraArgs = "--package agentix-mcp-server";
+      });
+    agentixIndexerDeps = craneLib.buildDepsOnly (commonArgs
+      // {
+        pname = "agentix-indexer-deps";
+        src = depsOnlySrc;
+        cargoExtraArgs = "--package agentix-indexer";
+      });
+    agentixAgentDeps = craneLib.buildDepsOnly (commonArgs
+      // {
+        pname = "agentix-agent-deps";
+        src = depsOnlySrc;
+        cargoExtraArgs = "--package agentix-agent";
+      });
+    agentixVoiceDeps = craneLib.buildDepsOnly (commonArgs
+      // {
+        pname = "agentix-voice-deps";
+        src = depsOnlySrc;
+        cargoExtraArgs = "--package agentix-voice";
+      });
+    agentixJailsDeps = craneLib.buildDepsOnly (commonArgs
+      // {
+        pname = "agentix-jails-deps";
+        src = depsOnlySrc;
+        cargoExtraArgs = "--package agentix-jails";
+      });
 
     # Pinned whisper.cpp tiny English model (~75 MB) for whisper integration tests.
     agentixTestWhisperModel = pkgs.fetchurl {
@@ -130,6 +179,16 @@
     # CUDA packages for agentix-daemon llama-cpp build
     cudaPackages = pkgs.cudaPackages_12;
     libcublasStatic = pkgs.lib.getOutput "static" cudaPackages.libcublas;
+    qwenTokenizerFixture = pkgs.fetchurl {
+      name = "qwen-flash-next-tokenizer.json";
+      url = "https://huggingface.co/Qwen/Qwen3.8-Flash-Next/resolve/de4b8e4d43b917e7706784d8bb445c9af86a3540/tokenizer.json";
+      hash = "sha256-CZf0EMV6H05TsJ5L6PShctkO3ZVkNo+whHAwk3IpufM=";
+    };
+    qwenTemplateFixture = pkgs.fetchurl {
+      name = "qwen-flash-next-chat-template.jinja";
+      url = "https://huggingface.co/Qwen/Qwen3.8-Flash-Next/resolve/de4b8e4d43b917e7706784d8bb445c9af86a3540/chat_template.jinja";
+      hash = "sha256-w8+eNKv0+eNsLXIWWqnBMtPipyW2wlhqqjqK+deoEEE=";
+    };
 
     cudaCapabilities = pkgs.config.cudaCapabilities or [];
     withCuda = cudaCapabilities != [];
@@ -140,15 +199,19 @@
       # findable in the Nix sandbox (cudatoolkit's nvcc wrapper does not do this).
       # cuda_cudart is needed both for the cuda_runtime.h header at build time
       # and for libcudart at link/runtime.
-      nativeBuildInputs = commonArgs.nativeBuildInputs ++ [
-        cudaPackages.cuda_nvcc
-        cudaPackages.cuda_cudart
-      ];
-      buildInputs = commonArgs.buildInputs ++ [
-        cudaPackages.cuda_cudart
-        cudaPackages.libcublas
-        libcublasStatic
-      ];
+      nativeBuildInputs =
+        commonArgs.nativeBuildInputs
+        ++ [
+          cudaPackages.cuda_nvcc
+          cudaPackages.cuda_cudart
+        ];
+      buildInputs =
+        commonArgs.buildInputs
+        ++ [
+          cudaPackages.cuda_cudart
+          cudaPackages.libcublas
+          libcublasStatic
+        ];
       CMAKE_CUDA_COMPILER = "${cudaPackages.cuda_nvcc}/bin/nvcc";
       # Derived from nixpkgs.config.cudaCapabilities. cmake auto-detect fails
       # in the Nix sandbox (no GPU), so all targets must be listed explicitly.
@@ -161,35 +224,54 @@
       RUSTFLAGS = "-L ${cudaPackages.cudatoolkit}/lib -L ${cudaPackages.cudatoolkit}/lib/stubs -L ${cudaPackages.cuda_cudart}/lib -L ${libcublasStatic}/lib";
     };
 
-    agentixLlamaDeps = craneLib.buildDepsOnly (commonArgs // cudaArgs // {
-      pname = "agentix-llama-deps";
-      src = depsOnlySrc;
-      cargoExtraArgs = "--package agentix-llama" + lib.optionalString withCuda " --features cuda";
-    });
+    agentixLlamaDeps = craneLib.buildDepsOnly (commonArgs
+      // cudaArgs
+      // {
+        pname = "agentix-llama-deps";
+        src = depsOnlySrc;
+        cargoExtraArgs = "--package agentix-llama" + lib.optionalString withCuda " --features cuda";
+      });
+    agentixQwenSysDeps = craneLib.buildDepsOnly (commonArgs
+      // cudaArgs
+      // {
+        pname = "agentix-qwen-sys-deps";
+        src = depsOnlySrc;
+        cargoExtraArgs = "--package agentix-qwen-sys" + lib.optionalString withCuda " --features cuda";
+      });
+    agentixQwenWorkerDeps = craneLib.buildDepsOnly (commonArgs
+      // cudaArgs
+      // {
+        pname = "agentix-qwen-worker-deps";
+        src = depsOnlySrc;
+        cargoExtraArgs = "--package agentix-qwen-worker" + lib.optionalString withCuda " --features cuda";
+      });
 
     # Stub commands for each workspace member — written when the member is NOT in the
     # build's keepCrates list.  $out is the shell variable set by pkgs.runCommand.
     # Stub shell commands for each workspace member.  Each command is self-contained
     # (creates its own subdirs) so agentix-jails' nested layout works without special-casing.
     memberStubs = {
-      agentix-api        = "mkdir -p $out/agentix-api/src;        cp ${stubLib}  $out/agentix-api/src/lib.rs";
-      agentix-router     = "mkdir -p $out/agentix-router/src;     cp ${stubLib}  $out/agentix-router/src/lib.rs";
-      agentix-daemon     = "mkdir -p $out/agentix-daemon/src;     cp ${stubMain} $out/agentix-daemon/src/main.rs";
-      agentix-harness    = "mkdir -p $out/agentix-harness/src;    cp ${stubLib}  $out/agentix-harness/src/lib.rs";
-      agentix-ax         = "mkdir -p $out/agentix-ax/src;         cp ${stubMain} $out/agentix-ax/src/main.rs";
-      agentix-infer      = "mkdir -p $out/agentix-infer/src;      cp ${stubLib}  $out/agentix-infer/src/lib.rs";
-      agentix-search     = "mkdir -p $out/agentix-search/src;     cp ${stubLib}  $out/agentix-search/src/lib.rs";
+      agentix-api = "mkdir -p $out/agentix-api/src;        cp ${stubLib}  $out/agentix-api/src/lib.rs";
+      agentix-router = "mkdir -p $out/agentix-router/src;     cp ${stubLib}  $out/agentix-router/src/lib.rs";
+      agentix-daemon = "mkdir -p $out/agentix-daemon/src;     cp ${stubMain} $out/agentix-daemon/src/main.rs";
+      agentix-harness = "mkdir -p $out/agentix-harness/src;    cp ${stubLib}  $out/agentix-harness/src/lib.rs";
+      agentix-ax = "mkdir -p $out/agentix-ax/src;         cp ${stubMain} $out/agentix-ax/src/main.rs";
+      agentix-infer = "mkdir -p $out/agentix-infer/src;      cp ${stubLib}  $out/agentix-infer/src/lib.rs";
+      agentix-qwen = "mkdir -p $out/agentix-qwen/src; cp ${stubLib} $out/agentix-qwen/src/lib.rs";
+      agentix-qwen-sys = "mkdir -p $out/agentix-qwen-sys/src; cp ${stubLib} $out/agentix-qwen-sys/src/lib.rs";
+      agentix-qwen-worker = "mkdir -p $out/agentix-qwen-worker/src; cp ${stubMain} $out/agentix-qwen-worker/src/main.rs";
+      agentix-search = "mkdir -p $out/agentix-search/src;     cp ${stubLib}  $out/agentix-search/src/lib.rs";
       # agentix-indexer is both a lib (used by mcp-server) and a bin.
-      agentix-indexer    = "mkdir -p $out/agentix-indexer/src;    cp ${stubLib}  $out/agentix-indexer/src/lib.rs; cp ${stubMain} $out/agentix-indexer/src/main.rs";
+      agentix-indexer = "mkdir -p $out/agentix-indexer/src;    cp ${stubLib}  $out/agentix-indexer/src/lib.rs; cp ${stubMain} $out/agentix-indexer/src/main.rs";
       # agentix-llama has no [lib] target but cargo still probes src/lib.rs by convention.
-      agentix-llama      = "mkdir -p $out/agentix-llama/src;      cp ${stubLib}  $out/agentix-llama/src/lib.rs;   cp ${stubMain} $out/agentix-llama/src/main.rs";
-      agentix-whisper    = "mkdir -p $out/agentix-whisper/src;    cp ${stubLib}  $out/agentix-whisper/src/lib.rs; cp ${stubMain} $out/agentix-whisper/src/main.rs";
+      agentix-llama = "mkdir -p $out/agentix-llama/src;      cp ${stubLib}  $out/agentix-llama/src/lib.rs;   cp ${stubMain} $out/agentix-llama/src/main.rs";
+      agentix-whisper = "mkdir -p $out/agentix-whisper/src;    cp ${stubLib}  $out/agentix-whisper/src/lib.rs; cp ${stubMain} $out/agentix-whisper/src/main.rs";
       agentix-mcp-server = "mkdir -p $out/agentix-mcp-server/src; cp ${stubMain} $out/agentix-mcp-server/src/main.rs";
       # agentix-jails has four bins spread across nested subdirs.
-      agentix-jails      = "mkdir -p $out/agentix-jails/src/jail $out/agentix-jails/src/ax_jail $out/agentix-jails/src/gh_proxy; cp ${stubMain} $out/agentix-jails/src/jail/main.rs; cp ${stubMain} $out/agentix-jails/src/ax_jail/main.rs; cp ${stubMain} $out/agentix-jails/src/gh_proxy/client.rs; cp ${stubMain} $out/agentix-jails/src/gh_proxy/server.rs";
-      agentix-agent      = "mkdir -p $out/agentix-agent/src; cp ${stubMain} $out/agentix-agent/src/main.rs";
-      agentix-tts        = "mkdir -p $out/agentix-tts/src;   cp ${stubLib}  $out/agentix-tts/src/lib.rs";
-      agentix-voice      = "mkdir -p $out/agentix-voice/src; cp ${stubMain} $out/agentix-voice/src/main.rs";
+      agentix-jails = "mkdir -p $out/agentix-jails/src/jail $out/agentix-jails/src/ax_jail $out/agentix-jails/src/gh_proxy; cp ${stubMain} $out/agentix-jails/src/jail/main.rs; cp ${stubMain} $out/agentix-jails/src/ax_jail/main.rs; cp ${stubMain} $out/agentix-jails/src/gh_proxy/client.rs; cp ${stubMain} $out/agentix-jails/src/gh_proxy/server.rs";
+      agentix-agent = "mkdir -p $out/agentix-agent/src; cp ${stubMain} $out/agentix-agent/src/main.rs";
+      agentix-tts = "mkdir -p $out/agentix-tts/src;   cp ${stubLib}  $out/agentix-tts/src/lib.rs";
+      agentix-voice = "mkdir -p $out/agentix-voice/src; cp ${stubMain} $out/agentix-voice/src/main.rs";
     };
 
     # Scoped source tree for a workspace binary package.  keepCrates must include
@@ -197,30 +279,35 @@
     # All other workspace members get stub entry points so cargo can resolve the
     # workspace without compiling unrelated code.  Changing agentix-indexer no
     # longer invalidates agentix-llama's derivation, for example.
-    mkWorkspaceSrc = keepCrates:
-      let
-        realDirs = map (name: ../${name}) keepCrates;
-        base = lib.fileset.toSource {
-          root = ./..;
-          fileset = lib.fileset.unions (
-            allManifests
-            ++ realDirs
-            ++ lib.optional (lib.pathExists ../Cargo.lock) ../Cargo.lock
-            ++ lib.optional (lib.pathExists ../patches) ../patches
-          );
-        };
-        stubLines = lib.concatStringsSep "\n" (
-          lib.mapAttrsToList (name: stubCmd:
-            if builtins.elem name keepCrates then "" else stubCmd
-          ) memberStubs
+    mkWorkspaceSrcWithFiles = keepCrates: extraFiles: let
+      realDirs = map (name: ../${name}) keepCrates;
+      base = lib.fileset.toSource {
+        root = ./..;
+        fileset = lib.fileset.unions (
+          allManifests
+          ++ realDirs
+          ++ extraFiles
+          ++ lib.optional (lib.pathExists ../Cargo.lock) ../Cargo.lock
+          ++ lib.optional (lib.pathExists ../patches) ../patches
         );
-      in
-        pkgs.runCommand "crane-workspace-src" {} ''
-          cp -rT ${base} $out
-          chmod -R u+w $out
-          # Workspace member stubs (skipped for crates in keepCrates).
-          ${stubLines}
-        '';
+      };
+      stubLines = lib.concatStringsSep "\n" (
+        lib.mapAttrsToList (
+          name: stubCmd:
+            if builtins.elem name keepCrates
+            then ""
+            else stubCmd
+        )
+        memberStubs
+      );
+    in
+      pkgs.runCommand "crane-workspace-src" {} ''
+        cp -rT ${base} $out
+        chmod -R u+w $out
+        # Workspace member stubs (skipped for crates in keepCrates).
+        ${stubLines}
+      '';
+    mkWorkspaceSrc = keepCrates: mkWorkspaceSrcWithFiles keepCrates [];
 
     # Workspace path deps per package (package itself + transitive workspace path deps):
     #   agentix-daemon:     api, router
@@ -257,6 +344,27 @@
         cargoExtraArgs =
           "--package agentix-llama"
           + lib.optionalString withCuda " --features cuda";
+        autoPatchelfIgnoreMissingDeps = lib.optional withCuda "libcuda.so.1";
+      });
+
+    agentixQwenSysPkg = craneLib.buildPackage (commonArgs
+      // cudaArgs
+      // {
+        pname = "agentix-qwen-sys";
+        src = mkWorkspaceSrc ["agentix-qwen-sys" "agentix-qwen"];
+        cargoArtifacts = agentixQwenSysDeps;
+        cargoExtraArgs = "--package agentix-qwen-sys" + lib.optionalString withCuda " --features cuda";
+        autoPatchelfIgnoreMissingDeps = lib.optional withCuda "libcuda.so.1";
+        doCheck = true;
+      });
+
+    agentixQwenWorkerPkg = craneLib.buildPackage (commonArgs
+      // cudaArgs
+      // {
+        pname = "agentix-qwen-worker";
+        src = mkWorkspaceSrc ["agentix-qwen-worker" "agentix-qwen-sys" "agentix-qwen" "agentix-api"];
+        cargoArtifacts = agentixQwenWorkerDeps;
+        cargoExtraArgs = "--package agentix-qwen-worker" + lib.optionalString withCuda " --features cuda";
         autoPatchelfIgnoreMissingDeps = lib.optional withCuda "libcuda.so.1";
       });
 
@@ -487,6 +595,35 @@
     };
   in {
     packages.agentix-agent = agentixAgentPkg;
+    packages.agentix-qwen = craneLib.buildPackage {
+      pname = "agentix-qwen";
+      version = "0.1.0";
+      src = mkWorkspaceSrcWithFiles ["agentix-qwen"] [
+        ../specs/021-strata-inference-research/fixtures/benchmark_prompts.json
+        ../specs/021-strata-inference-research/evidence/qwen3_8_flash_next_text_tensor_headers.tsv
+      ];
+      cargoArtifacts = null;
+      cargoExtraArgs = "--package agentix-qwen";
+      doCheck = true;
+      AGENTIX_QWEN_TOKENIZER_PATH = "${qwenTokenizerFixture}";
+      AGENTIX_QWEN_TEMPLATE_PATH = "${qwenTemplateFixture}";
+      installPhase = ''
+        runHook preInstall
+        mkdir -p $out/lib $out/share/doc/agentix-qwen
+        cp target/release/libagentix_qwen.rlib $out/lib/
+        cp agentix-qwen/PROVENANCE.md $out/share/doc/agentix-qwen/
+        runHook postInstall
+      '';
+    };
+    packages.agentix-qwen-sys = agentixQwenSysPkg;
+    packages.agentix-qwen-worker = pkgs.writeShellScriptBin "agentix-qwen-worker" ''
+      export LD_LIBRARY_PATH="/run/opengl-driver/lib:${cudaPackages.cuda_cudart}/lib:${cudaPackages.libcublas}/lib:''${LD_LIBRARY_PATH:-}"
+      export AGENTIX_QWEN_CONFIG="''${AGENTIX_QWEN_CONFIG:-${../agentix-qwen/tests/fixtures/qwen3_8_flash_next_config.json}}"
+      export AGENTIX_QWEN_TOKENIZER="''${AGENTIX_QWEN_TOKENIZER:-${qwenTokenizerFixture}}"
+      export AGENTIX_QWEN_CHAT_TEMPLATE="''${AGENTIX_QWEN_CHAT_TEMPLATE:-${qwenTemplateFixture}}"
+      export AGENTIX_QWEN_EXPECTED_SHARD_SHA256="''${AGENTIX_QWEN_EXPECTED_SHARD_SHA256:-4c1eb2ceb4915e1192f4f386021897bde56a97f40a0bb78bb86465e0f7d2aca3:316b46f3a2dbd68c900f43136ab9449f9dcc3725dfd8c794847c204bc161e113}"
+      exec ${agentixQwenWorkerPkg}/bin/agentix-qwen-worker "$@"
+    '';
 
     packages.agentix-voice = agentixVoicePkg;
 

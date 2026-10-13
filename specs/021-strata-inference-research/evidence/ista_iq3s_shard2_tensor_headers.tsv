@@ -1,0 +1,3 @@
+# version=3	architecture=unknown	split=1/2	file_bytes=28800138432	data_offset=192	alignment=32
+name	type	extent_0	extent_1	extent_2	extent_3	tensor_offset	tensor_bytes	file_offset
+per_layer_token_embd.weight	iq4_nl	160	320001536	1	1	0	28800138240	192

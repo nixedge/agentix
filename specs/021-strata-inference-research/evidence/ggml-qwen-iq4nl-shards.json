@@ -1,0 +1,106 @@
+{
+  "repository": "ggml-org/Qwen3.8-Flash-Next-GGUF",
+  "revision": "052beeaca7bec4a303e59cc7bc630c4f3a1b845d",
+  "first_shard_publisher_page": "https://huggingface.co/ggml-org/Qwen3.8-Flash-Next-GGUF/blob/052beeaca7bec4a303e59cc7bc630c4f3a1b845d/Qwen3.8-Flash-Next-IQ4_NL-00001-of-00002.gguf",
+  "quantization": "IQ4_NL",
+  "inspection": {
+    "inspector": "agentix-qwen-sys::inspect_gguf_set",
+    "method": "Complete first shard downloaded and SHA256-verified; second shard inspected from its first 16 MiB using a sparse file with the publisher-reported total size",
+    "architecture": "qwen4exp",
+    "split_count": 2,
+    "total_tensors": 1224,
+    "qwen_schema_validation": {
+      "validator": "agentix-qwen-sys::validate_qwen4exp_gguf",
+      "expected_tensors": 1224,
+      "actual_tensors": 1224,
+      "missing": 0,
+      "unexpected": 0,
+      "duplicates": 0,
+      "shape_mismatches": 0,
+      "shard_architecture_metadata": "omitted on shard 2; architecture validated on shard 1 and explicit conflicting values are rejected",
+      "supported_tensor_directory": {
+        "validator": "agentix-qwen-sys::index_qwen4exp_gguf",
+        "indexed_tensors": 1224,
+        "type_counts": {"iq4_nl": 292, "q8_0": 518, "f32": 388, "bf16": 24, "f16": 1, "q4_0": 1},
+        "unsupported_types": 0,
+        "payload_range_violations": 0
+      },
+      "scope": "GGUF tensor names, extents, supported storage types and file ranges validate against the pinned Qwen4-Exp configuration; source-index names map to this target namespace, while source values and full payload integrity remain unverified"
+    },
+    "duplicate_tensor_names": 0,
+    "type_counts": {
+      "bf16": 24,
+      "f16": 1,
+      "f32": 388,
+      "iq4_nl": 292,
+      "q4_0": 1,
+      "q8_0": 518
+    }
+  },
+  "agentix_row_readers": {
+    "supported_types": ["f32", "f16", "bf16", "q4_0", "iq4_nl", "q8_0"],
+    "native_ggml_callback_parity": ["f16", "bf16", "q4_0", "iq4_nl", "q8_0"],
+    "published_row_parity": {
+      "q4_0": {
+        "sha256": "34098719c5d2b94c40150f2fbf5e04859571d27a1df605134e8deadb0d01cf73",
+        "values": 160,
+        "absolute_error_bound": 1e-7
+      },
+      "iq4_nl": {
+        "sha256": "4b067ea426d9767a81185b36042c6612de8a5f41fca76b97feb4bc5b8298f1ab",
+        "values": 160,
+        "absolute_error_bound": 1e-7
+      }
+    },
+    "scope_limit": "Row conversion only; no GGUF tensor-name-to-Qwen parameter mapping or full model loading is implemented."
+  },
+  "shards": [
+    {
+      "path": "Qwen3.8-Flash-Next-IQ4_NL-00001-of-00002.gguf",
+      "publisher_size": 10945440,
+      "observed_size": 10945440,
+      "publisher_sha256": "851652eef30d117a34fdc0d13e05da4c488a8cdad3654d38c4aa69a2d8a1fabc",
+      "observed_sha256": "851652eef30d117a34fdc0d13e05da4c488a8cdad3654d38c4aa69a2d8a1fabc",
+      "gguf_version": 3,
+      "architecture": "qwen4exp",
+      "model_metadata": {
+        "block_count": 48,
+        "context_length": 262144,
+        "embedding_length": 2560,
+        "attention_heads": 24,
+        "key_value_heads": 2,
+        "expert_count": 512,
+        "experts_per_token": 10,
+        "full_attention_interval": 4,
+        "recurrent_layer_array_length": 48,
+        "compression_ratio_array_length": 48,
+        "ple_layer_array_length": 1,
+        "ple_layer_multiplier_array_length": 3,
+        "ple_head_offsets_array_length": 16,
+        "ple_head_vocab_sizes_array_length": 16
+      },
+      "split_index": 0,
+      "split_count": 2,
+      "data_offset": 10945432,
+      "tensor_count": 0,
+      "payload_fully_verified": true
+    },
+    {
+      "path": "Qwen3.8-Flash-Next-IQ4_NL-00002-of-00002.gguf",
+      "publisher_size": 102037973504,
+      "publisher_sha256": "0299b147e42517ff8fa3a4fa66d370c77ce01c44ed8cbc3451b7a42caad5fc10",
+      "metadata_bytes_read": 16777216,
+      "gguf_version": 3,
+      "split_index": 1,
+      "split_count": 2,
+      "data_offset": 77824,
+      "tensor_count": 1224,
+      "payload_fully_verified": false
+    }
+  ],
+  "scope_limits": [
+    "The split header set is sequential, complete by split index, and tensor-name-unique; the second shard payload and tensor data ranges were not downloaded or hashed in full.",
+    "Model metadata scalar values and array descriptors were parsed from the fully verified first shard; array contents are not copied by the inspector.",
+    "This verifies GGUF directory structure only, not source-safetensors mapping, runtime tensor support, or complete model payload integrity."
+  ]
+}

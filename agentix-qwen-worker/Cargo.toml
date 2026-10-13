@@ -1,0 +1,30 @@
+[package]
+name = "agentix-qwen-worker"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Isolated Qwen Flash Next Unix-socket inference worker"
+
+[[bin]]
+name = "agentix-qwen-worker"
+path = "src/main.rs"
+
+[features]
+default = []
+cuda = ["agentix-qwen-sys/cuda"]
+
+[dependencies]
+agentix-api = { path = "../agentix-api" }
+agentix-qwen = { path = "../agentix-qwen" }
+agentix-qwen-sys = { path = "../agentix-qwen-sys" }
+axum = { version = "0.8", features = ["json"] }
+serde_json = "1"
+sha2.workspace = true
+tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1", features = ["v4"] }
+
+[lints]
+workspace = true

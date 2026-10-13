@@ -8,9 +8,10 @@
     cfg = config.services.agentix;
     socketDir = cfg.socketDir;
     llamaSock = "${socketDir}/llama.sock";
+    qwenSock = "${socketDir}/qwen.sock";
     whisperSock = "${socketDir}/whisper.sock";
 
-    anyEnabled = cfg.daemon.enable || cfg.llama.enable || cfg.whisper.enable || cfg.agent.enable;
+    anyEnabled = cfg.daemon.enable || cfg.llama.enable || cfg.qwen.enable || cfg.whisper.enable || cfg.agent.enable;
   in {
     options.services.agentix = {
       socketDir = lib.mkOption {
@@ -140,6 +141,56 @@
         };
       };
 
+      # ── Qwen Flash Next worker ──────────────────────────────────────────────
+
+      qwen = {
+        enable = lib.mkEnableOption "agentix-qwen-worker isolated inference process";
+
+        package = lib.mkOption {
+          type = lib.types.package;
+          description = "The agentix-qwen-worker package to use.";
+        };
+
+        model = lib.mkOption {
+          type = lib.types.str;
+          default = "qwen3.8-flash-next";
+          description = "Exact model identifier routed to the Qwen worker.";
+        };
+
+        modelDir = lib.mkOption {
+          type = lib.types.path;
+          default = "/var/lib/agentix/qwen";
+          description = "Directory containing config.json, tokenizer assets and GGUF shards.";
+        };
+
+        shards = lib.mkOption {
+          type = lib.types.listOf lib.types.str;
+          default = ["iq3s-00001.gguf" "iq3s-00002.gguf"];
+          description = "GGUF shard filenames inside modelDir, in split order.";
+        };
+
+        expectedShardSha256 = lib.mkOption {
+          type = lib.types.listOf lib.types.str;
+          default = [
+            "4c1eb2ceb4915e1192f4f386021897bde56a97f40a0bb78bb86465e0f7d2aca3"
+            "316b46f3a2dbd68c900f43136ab9449f9dcc3725dfd8c794847c204bc161e113"
+          ];
+          description = "Publisher SHA256 values for the IQ3_S GGUF shards, in split order.";
+        };
+
+        context = lib.mkOption {
+          type = lib.types.ints.positive;
+          default = 32768;
+          description = "Maximum admitted Qwen context, capped by the loaded model configuration.";
+        };
+
+        extraEnv = lib.mkOption {
+          type = lib.types.attrsOf lib.types.str;
+          default = {};
+          description = "Additional environment variables passed to agentix-qwen-worker.";
+        };
+      };
+
       # ── agentix-agent home assistant ────────────────────────────────────────
 
       agent = {
@@ -257,10 +308,12 @@
           after =
             ["network.target"]
             ++ lib.optional cfg.llama.enable "agentix-llama.service"
+            ++ lib.optional cfg.qwen.enable "agentix-qwen.service"
             ++ lib.optional cfg.whisper.enable "agentix-whisper.service";
           # Soft ordering only — daemon handles 503 when backends are down
           wants =
             lib.optional cfg.llama.enable "agentix-llama.service"
+            ++ lib.optional cfg.qwen.enable "agentix-qwen.service"
             ++ lib.optional cfg.whisper.enable "agentix-whisper.service";
 
           environment =
@@ -268,6 +321,8 @@
               AGENTIX_GATEWAY_HOST = cfg.daemon.host;
               AGENTIX_GATEWAY_PORT = toString cfg.daemon.port;
               AGENTIX_LLAMA_SOCKET = llamaSock;
+              AGENTIX_QWEN_SOCKET = qwenSock;
+              AGENTIX_QWEN_MODEL = cfg.qwen.model;
               AGENTIX_WHISPER_SOCKET = whisperSock;
               OLLAMA_BASE_URL = cfg.daemon.ollamaBaseUrl;
               AGENTIX_PIPER_VOICES_DIR = toString cfg.daemon.piperVoicesDir;
@@ -288,6 +343,39 @@
 
         systemd.tmpfiles.rules = [
           "d ${toString cfg.daemon.piperVoicesDir} 0750 agentix agentix -"
+        ];
+      })
+
+      # ── agentix-qwen-worker ─────────────────────────────────────────────────
+      (lib.mkIf cfg.qwen.enable {
+        systemd.services.agentix-qwen = {
+          description = "agentix Qwen Flash Next inference worker";
+          wantedBy = ["multi-user.target"];
+          after = ["network.target"];
+
+          environment = {
+            AGENTIX_QWEN_SOCKET = qwenSock;
+            AGENTIX_QWEN_MODEL = cfg.qwen.model;
+            AGENTIX_QWEN_MODEL_DIR = toString cfg.qwen.modelDir;
+            AGENTIX_QWEN_GGUF_SHARDS = lib.concatStringsSep ":" (map (name: "${toString cfg.qwen.modelDir}/${name}") cfg.qwen.shards);
+            AGENTIX_QWEN_EXPECTED_SHARD_SHA256 = lib.concatStringsSep ":" cfg.qwen.expectedShardSha256;
+            AGENTIX_QWEN_CONTEXT = toString cfg.qwen.context;
+          } // cfg.qwen.extraEnv;
+
+          serviceConfig = {
+            ExecStart = "${cfg.qwen.package}/bin/agentix-qwen-worker";
+            Restart = "on-failure";
+            RestartSec = "10s";
+            User = "agentix";
+            Group = "agentix";
+            StateDirectory = "agentix";
+            StateDirectoryMode = "0750";
+            PrivateDevices = false;
+          };
+        };
+
+        systemd.tmpfiles.rules = [
+          "d ${toString cfg.qwen.modelDir} 0750 agentix agentix -"
         ];
       })
 

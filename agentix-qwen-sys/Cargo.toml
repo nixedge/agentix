@@ -1,0 +1,17 @@
+[package]
+name = "agentix-qwen-sys"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Isolated GGUF/GGML bindings for the agentix Qwen worker"
+
+[features]
+default = []
+cuda = ["llama-cpp-sys-2/cuda"]
+
+[dependencies]
+agentix-qwen = { path = "../agentix-qwen" }
+llama-cpp-sys-2 = { version = "=0.1.154", default-features = false }
+
+[lints]
+workspace = true

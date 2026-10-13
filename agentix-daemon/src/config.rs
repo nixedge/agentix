@@ -6,6 +6,8 @@ pub struct Config {
     pub gateway_port: u16,
     pub ollama_base_url: String,
     pub llama_socket: PathBuf,
+    pub qwen_socket: PathBuf,
+    pub qwen_model: String,
     pub whisper_socket: PathBuf,
     pub piper_bin: PathBuf,
     pub piper_voices_dir: PathBuf,
@@ -32,6 +34,11 @@ impl Config {
             llama_socket: std::env::var("AGENTIX_LLAMA_SOCKET")
                 .map(PathBuf::from)
                 .unwrap_or_else(|_| PathBuf::from("/run/agentix/llama.sock")),
+            qwen_socket: std::env::var("AGENTIX_QWEN_SOCKET")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| PathBuf::from("/run/agentix/qwen.sock")),
+            qwen_model: std::env::var("AGENTIX_QWEN_MODEL")
+                .unwrap_or_else(|_| "qwen3.8-flash-next".into()),
             whisper_socket: std::env::var("AGENTIX_WHISPER_SOCKET")
                 .map(PathBuf::from)
                 .unwrap_or_else(|_| PathBuf::from("/run/agentix/whisper.sock")),

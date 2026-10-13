@@ -1,0 +1,34 @@
+{
+  "source": {
+    "repository": "Qwen/Qwen3.8-Flash-Next",
+    "revision": "de4b8e4d43b917e7706784d8bb445c9af86a3540",
+    "file": "model-00001-of-00131.safetensors",
+    "tensor": "model.language_model.layers.0.linear_attn.A_log",
+    "dtype": "BF16",
+    "shape": [48],
+    "tensor_data_offsets": [26337280, 26337376],
+    "file_byte_range_inclusive": [26376584, 26376679],
+    "sample_bytes": 96,
+    "sample_sha256": "70321a473849317d44b1d1f3a97b85dffb29212f0311cf271ba99ee385a69aa5"
+  },
+  "target": {
+    "repository": "ggml-org/Qwen3.8-Flash-Next-GGUF",
+    "revision": "052beeaca7bec4a303e59cc7bc630c4f3a1b845d",
+    "file": "Qwen3.8-Flash-Next-IQ4_NL-00002-of-00002.gguf",
+    "tensor": "blk.0.ssm_a",
+    "ggml_type": "f32",
+    "extents": [48, 1, 1, 1],
+    "gguf_data_offset": 77824,
+    "tensor_offset": 10775040,
+    "file_byte_range_inclusive": [10852864, 10853055],
+    "sample_bytes": 192,
+    "sample_sha256": "b468aa1d560674dd157c4fde8e3831a3566e5315cec96973dd0e4e73076c3294"
+  },
+  "comparison": {
+    "pinned_converter_behavior": "Apply -exp(A_log), then reorder values by GatedDeltaNet value-head layout.",
+    "pinned_converter_source": "llama.cpp conversion/qwen.py at 6c84c7d5d8833c6e0df69628f75a0f599797934e; modify_tensors handles A_log at lines 2507-2509 before the value-head reorder branch.",
+    "agentix_test": "sampled_published_alog_vector_matches_gated_delta_reorder",
+    "result": "Agentix now applies -exp(source A_log) before the matching GatedDeltaNet value-head reorder. All 48 values match the published GGUF vector within 1e-6 relative tolerance (absolute tolerance floor 1e-6); tolerance accounts for last-bit differences between exponentiation implementations.",
+    "scope_limit": "Only this vector was range-read. The complete source and GGUF shard payloads were not downloaded or hash-verified. The test wraps these captured samples in small synthetic files to exercise the current source and GGUF row readers."
+  }
+}

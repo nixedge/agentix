@@ -1,0 +1,39 @@
+{
+  "source": {
+    "repository": "Qwen/Qwen3.8-Flash-Next",
+    "revision": "de4b8e4d43b917e7706784d8bb445c9af86a3540",
+    "file": "model-00005-of-00131.safetensors",
+    "tensor": "model.language_model.layers.1.ple.ple_embedding.ngram_embedding.shard_0.weight",
+    "dtype": "BF16",
+    "shape": [2500012, 160],
+    "row_index": 0,
+    "file_offset": 1755880824,
+    "bytes": 320,
+    "sha256": "67354d4be4c2d2d8ed2f6003c5e98e56015072f08bbd5f62c6b38589628a35cb"
+  },
+  "target": {
+    "repository": "ggml-org/Qwen3.8-Flash-Next-GGUF",
+    "revision": "052beeaca7bec4a303e59cc7bc630c4f3a1b845d",
+    "file": "Qwen3.8-Flash-Next-IQ4_NL-00002-of-00002.gguf",
+    "tensor": "per_layer_token_embd.weight",
+    "storage_type": "Q4_0",
+    "extents": [160, 320001536],
+    "row_index": 0,
+    "file_offset": 3015862016,
+    "bytes": 90,
+    "sha256": "34098719c5d2b94c40150f2fbf5e04859571d27a1df605134e8deadb0d01cf73"
+  },
+  "validation": {
+    "reader": "agentix-qwen::rows::SafeTensorFile + Bf16Rows",
+    "target_decoder": "agentix-qwen-sys::decode_q4_0_row",
+    "compared_values": 160,
+    "max_absolute_error_bound": 0.003,
+    "test": "agentix-qwen-sys::tests::source_bf16_ple_row_matches_published_q4_0_row_after_quantization",
+    "scope": "one source and published GGUF row; not full tensor or model parity"
+  },
+  "limitations": [
+    "Only the first 320-byte source PLE row and first 90-byte GGUF PLE row were fetched.",
+    "The source file-backed reader was exercised on a valid sparse test file containing the captured real row, not on the complete 3.36 GB source shard.",
+    "No bulk checkpoint or GGUF payload was downloaded or verified."
+  ]
+}

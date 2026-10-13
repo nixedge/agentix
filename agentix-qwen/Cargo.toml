@@ -5,5 +5,12 @@ edition = "2021"
 license = "Apache-2.0"
 description = "Independent Qwen Flash Next execution foundations for agentix"
 
+[dependencies]
+minijinja.workspace = true
+safetensors = { version = "=0.8.0", default-features = false }
+serde_json.workspace = true
+sha2.workspace = true
+tokenizers.workspace = true
+
 [lints]
 workspace = true

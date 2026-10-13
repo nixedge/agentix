@@ -1,0 +1,46 @@
+Agentic RAG Stack
+
+Services:
+  nix run .#dev              # Start PostgreSQL (ParadeDB) + Ollama
+
+Indexing:
+  just index /path/to/repo   # Index a codebase
+
+Database:
+  psql postgres://127.0.0.1:5432/codebase
+
+MCP server:
+  just build                 # Build the Rust binary
+  just mcp                   # Run the MCP server
+  nix build .#agentix-mcp-server  # Build with Nix (requires Cargo.lock)
+
+Quick search (no services needed):
+  ck search 'query'              # ad-hoc hybrid search
+  ck --serve                     # lightweight MCP server
+  ccusage                        # Claude Code usage stats
+name	type	row_width	rows	finite
+output.weight	q6_K	2560	248320	true
+output_hc_down.weight	bf16	10240	320	true
+output_hc_norm.weight	f32	10240	1	true
+token_embd.weight	iq4_xs	2560	248320	true
+blk.0.attn_gate.weight	q4_K	2560	6144	true
+blk.0.ffn_down_exps.weight	iq4_nl	640	1310720	true
+blk.0.ffn_gate_exps.weight	iq3_xxs	2560	327680	true
+blk.1.attn_qkv.weight	q5_K	2560	10240	true
+blk.1.ffn_down_exps.weight	q2_0	640	1310720	true
+blk.1.ffn_gate_exps.weight	iq2_s	2560	327680	true
+blk.1.ple_conv1d.weight	f16	4	10240	true
+blk.17.ffn_gate_exps.weight	iq3_s	2560	327680	true
+blk.47.ffn_down_shexp.weight	q8_0	640	2560	true
+# projection=tensor:output_hc_down.weight input=10240 output=320 finite=true
+# decode=gated_delta_net block=0 input=2560 output=2560 conv_history_values=30720 recurrent_heads=48 finite=true synthetic_input=true
+# prefill=gated_delta_net block=0 tokens=2 input=5120 output=5120 conv_history_values=30720 recurrent_heads=48 finite=true synthetic_input=true
+# projection=moe_block block=17 top_k=10 input=2560 output=2560 finite=true
+# decoder_block=0 type=gated_delta_net+moe token_id=1 input=10240 output=10240 streams=4 finite=true synthetic_input=false
+# decoder_blocks=0-1 type=gated_delta_net+ple+gated_delta_net+moe token_id=1 ple_rows=16 output=10240 finite=true synthetic_input=false
+# decoder_blocks=0-3 types=gdn_moe,gdn_ple_moe,gdn_moe,qsa_moe token_id=1 input=10240 output=10240 streams=4 cached_tokens=1 finite=true synthetic_input=false
+# decoder_model=full blocks=48 input_token_id=1 output_logits=248320 greedy_token_id=79104 greedy_logit=11.96474266 second_input_token_id=79104 second_greedy_token_id=245228 cached_position=2 finite=true synthetic_input=false
+# decode=qsa_layer block=3 tokens=2 input=2560 output=2560 selected_last=2 cached_tokens=2 finite=true synthetic_input=true
+# indexer=qsa_sparse block=3 visible=4097 selected=2049 raw_cache_values=524416 synthetic_past=true
+# decode=qsa block=3 input=2560 output=2560 selected=2049 kv_cache_values=2097664 finite=true synthetic_past=true
+# shards=2 tensors=1224 sampled_types=13

@@ -1,8 +1,8 @@
 # Feature Specification: Agentix-owned Qwen Flash Next inference
 
 **Feature Branch**: `021-strata-inference-research`
-**Updated**: 2026-10-12
-**Status**: Revised engineering specification; implementation has not started
+**Updated**: 2026-10-13
+**Status**: CPU foundations in progress; full-model implementation remains incomplete
 **Input**: Focus on Qwen Flash Next, engineering the useful Strata features into agentix without using Strata code directly.
 
 ## Objective and scope
@@ -70,4 +70,4 @@ As a maintainer, I can build, test and run the backend without Strata installed 
 
 Corrupt shards, missing auxiliary tensors, incompatible quantization, disk stalls, allocation pressure, cache thrashing, transfer/cancellation races, partially rejected drafts, stale prefix state and long reasoning output require explicit handling. A small active parameter count does not imply a small resident model. Model licensing and checkpoint provenance remain separate from engine authorship.
 
-The current session is not the target host; SSH identity, driver/CUDA compatibility, free memory, RAM bandwidth, PCIe and storage remain unverified. Start from master `fd2202890a95e1deb9747ccd8ad39be482f526f8`; inspect 019/020 contracts without silently merging sibling branches. This revision selects the engineering direction and staged work, not a completed backend.
+The current session is not the target host; Target access is user-operated; driver/CUDA compatibility, free memory, RAM bandwidth, PCIe and storage remain unverified. Start from master `fd2202890a95e1deb9747ccd8ad39be482f526f8`; inspect 019/020 contracts without silently merging sibling branches. This revision selects the engineering direction and staged work, not a completed backend.
