@@ -116,8 +116,7 @@ pub async fn ingest_code(
     let bar = ProgressBar::new(n_files as u64);
     bar.set_style(
         ProgressStyle::default_bar()
-            .template("{spinner:.green} [{bar:40.cyan/blue}] {pos}/{len} {msg}")
-            .unwrap()
+            .template("{spinner:.green} [{bar:40.cyan/blue}] {pos}/{len} {msg}")?
             .progress_chars("=>-"),
     );
 

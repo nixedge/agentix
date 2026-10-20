@@ -34,7 +34,13 @@ fn main() {
     };
 
     let req = Request { args };
-    let mut payload = serde_json::to_string(&req).expect("serialize");
+    let mut payload = match serde_json::to_string(&req) {
+        Ok(payload) => payload,
+        Err(error) => {
+            eprintln!("gh: failed to serialize request: {error}");
+            std::process::exit(1);
+        }
+    };
     payload.push('\n');
     if let Err(e) = stream.write_all(payload.as_bytes()) {
         eprintln!("gh: failed to send request: {e}");

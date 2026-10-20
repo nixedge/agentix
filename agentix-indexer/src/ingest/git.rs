@@ -43,7 +43,7 @@ pub async fn ingest_git(
     let tmp_str = tmp
         .path()
         .to_str()
-        .expect("tempdir path is not valid UTF-8");
+        .context("temporary directory path is not valid UTF-8")?;
 
     // Clone the repository.
     if let Some(b) = branch.or(tag) {

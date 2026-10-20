@@ -99,7 +99,10 @@ impl WhisperWorker {
     async fn transcribe(&self, pcm: Vec<f32>) -> Result<String, InferError> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.tx
-            .send(WorkItem { pcm, reply: reply_tx })
+            .send(WorkItem {
+                pcm,
+                reply: reply_tx,
+            })
             .map_err(|_| InferError::Backend("whisper worker channel closed".into()))?;
         reply_rx
             .await

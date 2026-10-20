@@ -31,21 +31,12 @@ pub struct LhsBlock {
 
 #[derive(Debug, Clone)]
 pub struct ParsedLhs {
-    pub style: LhsStyle,
     pub blocks: Vec<LhsBlock>,
 }
 
 impl ParsedLhs {
     pub fn code_blocks(&self) -> impl Iterator<Item = &LhsBlock> {
         self.blocks.iter().filter(|b| b.kind == BlockKind::Code)
-    }
-
-    pub fn prose_blocks(&self) -> impl Iterator<Item = &LhsBlock> {
-        self.blocks.iter().filter(|b| b.kind == BlockKind::Prose)
-    }
-
-    pub fn has_code(&self) -> bool {
-        self.blocks.iter().any(|b| b.kind == BlockKind::Code)
     }
 }
 
@@ -120,10 +111,7 @@ fn parse_bird_style(source: &str) -> ParsedLhs {
         }
     }
 
-    ParsedLhs {
-        style: LhsStyle::Bird,
-        blocks,
-    }
+    ParsedLhs { blocks }
 }
 
 fn parse_latex_style(source: &str) -> ParsedLhs {
@@ -189,10 +177,7 @@ fn parse_latex_style(source: &str) -> ParsedLhs {
         });
     }
 
-    ParsedLhs {
-        style: LhsStyle::LaTeX,
-        blocks,
-    }
+    ParsedLhs { blocks }
 }
 
 /// Parse a `.lhs` source file into alternating code and prose blocks.
@@ -274,7 +259,7 @@ mod tests {
     fn bird_empty_file() {
         let parsed = parse_lhs("");
         assert!(parsed.blocks.is_empty());
-        assert_eq!(parsed.style, LhsStyle::Bird);
+        assert_eq!(detect_style(""), LhsStyle::Bird);
     }
 
     #[test]
@@ -345,8 +330,7 @@ mod tests {
     #[test]
     fn latex_detected_when_begin_code_present() {
         let src = "prose\n\\begin{code}\nfoo = 1\n\\end{code}\n";
-        let parsed = parse_lhs(src);
-        assert_eq!(parsed.style, LhsStyle::LaTeX);
+        assert_eq!(detect_style(src), LhsStyle::LaTeX);
     }
 
     #[test]

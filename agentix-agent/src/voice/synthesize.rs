@@ -24,7 +24,7 @@ pub async fn handler(
             StatusCode::SERVICE_UNAVAILABLE,
             Json(serde_json::json!({"error": "voice not configured"})),
         )
-        .into_response();
+            .into_response();
     };
 
     let model = req
@@ -49,16 +49,13 @@ pub async fn handler(
                 StatusCode::BAD_GATEWAY,
                 Json(serde_json::json!({"error": format!("TTS request failed: {e}")})),
             )
-            .into_response();
+                .into_response();
         }
     };
 
     if !speech_resp.status().is_success() {
         let status = speech_resp.status();
-        let body = speech_resp
-            .bytes()
-            .await
-            .unwrap_or_default();
+        let body = speech_resp.bytes().await.unwrap_or_default();
         return Response::builder()
             .status(status)
             .header(header::CONTENT_TYPE, "application/json")
@@ -73,7 +70,7 @@ pub async fn handler(
                 StatusCode::BAD_GATEWAY,
                 Json(serde_json::json!({"error": format!("reading TTS response: {e}")})),
             )
-            .into_response();
+                .into_response();
         }
     };
 
