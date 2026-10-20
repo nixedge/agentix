@@ -5,8 +5,45 @@ use axum::{
 };
 use hyper::Request;
 use hyper_util::rt::TokioIo;
-use std::path::Path;
+use std::{
+    path::Path,
+    pin::Pin,
+    task::{Context, Poll},
+};
 use tokio::net::UnixStream;
+
+struct ConnectionTask(tokio::task::JoinHandle<()>);
+
+impl Drop for ConnectionTask {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+struct BackendBody {
+    incoming: hyper::body::Incoming,
+    _connection: ConnectionTask,
+}
+
+impl hyper::body::Body for BackendBody {
+    type Data = axum::body::Bytes;
+    type Error = hyper::Error;
+
+    fn poll_frame(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<hyper::body::Frame<Self::Data>, Self::Error>>> {
+        Pin::new(&mut self.get_mut().incoming).poll_frame(cx)
+    }
+
+    fn is_end_stream(&self) -> bool {
+        self.incoming.is_end_stream()
+    }
+
+    fn size_hint(&self) -> hyper::body::SizeHint {
+        self.incoming.size_hint()
+    }
+}
 
 /// Forward an HTTP request to a backend Unix socket.
 ///
@@ -46,12 +83,13 @@ pub async fn forward(
         }
     };
 
-    // Drive the connection in the background
-    tokio::spawn(async move {
+    // Keep ownership through request setup, then transfer it to the response body.
+    // Dropping a JoinHandle alone detaches the driver and can leave generation running.
+    let connection = ConnectionTask(tokio::spawn(async move {
         if let Err(e) = conn.await {
             tracing::debug!("backend connection closed: {e}");
         }
-    });
+    }));
 
     // Build a hyper request from the parts we have
     let uri_parsed: Uri = match uri.parse() {
@@ -98,6 +136,9 @@ pub async fn forward(
     for (name, value) in &parts.headers {
         resp = resp.header(name, value);
     }
-    resp.body(Body::new(incoming))
-        .unwrap_or_else(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())
+    resp.body(Body::new(BackendBody {
+        incoming,
+        _connection: connection,
+    }))
+    .unwrap_or_else(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())
 }
