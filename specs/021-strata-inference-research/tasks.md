@@ -15,6 +15,18 @@ Paths are relative to this spec directory unless a workspace path is named. Prio
 
 ## Design and benchmark gates
 
+CUDA follow-up, 2026-10-20: the worker now defaults to hybrid CUDA matrix
+execution when built with CUDA. All block/expert/output projections share a
+bounded original-encoding device-weight cache across requests. Small state,
+attention, normalization and routing operations remain on CPU. Native dispatch
+passes nonzero stateful/prefill parity and all 15 storage types on GGML's CPU
+backend. CUDA all-target Clippy and worker/device-check package builds pass;
+NixOS evaluates with CUDA compute/device/cache settings. The packaged
+`agentix-qwen-cuda-check` must still run on the deployment GPU. A real chat
+response, GPU numerical results and throughput are not claimed. This extends
+T019/T021/T022, skips unnecessary prefill vocabulary projections under T024,
+and leaves their target/runtime/optimization gates open.
+
 Batch verification, 2026-10-20: workspace formatting, strict workspace Clippy,
 workspace tests and `qwen-check` pass on the reviewed uncommitted batch.
 Three model-dependent tests remain ignored, and external-daemon tests may return
@@ -220,6 +232,11 @@ FR-001/003 → T006/T008/T014/T018–020; FR-002 → T007/T028; FR-004 → T004/
 Host access blocks measurements, not independent design. No parallel-agent execution is requested. If an approach or test fails, explain the failure and ask before implementing a different approach.
 
 ## Implementation refinement — independently testable foundations
+
+- [x] T034 [US1] Route all row-backed block/expert/output projections through a persistent native backend with checked dispatch and bounded encoded-weight residency (`agentix-qwen/src/reference.rs`, `agentix-qwen-sys/src/compute.rs`, `agentix-qwen-sys/src/lib.rs`). Nonzero native/row-reference results, eviction bounds, multi-step decoder/prefill parity and warm cross-request weight reuse pass on GGML's CPU backend. Corresponding explicit CUDA tests are built and packaged; execution is T037.
+- [x] T035 [US1] Default CUDA-built workers to the hybrid CUDA matrix path, validate device/memory before readiness, expose compute/cache counters, log prefill progress, and cancel disconnected requests at block boundaries (`agentix-qwen-worker/src/main.rs`, `flake/nixosModules/agentix.nix`). Compute selection, dropped-request cancellation/slot release and decoder cancellation regressions pass; NixOS settings evaluate.
+- [x] T036 [US3] Run focused/full checks and CUDA package builds, update the deployment procedure and record remaining device/model acceptance evidence. Focused checks, workspace fmt/strict Clippy/tests, CUDA all-target Clippy, Qwen/worker/device-check package builds pass. Target execution is a required external gate, not inferred from build success.
+- [ ] T037 [US1] On the RTX 3090, run `nix run .#agentix-qwen-cuda-check`, deploy the same revision, verify CUDA readiness/counters and real chat output, then test warm requests, streaming/disconnect behavior, memory bounds and elapsed time. Record results before claiming GPU correctness or usable model performance. Independent production-model parity and broader optimization acceptance remain under T019/T020/T027.
 
 - [x] T031 [US1] Implement and test independent n-gram hashing/history, reference routing and recurrent update primitives in `agentix-qwen/src/`, based on pinned original Qwen/Transformers contracts in `qwen-design.md`.
 - [x] T032 [US2] Implement checked separate host/device admission and bounded on-demand row storage in `agentix-qwen/src/`; test EOS/chunk/restore behavior, invalid state inputs, file bounds and cache capacity.

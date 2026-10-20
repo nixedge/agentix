@@ -1,4 +1,4 @@
-# CPU foundation validation
+# Qwen validation and deployment
 
 Benchmark protocol: [`benchmarks.md`](benchmarks.md). It defines the run matrix
 and records still needed. The pinned coding-task evaluator is available as
@@ -21,9 +21,9 @@ rendering, GGUF split completeness/uniqueness and type/shape byte counts, n-gram
 state, encoded-row storage and memory arithmetic. The CPU Nix package runs its tests and installs
 the Rust library plus provenance. The sys package runs GGUF architecture/split,
 Q4_0/IQ4_NL row-decoder, and on-demand row-reader tests against the pinned
-GGML/GGUF dependency. The sys package includes an artifact sampler that runs a
-single token through all 48 blocks and the output projection; it does not
-provide a reusable multi-token generation worker or GPU inference path.
+GGML/GGUF dependency. The sys package includes an artifact sampler, a reusable
+stateful decoder and a native matrix backend. CUDA-built workers execute every
+block's projections and routed experts with persistent device weights.
 The fixed integer and analytical vectors in `agentix-qwen/tests` are part of the
 source; they do not download model weights or constitute a full-model fixture.
 
@@ -42,12 +42,10 @@ existing greedy sampler. The artifact check exercises it with token ID 1 as a
 minimal prepared prompt for two full-model steps; no benchmark result or
 full-artifact run from a rendered chat prompt exists yet.
 
-The target host is only accessible to the user. GPU build, inventory, model
-verification and benchmark commands will be added once their executable paths
-exist and have been checked locally. No target-host action is needed to validate
-these CPU foundations. The compact synthetic fixture below checks decoder
+The target host is only accessible to the user. GPU checks and deployment
+commands are below; device execution must be verified there. The compact fixture checks decoder
 control flow; T010/T030's production-model reference and final dependency/package
-strategy remain open. This document covers the current foundation package.
+strategy remain open.
 
 ## Qwen worker package
 
@@ -66,6 +64,28 @@ cache counters; this CPU path reports zero host-device transfer bytes. The
 NixOS module passes these variables through `services.agentix.qwen.extraEnv`.
 PLE lookup submits its n-gram row IDs together; adjacent uncached quantized
 rows are decoded from one positional file read.
+
+CUDA-enabled workers default to `AGENTIX_QWEN_COMPUTE=cuda`, device index `0`,
+and a 16 GiB encoded-weight cache. The NixOS module exposes `compute`,
+`cudaDevice` and `cudaCacheBytes`; equivalent environment variables are
+`AGENTIX_QWEN_COMPUTE`, `AGENTIX_QWEN_CUDA_DEVICE` and
+`AGENTIX_QWEN_CUDA_CACHE_BYTES`. Startup requires the cache budget plus 2 GiB
+free on the device and executes dense/quantized probes before readiness.
+Unavailable devices, insufficient memory and compute errors fail explicitly.
+The old `AGENTIX_QWEN_CUDA_OUTPUT_DEVICE` probe setting is obsolete and rejected.
+To deliberately run the slow scalar reference, set `compute = "cpu"`.
+
+GPU matrices retain their original F32/F16/BF16 or quantized encoding in a
+bounded LRU shared across requests. Misses upload in chunks no larger than
+16 MiB. `/health` reports `compute`, `cuda_device` and `native_compute`
+(actual retained/peak allocated bytes, hits, misses, evictions, weight and
+activation uploads, output downloads and matvec count). It uses a nonblocking
+statistics read, so `native_compute` can be null during an operation; retry
+afterward. Normalization, routing, recurrent updates, attention/cache management
+and PLE row lookup still execute on CPU. This is a hybrid path, not a fully
+device-resident graph. Intermediate prompt tokens skip unused vocabulary
+projections. Worker logs report admitted prompt size and processed positions;
+disconnect cancellation is checked between blocks.
 The worker serves `/health`, `/v1/models` and greedy text
 `/v1/chat/completions` over `AGENTIX_QWEN_SOCKET`. The daemon routes only the
 exact `AGENTIX_QWEN_MODEL` name to it. Text SSE is bounded. Non-streaming
@@ -75,9 +95,10 @@ channels, non-greedy sampling and non-chat endpoints are explicitly unsupported.
 
 The NixOS module exposes `services.agentix.qwen`; the deployment still needs
 the user to place the verified GGUF shards in its configured model directory.
-The CPU reference sampler is the available local end-to-end model evidence; a
-full model request through the worker has not been run because generation is
-slow on this host and the real chat prefill is not batched yet.
+The CPU reference sampler is the available local end-to-end model evidence.
+Real rendered-chat CPU attempts timed out without a completion. The new native
+path has compact nonzero multi-step parity coverage on GGML's CPU backend;
+real-model CUDA output and performance remain unverified.
 
 ### Compact full-decoder fixture
 
@@ -116,21 +137,28 @@ options are required by the module:
       enable = true;
       package = inputs.agentix.packages.${pkgs.system}.agentix-qwen-worker;
       modelDir = "/var/lib/agentix/qwen";
+      compute = "cuda";
+      cudaDevice = 0;
+      cudaCacheBytes = 17179869184; # 16 GiB; requires at least 18 GiB free VRAM
       # Defaults: the verified IQ3_S shard names and publisher hashes.
       # context = 32768;
-      # Optional CUDA probe: requires a CUDA-enabled package and a working driver.
-      # This routes only the final vocabulary projection to CUDA; all Qwen block
-      # operators remain CPU-side and streamed weights are uploaded each token.
-      # extraEnv.AGENTIX_QWEN_CUDA_OUTPUT_DEVICE = "0";
     };
   };
 }
 ```
 
-`AGENTIX_QWEN_CUDA_OUTPUT_DEVICE` is an opt-in correctness probe, not a
-performance setting. The worker validates that the selected CUDA device exists
-before binding its socket. CUDA output projection has not been executed on the
-RTX 3090 target; leave the option unset until testing on that host.
+Use a CUDA-enabled package and a working NVIDIA driver. Run the packaged
+device checks on the target against the same flake revision used for deployment:
+
+```sh
+nix run .#agentix-qwen-cuda-check
+```
+
+This executable is built with the worker; it requires no on-host Cargo build.
+It checks a small F32 matvec, all 15 supported matrix storage types and a
+nonzero four-block decoder over multiple tokens, including prefill and warm
+weight reuse. It needs no production model download. These synthetic checks
+do not replace independent full-model parity.
 
 The model shards are hosted under the `IQ3_S/` subdirectory with longer
 publisher filenames. Fetch the pinned revision directly into the worker's
@@ -162,19 +190,18 @@ chat request through the daemon:
 
 ```sh
 systemctl status agentix-qwen agentix-daemon
+sudo -u agentix curl --fail-with-body -sS --unix-socket /run/agentix/qwen.sock http://localhost/health
 curl --fail-with-body -sS http://127.0.0.1:11434/v1/chat/completions \
   -H 'content-type: application/json' \
   -d '{"model":"qwen3.8-flash-next","messages":[{"role":"user","content":"Reply with OK."}],"temperature":0,"max_tokens":4}'
 ```
 
-This is a CPU smoke deployment by default. The optional
-`AGENTIX_QWEN_CUDA_OUTPUT_DEVICE` setting routes only the final vocabulary
-projection through CUDA; all attention, recurrent, PLE, residual-mixer, and MoE
-operators remain on CPU. GGUF output weights are streamed and uploaded for each
-token, so this path is a correctness probe rather than an expected speedup. A
-successful package build does not establish GPU execution or target-device
-correctness. Real chat prefill is also not batched, so the first request may be
-very slow.
+The ready log must show `compute="cuda" cuda_device=Some(0)`, and worker health
+must report `compute: "cuda"`. After requests, `native_compute.matvecs` and
+activation transfer counters must increase; warm weight hits should increase.
+`nvidia-smi` should show this worker's device allocations. The first request
+loads weights lazily. Prefill is sequential and small state operators remain
+on CPU; collect elapsed time and output before making a performance claim.
 
 For a direct output-projection comparison on the GPU host, run the pinned
 Q6_K `output.weight` through the CPU row reference and CUDA matvec:

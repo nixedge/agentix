@@ -1,6 +1,6 @@
 //! Bounded CUDA primitives built on the pinned GGML backend API.
 
-use crate::{ffi, GgufMatrixRows, GgufRows, QuantizedRows, RowQuantization};
+use crate::{ffi, GgufMatrixRows, GgufRows, QuantizedRows};
 use std::{
     ffi::CStr,
     fmt,
@@ -386,18 +386,7 @@ fn read_quantized_rows(
     Ok(bytes)
 }
 
-impl RowQuantization {
-    fn ggml_type(self) -> ffi::ggml_type {
-        match self {
-            Self::Q4_0 => ffi::GGML_TYPE_Q4_0,
-            Self::Iq4Nl => ffi::GGML_TYPE_IQ4_NL,
-            Self::Q8_0 => ffi::GGML_TYPE_Q8_0,
-            Self::Native(ggml_type) => ggml_type as ffi::ggml_type,
-        }
-    }
-}
-
-fn cuda_device_handles() -> Vec<ffi::ggml_backend_dev_t> {
+pub(crate) fn cuda_device_handles() -> Vec<ffi::ggml_backend_dev_t> {
     // SAFETY: this is the pinned GGML CUDA backend registry name; the call
     // returns a process-global descriptor or null when CUDA is unavailable.
     let registry = unsafe { ffi::ggml_backend_reg_by_name(c"CUDA".as_ptr()) };
@@ -448,10 +437,8 @@ impl Drop for BackendBuffer {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        cuda_devices, cuda_f32_matvec, read_quantized_rows, CudaError, QuantizedRows,
-        RowQuantization,
-    };
+    use super::{cuda_devices, cuda_f32_matvec, read_quantized_rows, CudaError, QuantizedRows};
+    use crate::RowQuantization;
     use std::{
         fs::{self, File},
         sync::Arc,
@@ -514,6 +501,7 @@ mod tests {
             row_width: 32,
             row_bytes: 5,
             quantization: RowQuantization::Q4_0,
+            row_cache: None,
         };
 
         assert_eq!(

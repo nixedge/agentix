@@ -1,8 +1,8 @@
 # Feature Specification: Agentix-owned Qwen Flash Next inference
 
 **Feature Branch**: `021-strata-inference-research`
-**Updated**: 2026-10-13
-**Status**: CPU foundations in progress; full-model implementation remains incomplete
+**Updated**: 2026-10-20
+**Status**: Stateful CPU decoder and hybrid CUDA matrix path implemented; independent full-model parity, target-device execution and optimization acceptance remain incomplete
 **Input**: Focus on Qwen Flash Next, engineering the useful Strata features into agentix without using Strata code directly.
 
 ## Objective and scope

@@ -1,7 +1,7 @@
 # Decision: independently implement Qwen Flash Next in agentix
 
-**Updated**: 2026-10-13
-**Status**: Direction selected by user. A stateful CPU GGUF decoder and isolated Unix-socket worker now execute greedy text generation, with exact-model daemon routing. An opt-in CUDA path now dispatches only the quantized vocabulary projection; it streams weights each token and remains unverified on a GPU. Independent output parity, full CUDA execution, optimization stages and target-host acceptance remain pending.
+**Updated**: 2026-10-20
+**Status**: The stateful decoder and isolated worker now have hybrid CUDA matrix execution throughout every block, including selected experts, with persistent bounded encoded-weight residency. CUDA builds default to that path and require working device/memory admission before readiness. Nonzero native stateful parity passes on GGML's CPU backend; a packaged device check is available. GPU execution, independent full-model parity, remaining optimization stages and target-host acceptance remain pending.
 
 ## Selected direction
 

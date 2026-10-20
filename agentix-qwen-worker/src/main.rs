@@ -25,8 +25,11 @@ use std::{
     io::Read,
     os::unix::fs::FileTypeExt,
     path::PathBuf,
-    sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::{Instant, SystemTime, UNIX_EPOCH},
 };
 use tokio::{
     net::UnixListener,
@@ -42,8 +45,30 @@ struct AppState {
     tokenizer: Arc<QwenTokenizer>,
     model_name: Arc<str>,
     context_limit: usize,
-    cuda_output_device: Option<usize>,
+    compute_mode: &'static str,
+    cuda_device: Option<usize>,
     generation_slot: Arc<Semaphore>,
+}
+
+struct CancelOnDrop(Arc<AtomicBool>);
+
+impl Drop for CancelOnDrop {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::Release);
+    }
+}
+
+async fn cancellable_generation<T: Send + 'static>(
+    permit: OwnedSemaphorePermit,
+    operation: impl FnOnce(Arc<AtomicBool>) -> T + Send + 'static,
+) -> Result<T, tokio::task::JoinError> {
+    let cancellation = Arc::new(AtomicBool::new(false));
+    let _cancel_on_disconnect = CancelOnDrop(Arc::clone(&cancellation));
+    tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        operation(cancellation)
+    })
+    .await
 }
 
 #[tokio::main]
@@ -91,7 +116,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .transpose()
         .map_err(|error| format!("invalid AGENTIX_QWEN_PLE_CACHE_BYTES: {error}"))?
         .unwrap_or(64 * 1024 * 1024);
-    let store = QwenGgufTensorStore::open_with_cache_bytes(
+    let mut store = QwenGgufTensorStore::open_with_cache_bytes(
         &shard_paths,
         &config,
         expert_cache_bytes,
@@ -120,14 +145,38 @@ async fn main() -> Result<(), Box<dyn Error>> {
     if context_limit == 0 {
         return Err("Qwen context limit must be positive".into());
     }
-    let cuda_output_device = env::var("AGENTIX_QWEN_CUDA_OUTPUT_DEVICE")
+    if env::var_os("AGENTIX_QWEN_CUDA_OUTPUT_DEVICE").is_some() {
+        return Err("AGENTIX_QWEN_CUDA_OUTPUT_DEVICE is obsolete; use AGENTIX_QWEN_COMPUTE=cuda and AGENTIX_QWEN_CUDA_DEVICE".into());
+    }
+    let compute_mode = parse_compute_mode(env::var("AGENTIX_QWEN_COMPUTE").ok().as_deref())?;
+    let cuda_device = env::var("AGENTIX_QWEN_CUDA_DEVICE")
         .ok()
         .map(|value| value.parse::<usize>())
-        .transpose()?;
-    let mut decoder = QwenGgufDecoder::open(&store, &config).map_err(|error| {
+        .transpose()?
+        .unwrap_or(0);
+    let cuda_cache_bytes = env::var("AGENTIX_QWEN_CUDA_CACHE_BYTES")
+        .ok()
+        .map(|value| value.parse::<usize>())
+        .transpose()?
+        .unwrap_or(16 * 1024 * 1024 * 1024);
+    configure_store(&mut store, compute_mode, cuda_device, cuda_cache_bytes)?;
+    if compute_mode == "cuda" {
+        // Probe both the dense residual mixer and an actual encoded expert before readiness.
+        for (name, group) in [
+            ("output_hc_down.weight", None),
+            ("blk.0.ffn_gate_exps.weight", Some(0)),
+        ] {
+            let mut matrix = match group {
+                Some(group) => store.open_group_matrix_rows(name, group)?,
+                None => store.open_matrix_rows(name)?,
+            };
+            let input = vec![0.0_f32; matrix.input_features()];
+            agentix_qwen::reference::linear_from_rows(&input, &mut matrix, None)?;
+        }
+    }
+    let decoder = QwenGgufDecoder::open(&store, &config).map_err(|error| {
         std::io::Error::other(format!("cannot initialize Qwen decoder: {error}"))
     })?;
-    configure_decoder(&mut decoder, cuda_output_device).map_err(std::io::Error::other)?;
     drop(decoder);
 
     let state = AppState {
@@ -138,7 +187,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
             env::var("AGENTIX_QWEN_MODEL").unwrap_or_else(|_| "qwen3.8-flash-next".into()),
         ),
         context_limit,
-        cuda_output_device,
+        compute_mode,
+        cuda_device: (compute_mode == "cuda").then_some(cuda_device),
         generation_slot: Arc::new(Semaphore::new(1)),
     };
 
@@ -158,7 +208,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         model = %state.model_name,
         shards = shard_paths.len(),
         context_limit,
-        cuda_output_device = ?state.cuda_output_device,
+        compute = state.compute_mode,
+        cuda_device = ?state.cuda_device,
+        cuda_cache_bytes,
         "Qwen worker ready"
     );
 
@@ -242,11 +294,26 @@ async fn health(State(state): State<AppState>) -> Json<Value> {
         .ok()
         .map(cache_stats_json);
     let ple_row_cache = state.store.ple_row_cache_stats().ok().map(cache_stats_json);
+    let native_compute = state.store.compute_stats().ok().flatten().map(|stats| {
+        json!({
+            "capacity_bytes": stats.capacity_bytes,
+            "retained_bytes": stats.retained_bytes,
+            "peak_retained_bytes": stats.peak_retained_bytes,
+            "hits": stats.hits, "misses": stats.misses, "evictions": stats.evictions,
+            "weight_upload_bytes": stats.weight_upload_bytes,
+            "activation_upload_bytes": stats.activation_upload_bytes,
+            "output_download_bytes": stats.output_download_bytes,
+            "matvecs": stats.matvecs,
+        })
+    });
     Json(json!({
         "status": "ready",
         "model": state.model_name.as_ref(),
         "expert_row_cache": expert_row_cache,
         "ple_row_cache": ple_row_cache,
+        "compute": state.compute_mode,
+        "cuda_device": state.cuda_device,
+        "native_compute": native_compute,
     }))
 }
 
@@ -469,18 +536,45 @@ async fn chat_completions(State(state): State<AppState>, body: Bytes) -> Respons
     };
 
     let model_state = state.clone();
+    info!(
+        compute = state.compute_mode,
+        prompt_tokens = prepared.token_ids.len(),
+        max_tokens = prepared.admission.requested_output_tokens,
+        streaming,
+        "Qwen request admitted"
+    );
     if streaming {
         return stream_completion(&state, prepared, permit);
     }
 
-    let result = tokio::task::spawn_blocking(move || {
-        let _permit = permit;
+    let result = cancellable_generation(permit, move |cancellation| {
+        let started = Instant::now();
         let mut decoder = QwenGgufDecoder::open(&model_state.store, &model_state.config)
             .map_err(|_| "Model initialization failed")?;
-        configure_decoder(&mut decoder, model_state.cuda_output_device)?;
+        decoder.set_cancellation_check(move || cancellation.load(Ordering::Acquire));
+        let prompt_tokens = prepared.token_ids.len();
         let output = decoder
-            .generate_prepared_greedy(&prepared, &model_state.tokenizer.stop_token_ids())
-            .map_err(|_| "Model generation failed")?;
+            .generate_prepared_greedy_with_progress(
+                &prepared,
+                &model_state.tokenizer.stop_token_ids(),
+                |position| {
+                    info!(
+                        position,
+                        prompt_tokens,
+                        elapsed_ms = started.elapsed().as_millis() as u64,
+                        "Qwen token processed"
+                    );
+                },
+            )
+            .map_err(|error| {
+                error!(%error, "Qwen generation stopped");
+                "Model generation failed"
+            })?;
+        info!(
+            elapsed_ms = started.elapsed().as_millis() as u64,
+            generated_tokens = output.generation.generated_token_ids.len(),
+            "Qwen generation finished"
+        );
         let completion_tokens = output.generation.generated_token_ids.len();
         let output_tokens = match output.generation.stop_reason {
             GreedyStopReason::StopToken(stop) => output
@@ -698,17 +792,32 @@ fn stream_generation(
 ) -> Result<(), &'static str> {
     let mut decoder = QwenGgufDecoder::open(&state.store, &state.config)
         .map_err(|_| "Model initialization failed")?;
-    configure_decoder(&mut decoder, state.cuda_output_device)?;
+    let cancellation_sender = sender.clone();
+    decoder.set_cancellation_check(move || cancellation_sender.is_closed());
+    let started = Instant::now();
     let mut logits = None;
-    for token_id in &prepared.token_ids {
+    for (index, token_id) in prepared.token_ids.iter().enumerate() {
         if sender.is_closed() {
             return Ok(());
         }
-        logits = Some(
-            decoder
-                .step(*token_id)
-                .map_err(|_| "Prompt prefill failed")?
-                .logits,
+        if index + 1 == prepared.token_ids.len() {
+            logits = Some(
+                decoder
+                    .step(*token_id)
+                    .map_err(|_| "Prompt prefill failed")?
+                    .logits,
+            );
+        } else {
+            decoder.prefill_token(*token_id).map_err(|error| {
+                error!(%error, "Qwen prefill stopped");
+                "Prompt prefill failed"
+            })?;
+        }
+        info!(
+            position = decoder.position(),
+            prompt_tokens = prepared.token_ids.len(),
+            elapsed_ms = started.elapsed().as_millis() as u64,
+            "Qwen streaming prompt token processed"
         );
     }
     let mut logits = logits.ok_or("Prompt contained no tokens")?;
@@ -820,29 +929,35 @@ fn env_path(name: &str, default: &str) -> PathBuf {
     env::var_os(name).map_or_else(|| PathBuf::from(default), PathBuf::from)
 }
 
-#[cfg(feature = "cuda")]
-fn configure_decoder(
-    decoder: &mut QwenGgufDecoder<'_>,
-    device: Option<usize>,
-) -> Result<(), &'static str> {
-    if let Some(device) = device {
-        decoder
-            .enable_cuda_output_projection(device)
-            .map_err(|_| "cannot enable the requested CUDA output projection")?;
+fn parse_compute_mode(mode: Option<&str>) -> Result<&'static str, &'static str> {
+    match mode.unwrap_or(if cfg!(feature = "cuda") {
+        "cuda"
+    } else {
+        "cpu"
+    }) {
+        "cpu" => Ok("cpu"),
+        "cuda" if cfg!(feature = "cuda") => Ok("cuda"),
+        "cuda" => Err("CUDA compute requested from a worker built without CUDA"),
+        _ => Err("AGENTIX_QWEN_COMPUTE must be cpu or cuda"),
     }
-    Ok(())
 }
 
-#[cfg(not(feature = "cuda"))]
-fn configure_decoder(
-    _decoder: &mut QwenGgufDecoder<'_>,
-    device: Option<usize>,
-) -> Result<(), &'static str> {
-    if device.is_some() {
-        Err("CUDA output projection requested from a worker built without CUDA")
-    } else {
-        Ok(())
+fn configure_store(
+    store: &mut QwenGgufTensorStore,
+    mode: &str,
+    device: usize,
+    cache_bytes: usize,
+) -> Result<(), Box<dyn Error>> {
+    if mode == "cuda" {
+        #[cfg(feature = "cuda")]
+        store.enable_cuda(device, cache_bytes)?;
+        #[cfg(not(feature = "cuda"))]
+        {
+            let _ = (store, device, cache_bytes);
+            return Err("CUDA compute requested from a worker built without CUDA".into());
+        }
     }
+    Ok(())
 }
 
 fn env_path_or_join(name: &str, base: &std::path::Path, filename: &str) -> PathBuf {
@@ -915,6 +1030,50 @@ async fn shutdown_signal() {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn compute_selection_is_explicit_and_cuda_builds_default_to_cuda() {
+        assert_eq!(
+            super::parse_compute_mode(None),
+            Ok(if cfg!(feature = "cuda") {
+                "cuda"
+            } else {
+                "cpu"
+            })
+        );
+        assert_eq!(super::parse_compute_mode(Some("cpu")), Ok("cpu"));
+        assert_eq!(
+            super::parse_compute_mode(Some("cuda")).is_ok(),
+            cfg!(feature = "cuda")
+        );
+        assert!(super::parse_compute_mode(Some("auto")).is_err());
+    }
+
+    #[tokio::test]
+    async fn dropped_request_cancels_blocking_generation_and_releases_slot(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        use std::{
+            sync::{atomic::Ordering, Arc},
+            time::Duration,
+        };
+        let slot = Arc::new(tokio::sync::Semaphore::new(1));
+        let permit = Arc::clone(&slot).try_acquire_owned()?;
+        let (started, ready) = tokio::sync::oneshot::channel();
+        let (finished, done) = tokio::sync::oneshot::channel();
+        let request = tokio::spawn(super::cancellable_generation(permit, move |cancelled| {
+            let _ = started.send(());
+            while !cancelled.load(Ordering::Acquire) {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            let _ = finished.send(());
+        }));
+        tokio::time::timeout(Duration::from_secs(5), ready).await??;
+        assert_eq!(slot.available_permits(), 0);
+        request.abort();
+        assert!(request.await.is_err());
+        tokio::time::timeout(Duration::from_secs(5), done).await??;
+        let _released = tokio::time::timeout(Duration::from_secs(5), slot.acquire()).await??;
+        Ok(())
+    }
     use super::{
         prepare_socket_path, prepare_text_prompt, send_sse, validate_reasoning_options,
         verify_shard_hashes, ReasoningOptionError,

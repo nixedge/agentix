@@ -1,6 +1,6 @@
 # Implementation Plan: Agentix-owned Qwen Flash Next inference
 
-**Branch**: `021-strata-inference-research` | **Updated**: 2026-10-12
+**Branch**: `021-strata-inference-research` | **Updated**: 2026-10-20
 **Spec**: [spec.md](spec.md)
 **Status**: CPU decoder, native GGUF access and isolated worker are implemented. Independent full-model parity, CUDA layer execution, remaining optimization stages and target-host acceptance are open; see `tasks.md` for staged progress.
 
@@ -23,6 +23,27 @@ Complete target-host inventory and budgets in `hardware.md`. Freeze benchmark wo
 ## Stage 1 — Correct ordinary inference
 
 Implement validated artifact loading and basic execution, tokenization/templates, sampling and context accounting. Start single-request, ordinary decoding with no speculative work or expert omission. Validate the CPU/reference operators first, then device operators and complete state transitions against the independent reference. Integrate streaming, tools, cancellation, memory admission and unload before throughput claims.
+
+### 2026-10-20 CUDA execution completion
+
+Replace the output-only probe as the worker's normal CUDA path with native
+matrix execution throughout every block. Extend the pure `LinearWeightRows`
+contract with an optional checked matrix operation; the native adapter dispatches
+all dense/quantized projections, including selected expert groups, through GGML.
+Keep small normalization, routing, recurrent-state updates and attention/cache
+bookkeeping on the CPU initially. This is hybrid inference; log that distinction.
+Reuse one backend and a bounded LRU of original encoded device weights across
+tokens and requests. Budget actual aligned weight allocations separately from
+activation buffers and a device reserve; upload misses in bounded chunks and
+synchronize before eviction. Never silently fall back after a device error.
+CUDA-enabled workers default to this path and fail startup when the requested
+device/budget is unavailable; CPU execution requires an explicit compute choice.
+Expose compute mode/cache counters and prompt progress. Cancel disconnected
+non-streaming requests at block boundaries as well as streaming requests.
+Test native dispatch and stateful full-decoder parity on GGML's CPU backend,
+then compile the same engine with CUDA. Supply explicit device parity and
+real-chat acceptance commands for the 3090; successful builds do not replace
+those execution checks.
 
 ## Stage 2 — Residency and overlapping work
 

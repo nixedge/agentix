@@ -376,16 +376,47 @@ matvec has passed device execution or numeric CPU/device parity here. The
 `compare_cuda_gguf_matvec` example runs both paths over the pinned Q6_K
 `output.weight` and reports logit error/top-1 agreement without imposing an
 unverified tolerance; it is ready for the RTX 3090 host but has not run there.
-Qwen decoder can opt into CUDA for its final quantized vocabulary projection,
-and the worker exposes that mode through the unset-by-default
-`AGENTIX_QWEN_CUDA_OUTPUT_DEVICE` setting. This streams/uploads the full output
-matrix for every token; all attention, recurrent, PLE, residual-mixer, and MoE
-operators remain on CPU. It is an experimental operator integration, not a
-performance path. The pinned IQ3_S artifact inventory identifies
-`output.weight` as Q6_K `[2560, 248320]`; this establishes the dispatch's input
-type and shape, not target-device support. T019 still requires target-device
-operator parity, stateful layer execution, practical GPU residency, and CUDA
-support across the decoder.
+The original output-only projection probe remains a library diagnostic. The
+2026-10-20 worker uses a persistent native backend for every row-backed matrix
+projection: QSA/indexer and GatedDeltaNet projections, residual mixers, PLE
+projections, routers, shared/routed experts and final output. It preserves
+original F32/F16/BF16 and quantized bytes on device. Small normalization,
+activation, routing, attention/cache and recurrent-state updates still run on
+CPU. This hybrid path does not claim a fully device-resident execution graph.
+
+`LinearWeightRows::project` optionally supplies a native operation. Common
+input/shape/bias/finiteness checks still apply; an error is propagated and never
+selects the scalar fallback. Matrix views share a mutex-owned backend and LRU
+through the tensor store, including expert views opened after readiness. Cache
+keys include source file identity, byte offset, type and geometry; cached entries
+retain source handles so identities cannot be reused. Allocations are measured
+with GGML's backend alignment API and checked against actual buffer sizes.
+Eviction only follows synchronous compute/transfer completion. GGUF uploads
+use at most 16 MiB of host staging. The weight cap defaults to 16 GiB; input and
+output payloads are capped at 64 MiB per operation. CUDA startup also requires
+2 GiB free beyond the weight budget for activation alignment, GGML scratch and
+driver allocations. The cap accounts for weight buffers, not all driver memory.
+
+CUDA builds default to device 0 and fail explicitly if unavailable or memory
+admission fails. NixOS exposes typed compute/device/cache settings. The obsolete
+worker output-only environment setting is rejected with migration guidance.
+Startup executes real dense and expert-matrix probes before socket readiness.
+Health reports compute mode and transfer/cache/matvec counters. Prefill avoids
+vocabulary projection until its final token; a cancellation predicate is
+checked between blocks, and non-streaming request drops signal the blocking
+task. Per-token progress is logged without prompt content.
+
+Native dispatch is tested locally on GGML's CPU backend for all 15 supported
+storage types and a deterministic nonzero four-block decoder over three token
+positions. Primitive tests allow `1e-5 + 1e-3 * sum(abs(weight * input))`;
+the compact decoder allows `2e-4 + 0.02 * abs(reference_logit)`. These are
+scoped synthetic smoke tolerances, not original-checkpoint full-model acceptance.
+An exact Q8 activation test initially differed by 0.0061% because GGML also
+quantizes its activation input; its bound is now 1e-4 relative. Warm-cache
+uploads/counters and memory limits remain exact assertions. The packaged
+`agentix-qwen-cuda-check` runs corresponding device checks without building on
+the target. CUDA execution, full-model parity and performance still require
+the deployment host; local CUDA compilation does not establish them.
 
 The native dependency is independently sourced from the crates.io
 `llama-cpp-sys-2` package and its bundled upstream llama.cpp/ggml tree; it is not

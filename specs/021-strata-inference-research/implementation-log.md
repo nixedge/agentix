@@ -1,5 +1,53 @@
 # Implementation progress
 
+## 2026-10-20 — hybrid CUDA matrix execution
+
+- The deployed gateway returned healthy/model-list responses, but a four-token
+  `Reply with OK.` request timed out after 180 seconds without a response.
+  A repeat started at 15:48:27 UTC and was cancelled at the user's request.
+  The supplied worker log reports `cuda_output_device=None`, confirming the
+  previous CPU default. No new inference request was sent after cancellation.
+- Added checked optional native projection dispatch to the pure row contract.
+  All block projections, selected expert groups and output matrices now share
+  one native backend and bounded original-encoding LRU through the GGUF store.
+  Device buffers survive token and request boundaries; uploads use 16 MiB
+  staging chunks, actual aligned weight allocations are capped, and eviction
+  occurs after synchronous compute completion. Decoder startup also measures
+  each required matrix (one representative per expert stack), rejecting a
+  cache that cannot hold an individual matrix before readiness. Dense F32/F16/BF16 and all 12
+  supported quantized types are covered, including the candidate's Q2_0.
+- CUDA-built workers now default to hybrid CUDA matrix compute, device 0 and
+  a 16 GiB weight budget plus a required 2 GiB device reserve. Startup executes
+  dense/quantized probes before binding the socket. CPU mode is explicit;
+  missing devices, budget failures and native errors do not silently fall back.
+  The output-only worker setting is rejected with migration guidance.
+- Added compute/cache/transfer counters, typed NixOS options and per-token
+  progress logs. Intermediate prompt tokens no longer compute unused vocabulary
+  logits. Blocking generation checks disconnect cancellation between blocks;
+  a regression aborts the owning request future and confirms slot release.
+- Native CPU-backend tests compare all 15 storage types with row references,
+  run a deterministic nonzero four-block decoder over multiple positions,
+  compare prefill and warm request state, and assert reuse/eviction bounds.
+  A Q8 exact-equality assertion initially failed (`127.99219` vs `128.0`);
+  GGML's activation quantization was confirmed in pinned source, and the test
+  now uses a 1e-4 relative bound. The nonzero decoder allows `2e-4 + 2%` per
+  logit for its synthetic fixture, not for production-model acceptance.
+- CUDA all-target compilation exposed a stale pre-existing test initializer
+  missing `row_cache`; it now explicitly disables that cache. A test-only
+  unnecessary clone was also corrected after strict Clippy reported it.
+- Passed focused `qwen-check`, workspace formatting, strict workspace Clippy,
+  workspace tests, and CUDA sys/worker all-target Clippy. Nix builds passed for
+  `.#agentix-qwen`, `.#agentix-qwen-worker` and `.#agentix-qwen-cuda-check`.
+  NixOS evaluation confirms CUDA compute, device `0`, cache `17179869184`.
+- The worker package now includes the CUDA parity test executable; the new
+  `agentix-qwen-cuda-check` package wraps it with the NVIDIA driver library path.
+  It checks an analytical F32 matvec, all 15 matrix storage types and nonzero
+  stateful decoder/prefill parity without a model download or on-host compilation.
+  This environment still has no NVIDIA device/driver, so device execution,
+  real-model output, memory/performance acceptance and full-model independent
+  parity remain required on the target. The standalone CUDA sys derivation's
+  driver-dependent sandbox test phase was not changed or claimed fixed.
+
 ## 2026-10-20 — uncommitted batch review
 
 - Reviewed the gateway connection-driver ownership fix and its self-contained

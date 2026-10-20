@@ -102,6 +102,46 @@ fn row_backed_linear_matches_materialized_projection() -> Result<()> {
 }
 
 #[test]
+fn native_projection_dispatch_validates_outputs_bias_and_errors() -> Result<()> {
+    struct NativeRows(Result<Option<Vec<f32>>>);
+    impl agentix_qwen::reference::LinearWeightRows for NativeRows {
+        fn output_features(&self) -> u64 {
+            2
+        }
+        fn input_features(&self) -> usize {
+            2
+        }
+        fn read_weight_row(&mut self, _: u64, _: &mut [f32]) -> Result<()> {
+            panic!("native dispatch must not fall back to row reads");
+        }
+        fn project(&mut self, _: &[f32]) -> Result<Option<Vec<f32>>> {
+            std::mem::replace(&mut self.0, Err(Error::Invalid("called twice")))
+        }
+    }
+    let mut rows = NativeRows(Ok(Some(vec![2.0, 3.0])));
+    assert_eq!(
+        linear_from_rows(&[1.0, 2.0], &mut rows, Some(&[0.5, -0.5]))?,
+        [2.5, 2.5]
+    );
+    for values in [vec![1.0], vec![1.0, f32::NAN], vec![f32::INFINITY, 0.0]] {
+        assert!(linear_from_rows(&[1.0, 2.0], &mut NativeRows(Ok(Some(values))), None).is_err());
+    }
+    assert!(linear_from_rows(
+        &[1.0, 2.0],
+        &mut NativeRows(Err(Error::Capacity("device"))),
+        None
+    )
+    .is_err());
+    assert!(linear_from_rows(
+        &[1.0, f32::NAN],
+        &mut NativeRows(Ok(Some(vec![0.0; 2]))),
+        None
+    )
+    .is_err());
+    Ok(())
+}
+
+#[test]
 fn row_backed_swiglu_expert_matches_materialized_equations() -> Result<()> {
     let input = [0.5, -1.0];
     let gate_weight = [0.5, -1.0, 1.5, 0.25];

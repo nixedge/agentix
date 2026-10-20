@@ -5,6 +5,9 @@
 
 #![forbid(unsafe_op_in_unsafe_fn)]
 
+mod compute;
+pub use compute::{ComputeStats, CUDA_RESERVE_BYTES};
+
 #[cfg(feature = "cuda")]
 mod cuda;
 
@@ -54,6 +57,15 @@ enum RowQuantization {
 }
 
 impl RowQuantization {
+    fn ggml_type(self) -> ffi::ggml_type {
+        match self {
+            Self::Q4_0 => ffi::GGML_TYPE_Q4_0,
+            Self::Iq4Nl => ffi::GGML_TYPE_IQ4_NL,
+            Self::Q8_0 => ffi::GGML_TYPE_Q8_0,
+            Self::Native(kind) => kind as ffi::ggml_type,
+        }
+    }
+
     fn block_geometry(self) -> Result<(usize, usize), Error> {
         let (block_values, block_bytes) = match self {
             Self::Q4_0 | Self::Iq4Nl => (Q4_0_BLOCK_VALUES, Q4_0_BLOCK_BYTES),
@@ -1131,9 +1143,20 @@ pub struct GgufMatrixRows {
     first_row: u64,
     output_features: u64,
     input_features: usize,
+    compute: Option<Arc<Mutex<compute::NativeCompute>>>,
 }
 
 impl GgufMatrixRows {
+    fn validate_compute_capacity(self) -> Result<Self, Error> {
+        if let Some(compute) = &self.compute {
+            compute
+                .lock()
+                .map_err(|_| Error::Invalid("native compute lock poisoned"))?
+                .validate_matrix(&self)?;
+        }
+        Ok(self)
+    }
+
     pub fn output_features(&self) -> u64 {
         self.output_features
     }
@@ -1261,6 +1284,7 @@ pub struct QwenGgufTensorStore {
     locations: HashMap<String, (usize, usize)>,
     expert_cache: Arc<Mutex<DecodedRowCache>>,
     ple_cache: Arc<Mutex<DecodedRowCache>>,
+    compute: Option<Arc<Mutex<compute::NativeCompute>>>,
 }
 
 impl QwenGgufTensorStore {
@@ -1371,11 +1395,38 @@ impl QwenGgufTensorStore {
                 expert_cache_capacity_bytes,
             ))),
             ple_cache: Arc::new(Mutex::new(DecodedRowCache::new(ple_cache_capacity_bytes))),
+            compute: None,
         })
     }
 
     pub fn tensor_index(&self) -> &QwenTensorIndex {
         &self.index
+    }
+
+    /// Configure before opening decoders; every matrix view shares one backend
+    /// and bounded encoded-weight cache, including lazily opened expert groups.
+    #[cfg(feature = "cuda")]
+    pub fn enable_cuda(&mut self, device: usize, cache_bytes: usize) -> Result<(), Error> {
+        if self.compute.is_some() {
+            return Err(Error::Invalid("native compute is already configured"));
+        }
+        self.compute = Some(Arc::new(Mutex::new(compute::NativeCompute::cuda(
+            device,
+            cache_bytes,
+        )?)));
+        Ok(())
+    }
+
+    pub fn compute_stats(&self) -> Result<Option<ComputeStats>, Error> {
+        self.compute
+            .as_ref()
+            .map(|compute| {
+                compute
+                    .try_lock()
+                    .map(|compute| compute.stats())
+                    .map_err(|_| Error::Invalid("native compute lock poisoned"))
+            })
+            .transpose()
     }
 
     pub fn expert_row_cache_stats(&self) -> Result<DecodedRowCacheStats, Error> {
@@ -1444,13 +1495,15 @@ impl QwenGgufTensorStore {
                 "Qwen GGUF tensor is not a rank-one or rank-two matrix",
             ));
         }
-        Ok(GgufMatrixRows {
+        GgufMatrixRows {
             rows: self.open_rows(tensor_name)?,
+            compute: self.compute.clone(),
             first_row: 0,
             output_features: tensor.extents[1],
             input_features: usize::try_from(tensor.extents[0])
                 .map_err(|_| Error::Invalid("Qwen GGUF row width exceeds usize"))?,
-        })
+        }
+        .validate_compute_capacity()
     }
 
     /// Opens one expert matrix from a rank-three `[in, out, experts]` tensor.
@@ -1479,18 +1532,20 @@ impl QwenGgufTensorStore {
             .ok_or(Error::Invalid("Qwen GGUF expert row offset overflow"))?;
         let shard = &self.shards[shard_index];
         let tensor = &shard.info.tensors[tensor_index];
-        Ok(GgufMatrixRows {
+        GgufMatrixRows {
             rows: GgufRows::open_with_file_and_cache(
                 Arc::clone(&shard.file),
                 &shard.info,
                 tensor,
                 Some(Arc::clone(&self.expert_cache)),
             )?,
+            compute: self.compute.clone(),
             first_row,
             output_features: rows_per_group,
             input_features: usize::try_from(tensor.extents[0])
                 .map_err(|_| Error::Invalid("Qwen GGUF row width exceeds usize"))?,
-        })
+        }
+        .validate_compute_capacity()
     }
 }
 
@@ -2196,6 +2251,13 @@ impl<'a> MoeGgufLayer<'a> {
         {
             return Err(Error::Invalid("Qwen MoE expert stack geometry mismatch"));
         }
+        if store.compute.is_some() {
+            // Every group in a stack has the same encoded geometry. Check one
+            // view before readiness without uploading or opening all experts.
+            for name in [&gate_name, &up_name, &down_name] {
+                store.open_group_matrix_rows(name, 0)?;
+            }
+        }
         Ok(Self {
             store,
             block,
@@ -2283,6 +2345,7 @@ pub struct QwenGgufDecoder<'a> {
     cuda_output_device: Option<usize>,
     position: usize,
     poisoned: bool,
+    cancellation: Option<Box<dyn Fn() -> bool + Send + Sync>>,
 }
 
 pub struct QwenGgufDecoderOutput {
@@ -2382,6 +2445,7 @@ impl<'a> QwenGgufDecoder<'a> {
             cuda_output_device: None,
             position: 0,
             poisoned: false,
+            cancellation: None,
         })
     }
 
@@ -2405,6 +2469,19 @@ impl<'a> QwenGgufDecoder<'a> {
 
     /// Processes one token and returns logits for the following token.
     pub fn step(&mut self, token_id: u32) -> agentix_qwen::Result<QwenGgufDecoderOutput> {
+        self.process_token(token_id, true)
+    }
+
+    /// Advance all model state without an unused vocabulary projection during prefill.
+    pub fn prefill_token(&mut self, token_id: u32) -> agentix_qwen::Result<()> {
+        self.process_token(token_id, false).map(|_| ())
+    }
+
+    fn process_token(
+        &mut self,
+        token_id: u32,
+        output_logits: bool,
+    ) -> agentix_qwen::Result<QwenGgufDecoderOutput> {
         if self.poisoned {
             return Err(agentix_qwen::Error::Invalid(
                 "Qwen decoder cannot continue after a failed step",
@@ -2418,7 +2495,7 @@ impl<'a> QwenGgufDecoder<'a> {
             ));
         }
         let position = self.position;
-        match self.forward_step(token_id, position) {
+        match self.forward_step(token_id, position, output_logits) {
             Ok(logits) => {
                 self.position =
                     self.position
@@ -2435,6 +2512,10 @@ impl<'a> QwenGgufDecoder<'a> {
         }
     }
 
+    pub fn set_cancellation_check(&mut self, check: impl Fn() -> bool + Send + Sync + 'static) {
+        self.cancellation = Some(Box::new(check));
+    }
+
     /// Runs an already rendered, tokenized, and context-admitted prompt with
     /// deterministic greedy sampling. The decoder must be fresh for this
     /// request. As with common autoregressive workers, the final sampled token
@@ -2444,6 +2525,15 @@ impl<'a> QwenGgufDecoder<'a> {
         &mut self,
         prompt: &agentix_qwen::tokenizer::PreparedPrompt,
         stop_token_ids: &[u32],
+    ) -> agentix_qwen::Result<QwenGgufGenerationOutput> {
+        self.generate_prepared_greedy_with_progress(prompt, stop_token_ids, |_| {})
+    }
+
+    pub fn generate_prepared_greedy_with_progress(
+        &mut self,
+        prompt: &agentix_qwen::tokenizer::PreparedPrompt,
+        stop_token_ids: &[u32],
+        mut progress: impl FnMut(usize),
     ) -> agentix_qwen::Result<QwenGgufGenerationOutput> {
         let admission = prompt.admission;
         let expected_total = admission
@@ -2471,8 +2561,13 @@ impl<'a> QwenGgufDecoder<'a> {
             stop_token_ids,
             |context| {
                 let mut logits = None;
-                for token_id in &context[consumed_tokens..] {
-                    logits = Some(self.step(*token_id)?.logits);
+                for (index, token_id) in context.iter().enumerate().skip(consumed_tokens) {
+                    if index + 1 == context.len() {
+                        logits = Some(self.step(*token_id)?.logits);
+                    } else {
+                        self.prefill_token(*token_id)?;
+                    }
+                    progress(self.position);
                 }
                 consumed_tokens = context.len();
                 let logits = logits.ok_or(agentix_qwen::Error::Invalid(
@@ -2493,7 +2588,15 @@ impl<'a> QwenGgufDecoder<'a> {
         })
     }
 
-    fn forward_step(&mut self, token_id: u32, position: usize) -> agentix_qwen::Result<Vec<f32>> {
+    fn forward_step(
+        &mut self,
+        token_id: u32,
+        position: usize,
+        output_logits: bool,
+    ) -> agentix_qwen::Result<Vec<f32>> {
+        if self.cancellation.as_ref().is_some_and(|check| check()) {
+            return Err(agentix_qwen::Error::Invalid("Qwen generation cancelled"));
+        }
         let embedding = self
             .token_embeddings
             .read_row(u64::from(token_id))
@@ -2511,6 +2614,9 @@ impl<'a> QwenGgufDecoder<'a> {
             hidden.extend_from_slice(&embedding);
         }
         for (block_index, block) in self.blocks.iter_mut().enumerate() {
+            if self.cancellation.as_ref().is_some_and(|check| check()) {
+                return Err(agentix_qwen::Error::Invalid("Qwen generation cancelled"));
+            }
             if self.ple_block == Some(block_index) {
                 let ple = self
                     .ple
@@ -2558,6 +2664,9 @@ impl<'a> QwenGgufDecoder<'a> {
                 ));
             }
         }
+        if !output_logits {
+            return Ok(Vec::new());
+        }
         let final_hidden = self.final_mixer.mix(&hidden)?.mixed_input;
         #[cfg(feature = "cuda")]
         let logits = if let Some(device_index) = self.cuda_output_device {
@@ -2594,6 +2703,19 @@ impl<'a> QwenGgufDecoder<'a> {
 }
 
 impl agentix_qwen::reference::LinearWeightRows for GgufMatrixRows {
+    fn project(&mut self, input: &[f32]) -> agentix_qwen::Result<Option<Vec<f32>>> {
+        let Some(compute) = &self.compute else {
+            return Ok(None);
+        };
+        let mut compute = compute
+            .lock()
+            .map_err(|_| agentix_qwen::Error::Invalid("native compute lock poisoned"))?;
+        compute
+            .project(self, input)
+            .map(Some)
+            .map_err(|error| agentix_qwen::Error::Io(std::io::Error::other(error.to_string())))
+    }
+
     fn output_features(&self) -> u64 {
         self.output_features
     }
@@ -3855,6 +3977,14 @@ mod tests {
         file: &TempFile,
         config: &agentix_qwen::config::QwenTextConfig,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        write_compact_decoder_shard_with_values(file, config, false)
+    }
+
+    fn write_compact_decoder_shard_with_values(
+        file: &TempFile,
+        config: &agentix_qwen::config::QwenTextConfig,
+        nonzero: bool,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let geometries = agentix_qwen::schema::qwen4exp_tensor_geometries(config)?;
         let architecture_key = CString::new("general.architecture")?;
         let architecture_value = CString::new("qwen4exp")?;
@@ -3944,6 +4074,31 @@ mod tests {
                 ffi::ggml_set_name(tensor.as_ptr(), name.as_ptr());
                 ffi::gguf_add_tensor(gguf_context.as_ptr(), tensor.as_ptr());
                 ffi::gguf_set_tensor_data(gguf_context.as_ptr(), name.as_ptr(), payload);
+            }
+            if nonzero {
+                if quantized {
+                    // SAFETY: the exact GGML payload byte count was checked above.
+                    let bytes = unsafe {
+                        std::slice::from_raw_parts_mut(payload.cast::<u8>(), payload_bytes)
+                    };
+                    for (index, block) in bytes.chunks_exact_mut(Q4_0_BLOCK_BYTES).enumerate() {
+                        block[..2].copy_from_slice(&0x1400_u16.to_le_bytes());
+                        block[2..].fill(0x91_u8.wrapping_add((index % 31) as u8));
+                    }
+                } else {
+                    // SAFETY: dense fixture tensors are F32 with exactly element_count entries.
+                    let values = unsafe {
+                        std::slice::from_raw_parts_mut(payload.cast::<f32>(), element_count)
+                    };
+                    let salt = geometry.name.bytes().map(usize::from).sum::<usize>();
+                    for (index, value) in values.iter_mut().enumerate() {
+                        *value = if geometry.name.contains("norm") {
+                            1.0
+                        } else {
+                            (((index * 17 + salt) % 23) as f32 - 11.0) * 0.002
+                        };
+                    }
+                }
             }
         }
         // SAFETY: GGUF context and output path are valid and uniquely owned here.
@@ -4058,6 +4213,94 @@ mod tests {
         );
         assert_eq!(output.prompt_logits, uncached_output.prompt_logits);
         Ok(())
+    }
+
+    fn compare_native_decoder(
+        config: &agentix_qwen::config::QwenTextConfig,
+        paths: &[PathBuf],
+        native: compute::NativeCompute,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut native_store = QwenGgufTensorStore::open(paths, config)?;
+        native_store.compute = Some(Arc::new(Mutex::new(native)));
+        let reference_store = QwenGgufTensorStore::open(paths, config)?;
+        let mut accelerated = QwenGgufDecoder::open(&native_store, config)?;
+        let mut reference = QwenGgufDecoder::open(&reference_store, config)?;
+        for token in [1, 2, 3] {
+            let actual = accelerated.step(token)?.logits;
+            let expected = reference.step(token)?.logits;
+            assert!(expected.iter().any(|value| value.abs() > 1.0e-6));
+            for (actual, expected) in actual.iter().zip(&expected) {
+                assert!(
+                    (actual - expected).abs() <= 2.0e-4 + expected.abs() * 0.02,
+                    "native={actual} reference={expected}"
+                );
+            }
+        }
+        let before = native_store
+            .compute_stats()?
+            .ok_or("missing native stats")?;
+        assert!(before.matvecs > 100);
+        assert!(before.hits > 0);
+        assert!(before.retained_bytes <= before.capacity_bytes);
+        drop(accelerated);
+        let mut fresh = QwenGgufDecoder::open(&native_store, config)?;
+        fresh.prefill_token(1)?;
+        fresh.prefill_token(2)?;
+        let expected = QwenGgufDecoder::open(&reference_store, config)?
+            .step(1)?
+            .logits;
+        assert!(expected.iter().any(|value| value.abs() > 1.0e-6));
+        let mut reference = QwenGgufDecoder::open(&reference_store, config)?;
+        reference.step(1)?;
+        reference.step(2)?;
+        let expected = reference.step(3)?.logits;
+        let actual = fresh.step(3)?.logits;
+        for (actual, expected) in actual.iter().zip(&expected) {
+            assert!((actual - expected).abs() <= 2.0e-4 + expected.abs() * 0.02);
+        }
+        let after = native_store
+            .compute_stats()?
+            .ok_or("missing native stats")?;
+        assert_eq!(
+            before.weight_upload_bytes, after.weight_upload_bytes,
+            "warm decoders reuse device weights"
+        );
+        assert!(after.hits > before.hits);
+        // Cancellation aborts before another block and poisons request state.
+        fresh.set_cancellation_check(|| true);
+        let completed = fresh.position();
+        assert!(fresh.step(4).is_err());
+        assert!(fresh.is_poisoned());
+        assert_eq!(fresh.position(), completed);
+        Ok(())
+    }
+
+    #[test]
+    fn native_matrix_dispatch_preserves_nonzero_stateful_decoder_and_prefill(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let file = TempFile::new();
+        let config = compact_decoder_config()?;
+        write_compact_decoder_shard_with_values(&file, &config, true)?;
+        compare_native_decoder(
+            &config,
+            std::slice::from_ref(&file.0),
+            compute::NativeCompute::cpu(64 * 1024 * 1024)?,
+        )
+    }
+
+    #[cfg(feature = "cuda")]
+    #[test]
+    #[ignore = "requires a CUDA runtime and GPU; execute on the deployment host"]
+    fn cuda_matrix_dispatch_preserves_nonzero_stateful_decoder_and_prefill(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let file = TempFile::new();
+        let config = compact_decoder_config()?;
+        write_compact_decoder_shard_with_values(&file, &config, true)?;
+        compare_native_decoder(
+            &config,
+            std::slice::from_ref(&file.0),
+            compute::NativeCompute::cuda(0, 64 * 1024 * 1024)?,
+        )
     }
 
     fn write_test_f32_vector(
@@ -4586,6 +4829,7 @@ mod tests {
         )?);
         let mut group = GgufMatrixRows {
             rows,
+            compute: None,
             first_row: 2,
             output_features: 2,
             input_features: 32,
@@ -4599,6 +4843,136 @@ mod tests {
         )
         .is_err());
         Ok(())
+    }
+
+    #[test]
+    fn native_cache_reuses_encoded_experts_and_evicts_within_actual_allocation_bound(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let file = TempFile::new();
+        write_quant_test_tensor(&file, ffi::GGML_TYPE_Q8_0, 256, 4, 3)?;
+        let info = inspect_gguf(&file.0)?;
+        let shared_file = Arc::new(File::open(&file.0)?);
+        let compute = Arc::new(Mutex::new(compute::NativeCompute::cpu(2048)?));
+        let input = vec![0.5; 256];
+        for (group, expected_misses) in [(0, 1), (0, 1), (1, 2), (2, 3), (0, 4)] {
+            let mut matrix = GgufMatrixRows {
+                rows: GgufRows::open_with_file_and_cache(
+                    Arc::clone(&shared_file),
+                    &info,
+                    &info.tensors[0],
+                    None,
+                )?,
+                first_row: group * 4,
+                output_features: 4,
+                input_features: 256,
+                compute: Some(Arc::clone(&compute)),
+            };
+            let result = agentix_qwen::reference::linear_from_rows(&input, &mut matrix, None)?;
+            // GGML quantizes matvec activations; compare within 1e-4 relative
+            // error rather than requiring the scalar F32 dot product's bits.
+            assert!(result.iter().all(|value| (value - 128.0).abs() <= 128.0e-4));
+            let stats = compute.lock().map_err(|_| "compute lock poisoned")?.stats();
+            assert_eq!(stats.misses, expected_misses);
+            assert!(stats.retained_bytes <= 2048);
+            assert!(stats.peak_retained_bytes <= 2048);
+        }
+        let stats = compute.lock().map_err(|_| "compute lock poisoned")?.stats();
+        assert_eq!(stats.matvecs, 5);
+        assert_eq!(stats.hits, 1);
+        assert!(stats.evictions >= 2);
+        assert_eq!(stats.weight_upload_bytes, 4 * 4 * (256 / 32) * 34);
+        let mut too_small = compute::NativeCompute::cpu(1)?;
+        let matrix = GgufMatrixRows {
+            rows: GgufRows::open_from_info(&file.0, &info, &info.tensors[0])?,
+            first_row: 0,
+            output_features: 4,
+            input_features: 256,
+            compute: None,
+        };
+        assert!(too_small.project(&matrix, &input).is_err());
+        assert!(too_small.validate_matrix(&matrix).is_err());
+        assert_eq!(too_small.stats().retained_bytes, 0);
+        assert!(too_small.project(&matrix, &[f32::NAN; 256]).is_err());
+        Ok(())
+    }
+
+    fn compare_native_storage_types(
+        mut compute: compute::NativeCompute,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let kinds = [
+            ffi::GGML_TYPE_Q4_0,
+            ffi::GGML_TYPE_Q8_0,
+            ffi::GGML_TYPE_IQ4_NL,
+            ffi::GGML_TYPE_Q4_K,
+            ffi::GGML_TYPE_Q5_K,
+            ffi::GGML_TYPE_Q6_K,
+            ffi::GGML_TYPE_IQ2_XS,
+            ffi::GGML_TYPE_IQ3_S,
+            ffi::GGML_TYPE_IQ2_S,
+            ffi::GGML_TYPE_IQ3_XXS,
+            ffi::GGML_TYPE_IQ4_XS,
+            ffi::GGML_TYPE_Q2_0,
+        ];
+        for kind in kinds {
+            let file = TempFile::new();
+            write_quant_test_tensor(&file, kind, 256, 2, 2)?;
+            let info = inspect_gguf(&file.0)?;
+            let rows = GgufRows::open_from_info(&file.0, &info, &info.tensors[0])?;
+            let mut matrix = GgufMatrixRows {
+                rows,
+                first_row: 2,
+                output_features: 2,
+                input_features: 256,
+                compute: None,
+            };
+            let input = vec![0.5; 256];
+            let expected = agentix_qwen::reference::linear_from_rows(&input, &mut matrix, None)?;
+            let actual = compute.project(&matrix, &input)?;
+            for row in 0..2 {
+                let l1 = matrix
+                    .read_row(row)?
+                    .iter()
+                    .map(|value| value.abs() * 0.5)
+                    .sum::<f32>();
+                assert!(
+                    (actual[row as usize] - expected[row as usize]).abs() <= 1.0e-5 + l1 * 1.0e-3,
+                    "GGML type {kind}: actual={actual:?} expected={expected:?}"
+                );
+            }
+        }
+        for (kind, raw_value) in [
+            (ffi::GGML_TYPE_F32, 0.25_f32.to_le_bytes().to_vec()),
+            (ffi::GGML_TYPE_F16, 0x3400_u16.to_le_bytes().to_vec()),
+            (ffi::GGML_TYPE_BF16, 0x3e80_u16.to_le_bytes().to_vec()),
+        ] {
+            let file = TempFile::new();
+            write_dense_test_tensor(&file, kind, &raw_value.repeat(256), 256)?;
+            let info = inspect_gguf(&file.0)?;
+            let matrix = GgufMatrixRows {
+                rows: GgufRows::open_from_info(&file.0, &info, &info.tensors[0])?,
+                first_row: 0,
+                output_features: 1,
+                input_features: 256,
+                compute: None,
+            };
+            let actual = compute.project(&matrix, &[0.5; 256])?;
+            assert!((actual[0] - 32.0).abs() <= 1.0e-4);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn native_matrix_storage_types_match_decoded_reference(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        compare_native_storage_types(compute::NativeCompute::cpu(4 * 1024 * 1024)?)
+    }
+
+    #[cfg(feature = "cuda")]
+    #[test]
+    #[ignore = "requires a CUDA runtime and GPU; execute on the deployment host"]
+    fn cuda_matrix_storage_types_match_decoded_reference() -> Result<(), Box<dyn std::error::Error>>
+    {
+        compare_native_storage_types(compute::NativeCompute::cuda(0, 4 * 1024 * 1024)?)
     }
 
     #[test]

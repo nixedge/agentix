@@ -372,6 +372,18 @@
         cargoArtifacts = agentixQwenWorkerDeps;
         cargoExtraArgs = "--package agentix-qwen-worker" + lib.optionalString withCuda " --features cuda";
         autoPatchelfIgnoreMissingDeps = lib.optional withCuda "libcuda.so.1";
+        nativeBuildInputs = commonArgs.nativeBuildInputs ++ [pkgs.jq];
+        # Build a portable target-host parity executable without trying to load
+        # the NVIDIA driver inside the Nix build sandbox.
+        postBuild = lib.optionalString withCuda ''
+          cargo test --offline --release -p agentix-qwen-sys --features cuda --lib --no-run \
+            --message-format=json > qwen-cuda-test-artifacts.json
+        '';
+        postInstall = lib.optionalString withCuda ''
+          qwen_test_binary=$(jq -r 'select(.reason == "compiler-artifact" and .target.name == "agentix_qwen_sys" and .profile.test == true) | .executable // empty' qwen-cuda-test-artifacts.json)
+          test -x "$qwen_test_binary"
+          install -Dm755 "$qwen_test_binary" "$out/bin/agentix-qwen-cuda-check"
+        '';
       });
 
     agentixBenchPkg = craneLib.buildPackage (commonArgs
@@ -645,6 +657,10 @@
       export AGENTIX_QWEN_EXPECTED_SHARD_SHA256="''${AGENTIX_QWEN_EXPECTED_SHARD_SHA256:-4c1eb2ceb4915e1192f4f386021897bde56a97f40a0bb78bb86465e0f7d2aca3:316b46f3a2dbd68c900f43136ab9449f9dcc3725dfd8c794847c204bc161e113}"
       exec ${agentixQwenWorkerPkg}/bin/agentix-qwen-worker "$@"
     '';
+    packages.agentix-qwen-cuda-check = lib.mkIf withCuda (pkgs.writeShellScriptBin "agentix-qwen-cuda-check" ''
+      export LD_LIBRARY_PATH="/run/opengl-driver/lib:${cudaPackages.cuda_cudart}/lib:${cudaPackages.libcublas}/lib:''${LD_LIBRARY_PATH:-}"
+      exec ${agentixQwenWorkerPkg}/bin/agentix-qwen-cuda-check --ignored cuda_ --nocapture --test-threads=1 "$@"
+    '');
 
     packages.agentix-voice = agentixVoicePkg;
 

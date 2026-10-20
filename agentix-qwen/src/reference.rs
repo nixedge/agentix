@@ -1578,6 +1578,12 @@ pub trait LinearWeightRows {
     fn output_features(&self) -> u64;
     fn input_features(&self) -> usize;
     fn read_weight_row(&mut self, row: u64, output: &mut [f32]) -> Result<()>;
+
+    /// An adapter may execute the complete matrix operation on its native backend.
+    /// `None` selects the bounded row reference; errors never trigger fallback.
+    fn project(&mut self, _input: &[f32]) -> Result<Option<Vec<f32>>> {
+        Ok(None)
+    }
 }
 
 /// Applies `[out_features, in_features]` weights without materializing the matrix.
@@ -1599,6 +1605,19 @@ pub fn linear_from_rows<R: LinearWeightRows>(
     finite(input)?;
     if let Some(bias) = bias {
         finite(bias)?;
+    }
+    if let Some(mut output) = weights.project(input)? {
+        if output.len() != output_size {
+            return Err(Error::Invalid("native linear output shape mismatch"));
+        }
+        finite(&output)?;
+        if let Some(bias) = bias {
+            for (value, bias) in output.iter_mut().zip(bias) {
+                *value += bias;
+            }
+        }
+        finite(&output)?;
+        return Ok(output);
     }
     let mut weight_row = Vec::new();
     weight_row

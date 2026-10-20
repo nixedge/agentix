@@ -184,6 +184,24 @@
           description = "Maximum admitted Qwen context, capped by the loaded model configuration.";
         };
 
+        compute = lib.mkOption {
+          type = lib.types.enum ["cuda" "cpu"];
+          default = "cuda";
+          description = "CUDA matrix execution throughout all blocks, or explicit slow CPU reference execution.";
+        };
+
+        cudaDevice = lib.mkOption {
+          type = lib.types.ints.unsigned;
+          default = 0;
+          description = "GGML CUDA device index.";
+        };
+
+        cudaCacheBytes = lib.mkOption {
+          type = lib.types.ints.positive;
+          default = 17179869184;
+          description = "Encoded GPU weight-cache cap (16 GiB by default); startup also requires a 2 GiB device reserve.";
+        };
+
         extraEnv = lib.mkOption {
           type = lib.types.attrsOf lib.types.str;
           default = {};
@@ -360,6 +378,9 @@
             AGENTIX_QWEN_GGUF_SHARDS = lib.concatStringsSep ":" (map (name: "${toString cfg.qwen.modelDir}/${name}") cfg.qwen.shards);
             AGENTIX_QWEN_EXPECTED_SHARD_SHA256 = lib.concatStringsSep ":" cfg.qwen.expectedShardSha256;
             AGENTIX_QWEN_CONTEXT = toString cfg.qwen.context;
+            AGENTIX_QWEN_COMPUTE = cfg.qwen.compute;
+            AGENTIX_QWEN_CUDA_DEVICE = toString cfg.qwen.cudaDevice;
+            AGENTIX_QWEN_CUDA_CACHE_BYTES = toString cfg.qwen.cudaCacheBytes;
           } // cfg.qwen.extraEnv;
 
           serviceConfig = {
