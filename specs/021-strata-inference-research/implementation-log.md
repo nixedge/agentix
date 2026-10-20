@@ -1,5 +1,41 @@
 # Implementation progress
 
+## 2026-10-20 — worker prompt-preparation correction
+
+- A live minimal request to `ai.lan.disasm.us:11434` returned HTTP 400,
+  `Prompt could not be prepared`. Both the pushed worker (`13f2a5c`) and local
+  HEAD hardcoded template effort `none`, while the tokenizer only accepts
+  `low`, `medium`, or `xhigh`. The earlier uncommitted correction affected only
+  the smoke example.
+- Worker prompt preparation now uses `low` internally with thinking disabled.
+  Its regression uses the pinned tokenizer/template and verifies successful
+  preparation, the closed thinking prefix, token accounting and context rejection.
+  The public non-thinking request options remain supported.
+- All 14 worker tests, workspace formatting and tests, strict worker all-target
+  Clippy, `git diff --check`, and the CUDA-enabled
+  `nix build .#agentix-qwen-worker --no-link --print-build-logs` pass. Existing
+  model-dependent ignored tests remain skipped. Live generation after deployment
+  and target-device runtime/performance remain unverified.
+
+## 2026-10-20 — resume reconciliation and focused verification
+
+- Restored the empty working `tasks.md` from HEAD and reconciled it with the
+  retained ten-task Codex benchmark runs and interrupted rendered-chat smoke
+  attempt. Existing manual-review conclusions remain attributed to
+  `benchmarks.md`; target runtime and independent model parity remain open.
+- Removed a duplicated native dependency-boundary paragraph from `quickstart.md`.
+  Preserved the existing source changes and untracked benchmark records.
+- Spec Kit prerequisites and `git diff --check` pass. After Nix prepared the
+  development environment, `nix develop --command qwen-check` passed formatting,
+  all focused Qwen library/sys/worker tests, and strict all-target Clippy.
+  `nix develop --command cargo test -p agentix-daemon --test integration
+  local_chat_streaming_returns_sse_disconnect_cancels_backend` passed its one
+  selected regression test.
+- `/nix` had 616 GiB available at the resume probe, superseding the historical
+  disk-space blocker. No garbage collection was needed. Qwen package rebuilds,
+  the CUDA driver/check-phase issue, and target-host acceptance remain open;
+  this continuation does not establish workspace-wide or GPU acceptance.
+
 ## 2026-10-13 — coding benchmark evaluator
 
 - Added the `agentix-bench` Rust binary and Nix package. It enforces the frozen coding-task fixture SHA256, verifies and resolves the baseline commit, creates one detached disposable worktree per task, sends task text and acceptance commands to a configured engine, runs each pinned acceptance command, and captures engine/acceptance stdout and stderr, elapsed time, final status, and a binary diff. Per-command timeouts kill the spawned process group. Results flag the diff for human review; semantic unrelated-change detection is not automated.

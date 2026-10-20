@@ -1,7 +1,7 @@
 use agentix_api::ChatCompletionRequest;
 use agentix_qwen::{
     config::QwenTextConfig,
-    tokenizer::{GreedyStopReason, PromptRequest, QwenTokenizer},
+    tokenizer::{GreedyStopReason, PreparedPrompt, PromptRequest, QwenTokenizer},
     Error as QwenError,
 };
 use agentix_qwen_sys::{QwenGgufDecoder, QwenGgufTensorStore};
@@ -403,8 +403,6 @@ async fn chat_completions(State(state): State<AppState>, body: Bytes) -> Respons
             }
         }
     }
-    let reasoning_effort = "none";
-
     let messages = request
         .messages
         .iter()
@@ -429,16 +427,13 @@ async fn chat_completions(State(state): State<AppState>, body: Bytes) -> Respons
             );
         }
     };
-    let prepared = match state.tokenizer.prepare_prompt(PromptRequest {
-        messages: &messages,
-        tools: &tools,
-        reasoning_effort,
-        enable_thinking: false,
-        preserve_thinking: false,
-        add_generation_prompt: true,
+    let prepared = match prepare_text_prompt(
+        &state.tokenizer,
+        &messages,
+        &tools,
         max_new_tokens,
-        context_limit: state.context_limit,
-    }) {
+        state.context_limit,
+    ) {
         Ok(prepared) => prepared,
         Err(QwenError::Capacity("context window")) => {
             return api_error(
@@ -600,6 +595,26 @@ async fn chat_completions(State(state): State<AppState>, body: Bytes) -> Respons
 enum ReasoningOptionError {
     Invalid,
     Unsupported,
+}
+
+fn prepare_text_prompt(
+    tokenizer: &QwenTokenizer,
+    messages: &[Value],
+    tools: &[Value],
+    max_new_tokens: usize,
+    context_limit: usize,
+) -> Result<PreparedPrompt, QwenError> {
+    tokenizer.prepare_prompt(PromptRequest {
+        messages,
+        tools,
+        // The pinned template requires a named effort even with thinking disabled.
+        reasoning_effort: "low",
+        enable_thinking: false,
+        preserve_thinking: false,
+        add_generation_prompt: true,
+        max_new_tokens,
+        context_limit,
+    })
 }
 
 fn validate_reasoning_options(
@@ -901,8 +916,8 @@ async fn shutdown_signal() {
 #[cfg(test)]
 mod tests {
     use super::{
-        prepare_socket_path, send_sse, validate_reasoning_options, verify_shard_hashes,
-        ReasoningOptionError,
+        prepare_socket_path, prepare_text_prompt, send_sse, validate_reasoning_options,
+        verify_shard_hashes, ReasoningOptionError,
     };
     use agentix_api::ChatCompletionRequest;
     use serde_json::{json, Value};
@@ -910,6 +925,32 @@ mod tests {
 
     fn temporary_path(suffix: &str) -> std::path::PathBuf {
         std::env::temp_dir().join(format!("agentix-qwen-{suffix}-{}", uuid::Uuid::new_v4()))
+    }
+
+    #[test]
+    fn text_prompt_uses_pinned_template_with_thinking_disabled() -> Result<(), Box<dyn Error>> {
+        let tokenizer = agentix_qwen::tokenizer::QwenTokenizer::from_files(
+            &std::path::PathBuf::from(
+                std::env::var_os("AGENTIX_QWEN_TOKENIZER_PATH")
+                    .ok_or("missing pinned tokenizer fixture")?,
+            ),
+            &std::path::PathBuf::from(
+                std::env::var_os("AGENTIX_QWEN_TEMPLATE_PATH")
+                    .ok_or("missing pinned template fixture")?,
+            ),
+        )?;
+        let messages = [json!({"role": "user", "content": "Reply with OK."})];
+        let prepared = prepare_text_prompt(&tokenizer, &messages, &[], 1, 4096)?;
+        assert!(prepared.rendered.contains("Reply with OK."));
+        assert!(prepared.rendered.ends_with("<think>\n\n</think>\n\n"));
+        assert!(!prepared.token_ids.is_empty());
+        assert_eq!(prepared.admission.prompt_tokens, prepared.token_ids.len());
+        assert_eq!(prepared.admission.requested_output_tokens, 1);
+        assert!(matches!(
+            prepare_text_prompt(&tokenizer, &messages, &[], 1, 1),
+            Err(super::QwenError::Capacity("context window"))
+        ));
+        Ok(())
     }
 
     #[test]

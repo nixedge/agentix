@@ -321,7 +321,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         tokenizer.prepare_prompt(PromptRequest {
             messages: &messages,
             tools: &[],
-            reasoning_effort: "none",
+            reasoning_effort: "low",
             enable_thinking: false,
             preserve_thinking: false,
             add_generation_prompt: true,
