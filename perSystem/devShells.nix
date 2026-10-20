@@ -17,6 +17,12 @@
         --symlink ${pkgs.bash}/bin/bash /bin/sh \
         -- ${toolchain}/bin/cargo "$@"
     '';
+    qwenCheck = pkgs.writeShellScriptBin "qwen-check" ''
+      set -euo pipefail
+      cargo fmt -p agentix-qwen -p agentix-qwen-sys -p agentix-qwen-worker -- --check
+      cargo test -p agentix-qwen -p agentix-qwen-sys -p agentix-qwen-worker
+      cargo clippy -p agentix-qwen -p agentix-qwen-sys -p agentix-qwen-worker --all-targets -- -D warnings
+    '';
     # Pinned GGUF fixture for integration tests (all-MiniLM-L6-v2, embedding-only, ~25 MB).
     # sha256 obtained via: nix store prefetch-file --json '<url>'
     fixture-model = pkgs.fetchurl {
@@ -39,6 +45,7 @@
       packages = with pkgs; [
         # Rust toolchain (stable from fenix)
         toolchain
+        qwenCheck
         pkg-config
         onnxruntime
         openssl
@@ -112,6 +119,9 @@
         echo "  just build                 # Build the Rust binary"
         echo "  just mcp                   # Run the MCP server"
         echo "  nix build .#agentix-mcp-server  # Build with Nix (requires Cargo.lock)"
+        echo ""
+        echo "Qwen development:"
+        echo "  qwen-check                       # Format, test and lint the Qwen crates"
         echo ""
         echo "Quick search (no services needed):"
         echo "  ck search 'query'              # ad-hoc hybrid search"
