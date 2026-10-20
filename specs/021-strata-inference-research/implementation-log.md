@@ -1,5 +1,16 @@
 # Implementation progress
 
+## 2026-10-20 — iviron CUDA device checks passed
+
+- User-provided output reports all three CUDA checks passing on iviron's
+  NVIDIA GeForce RTX 5090 Laptop GPU (compute capability 12.0, 23,983 MiB VRAM,
+  VMM enabled), with 35 tests filtered out and 0.44 seconds suite duration.
+- This verifies analytical F32 matvec, supported storage types and compact
+  nonzero multi-position decoder/prefill parity on that device. The raw supplied
+  transcript and limits are retained in `results/2026-10-20/iviron-cuda-check.md`.
+- The exact tested revision/invocation were not supplied. No real-model output,
+  throughput or RTX 3090 device result is inferred from this synthetic suite.
+
 ## 2026-10-20 — hybrid CUDA matrix execution
 
 - The deployed gateway returned healthy/model-list responses, but a four-token

@@ -1,7 +1,19 @@
 # Target host inventory
 
-**Updated**: 2026-10-13
-**Evidence**: User-provided target hardware identification; the agent-container probe below was read-only but is not the target. No target inspection or benchmarks performed.
+**Updated**: 2026-10-20
+**Evidence**: User-provided original target identification and an additional CUDA test result from iviron. The agent-container probe below is not either deployment host. Production-model benchmarks remain pending.
+
+## Additional CUDA validation host: iviron
+
+The user reports similar hardware with an **NVIDIA GeForce RTX 5090 Laptop
+GPU**, not the original RTX 3090. GGML reports compute capability **12.0**,
+**23,983 MiB** total VRAM and VMM support. All three packaged CUDA checks pass
+in 0.44 seconds; see [the supplied result](results/2026-10-20/iviron-cuda-check.md).
+Exact CPU/RAM, driver, free VRAM and tested revision were not supplied. This is
+synthetic device-parity evidence; original-host and full-model acceptance remain
+separate requirements.
+
+## Original target
 
 | Component | Confirmed specification |
 |---|---|

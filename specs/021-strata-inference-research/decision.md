@@ -1,7 +1,7 @@
 # Decision: independently implement Qwen Flash Next in agentix
 
 **Updated**: 2026-10-20
-**Status**: The stateful decoder and isolated worker now have hybrid CUDA matrix execution throughout every block, including selected experts, with persistent bounded encoded-weight residency. CUDA builds default to that path and require working device/memory admission before readiness. Nonzero native stateful parity passes on GGML's CPU backend; a packaged device check is available. GPU execution, independent full-model parity, remaining optimization stages and target-host acceptance remain pending.
+**Status**: The stateful decoder and isolated worker have hybrid CUDA matrix execution throughout every block, including selected experts, with persistent bounded encoded-weight residency. CUDA builds default to that path and require working device/memory admission before readiness. User-provided iviron results verify all three synthetic CUDA checks on an RTX 5090 Laptop GPU, including storage types and nonzero stateful decoder/prefill parity. Real-model CUDA output/performance, independent full-model parity, RTX 3090 validation and remaining optimization stages are pending.
 
 ## Selected direction
 

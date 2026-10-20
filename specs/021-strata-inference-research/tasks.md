@@ -15,6 +15,14 @@ Paths are relative to this spec directory unless a workspace path is named. Prio
 
 ## Design and benchmark gates
 
+Device evidence, 2026-10-20: the user reports all three packaged CUDA checks
+passing on **iviron**, an RTX 5090 Laptop GPU (capability 12.0, 23,983 MiB VRAM),
+in 0.44 seconds. Storage-type and compact nonzero stateful decoder/prefill parity
+are now exercised on that device. See `results/2026-10-20/iviron-cuda-check.md`.
+T037 is partially satisfied on this additional host; real-model chat, resource
+and performance checks, independent full-model parity and original RTX 3090
+validation remain open. Exact tested revision/invocation were not supplied.
+
 CUDA follow-up, 2026-10-20: the worker now defaults to hybrid CUDA matrix
 execution when built with CUDA. All block/expert/output projections share a
 bounded original-encoding device-weight cache across requests. Small state,
