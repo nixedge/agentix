@@ -1,0 +1,38 @@
+diff --git a/agentix-harness/src/stagnation.rs b/agentix-harness/src/stagnation.rs
+index 4fb1b8f..16d739a 100644
+--- a/agentix-harness/src/stagnation.rs
++++ b/agentix-harness/src/stagnation.rs
+@@ -29,6 +29,9 @@ impl StagnationDetector {
+ 
+     /// Record a new tool result, evicting the oldest if the window is full.
+     pub fn push(&mut self, result: &str) {
++        if self.capacity == 0 {
++            return;
++        }
+         if self.window.len() == self.capacity {
+             self.window.pop_front();
+         }
+@@ -38,7 +41,7 @@ impl StagnationDetector {
+     /// Returns true when the most frequent hash in the window appears
+     /// at least `min_matches` times.
+     pub fn is_stagnant(&self) -> bool {
+-        if self.window.len() < self.min_matches {
++        if self.capacity == 0 || self.window.len() < self.min_matches {
+             return false;
+         }
+         let mut counts: HashMap<u64, usize> = HashMap::new();
+@@ -91,4 +94,14 @@ mod tests {
+         d.push("new");
+         assert!(!d.is_stagnant());
+     }
++
++    #[test]
++    fn zero_capacity_discards_results_and_never_reports_stagnation() {
++        let mut d = StagnationDetector::new(0, 1);
++        for _ in 0..10 {
++            d.push("same");
++            assert!(!d.is_stagnant());
++        }
++        assert!(d.window.is_empty());
++    }
+ }

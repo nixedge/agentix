@@ -1,0 +1,31 @@
+diff --git a/perSystem/devShells.nix b/perSystem/devShells.nix
+index 2582960..b583591 100644
+--- a/perSystem/devShells.nix
++++ b/perSystem/devShells.nix
+@@ -34,9 +34,16 @@
+       url = "https://huggingface.co/Qwen/Qwen3.8-Flash-Next/resolve/de4b8e4d43b917e7706784d8bb445c9af86a3540/chat_template.jinja";
+       hash = "sha256-w8+eNKv0+eNsLXIWWqnBMtPipyW2wlhqqjqK+deoEEE=";
+     };
++    qwenCheck = pkgs.writeShellScriptBin "qwen-check" ''
++      set -euo pipefail
++      cargo fmt --all --check
++      cargo test -p agentix-qwen -p agentix-qwen-sys -p agentix-qwen-worker
++      cargo clippy -p agentix-qwen -p agentix-qwen-sys -p agentix-qwen-worker -- -D warnings
++    '';
+   in {
+     devShells.default = pkgs.mkShell {
+       packages = with pkgs; [
++        qwenCheck
+         # Rust toolchain (stable from fenix)
+         toolchain
+         pkg-config
+@@ -113,6 +120,9 @@
+         echo "  just mcp                   # Run the MCP server"
+         echo "  nix build .#agentix-mcp-server  # Build with Nix (requires Cargo.lock)"
+         echo ""
++        echo "Qwen development:"
++        echo "  qwen-check                       # Format check, Qwen tests, and Clippy"
++        echo ""
+         echo "Quick search (no services needed):"
+         echo "  ck search 'query'              # ad-hoc hybrid search"
+         echo "  ck --serve                     # lightweight MCP server"

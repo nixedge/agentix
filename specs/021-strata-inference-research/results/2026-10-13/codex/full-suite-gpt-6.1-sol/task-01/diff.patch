@@ -1,0 +1,34 @@
+diff --git a/agentix-harness/src/stagnation.rs b/agentix-harness/src/stagnation.rs
+index 4fb1b8f..2f94fca 100644
+--- a/agentix-harness/src/stagnation.rs
++++ b/agentix-harness/src/stagnation.rs
+@@ -29,6 +29,9 @@ impl StagnationDetector {
+ 
+     /// Record a new tool result, evicting the oldest if the window is full.
+     pub fn push(&mut self, result: &str) {
++        if self.capacity == 0 {
++            return;
++        }
+         if self.window.len() == self.capacity {
+             self.window.pop_front();
+         }
+@@ -53,6 +56,19 @@ impl StagnationDetector {
+ mod tests {
+     use super::*;
+ 
++    #[test]
++    fn zero_capacity_keeps_history_empty() {
++        for min_matches in [0, 1, 3] {
++            let mut d = StagnationDetector::new(0, min_matches);
++            assert!(!d.is_stagnant());
++            for _ in 0..10 {
++                d.push("same");
++                assert!(d.window.is_empty());
++                assert!(!d.is_stagnant());
++            }
++        }
++    }
++
+     #[test]
+     fn not_stagnant_below_threshold() {
+         let mut d = StagnationDetector::new(4, 3);

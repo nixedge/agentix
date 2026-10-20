@@ -1,0 +1,35 @@
+Agentic RAG Stack
+
+Services:
+  nix run .#dev              # Start PostgreSQL (ParadeDB) + Ollama
+
+Indexing:
+  just index /path/to/repo   # Index a codebase
+
+Database:
+  psql postgres://127.0.0.1:5432/codebase
+
+MCP server:
+  just build                 # Build the Rust binary
+  just mcp                   # Run the MCP server
+  nix build .#agentix-mcp-server  # Build with Nix (requires Cargo.lock)
+
+Quick search (no services needed):
+  ck search 'query'              # ad-hoc hybrid search
+  ck --serve                     # lightweight MCP server
+  ccusage                        # Claude Code usage stats
+
+running 10 tests
+test context_admission_preserves_requested_output_and_never_truncates ... ok
+test independent_memory_tiers_and_checked_totals ... ok
+test row_bounds_overflow_and_truncation ... ok
+test offset_reads_lru_and_uncached_equivalence ... ok
+test safetensors_bf16_reader_rejects_other_types_and_non_finite_values ... ok
+test safetensors_dense_float_reader_decodes_f32_f16_bf16_in_bounded_rows ... ok
+test safetensors_dense_float_reader_rejects_integer_and_non_finite_rows ... ok
+test safetensors_i64_vector_preserves_large_hash_constants ... ok
+test safetensors_bf16_reader_validates_header_and_reads_only_requested_rows ... ok
+test safetensors_float_vector_reads_f32_f16_bf16_and_rejects_invalid_inputs ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

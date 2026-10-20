@@ -1,0 +1,26 @@
+diff --git a/specs/021-strata-inference-research/quickstart.md b/specs/021-strata-inference-research/quickstart.md
+index c7ba4c2..e969729 100644
+--- a/specs/021-strata-inference-research/quickstart.md
++++ b/specs/021-strata-inference-research/quickstart.md
+@@ -212,12 +212,15 @@ the listed row-backed operator paths; it does not verify each tensor's numeric
+ values or run full-model inference. Synthetic GGUF unit fixtures continue to
+ cover malformed metadata and reader errors.
+ 
+-The pinned tokenizer artifact contains 248,077 token IDs, while the model's
+-input/output embedding vocabulary is padded to 248,320 rows. Use the tokenizer
+-to encode and decode text; use the configured model vocabulary for tensor
+-geometry and logits. Do not treat these counts as interchangeable. The pinned
+-tokenizer test checks both values and exercises special-token IDs near the
+-upper end of the tokenizer vocabulary.
++The pinned text tokenizer has 248,077 addressable IDs (maximum ID 248,076), as
++recorded in the [tokenizer evidence](sources.md). The model's input/output
++embeddings are padded to 248,320 rows, matching `text_config.vocab_size` in the
++[pinned configuration](../../agentix-qwen/tests/fixtures/qwen3_8_flash_next_config.json).
++These sizes must not be used interchangeably: use the tokenizer's addressable
++IDs to encode and decode text, and the configured model vocabulary for tensor
++geometry and logits. The padding rows do not add addressable text tokenizer
++IDs. The pinned tokenizer test checks both values and exercises special-token
++IDs near the upper end of the tokenizer vocabulary.
+ 
+ ### Normal dependency tree audit
+ 

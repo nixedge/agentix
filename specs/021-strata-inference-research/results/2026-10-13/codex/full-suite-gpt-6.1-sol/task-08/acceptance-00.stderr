@@ -1,0 +1,6 @@
+warning: Git tree '/tmp/nix-shell.WhmBQI/agentix-bench-53817-1791934222556258251/task-08' is dirty
+evaluation warning: stdenv.isLinux is deprecated, use stdenv.hostPlatform.isLinux instead
+evaluation warning: stdenv.isDarwin is deprecated, use stdenv.hostPlatform.isDarwin instead
+   Compiling agentix-daemon v0.1.0 (/tmp/nix-shell.WhmBQI/agentix-bench-53817-1791934222556258251/task-08/agentix-daemon)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.82s
+     Running tests/integration.rs (/tmp/agentix-021-bench-target/debug/deps/integration-2e9f03167036bd4e)

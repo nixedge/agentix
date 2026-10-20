@@ -1,0 +1,37 @@
+warning: Git tree '/tmp/nix-shell.WhmBQI/agentix-bench-53817-1791934222556258251/task-02' is dirty
+evaluation warning: stdenv.isLinux is deprecated, use stdenv.hostPlatform.isLinux instead
+evaluation warning: stdenv.isDarwin is deprecated, use stdenv.hostPlatform.isDarwin instead
+warning: kokoro-tts@0.3.3: In file included from /nix/store/m300ngckdmal8wnl3bjbpwca3a5bn74c-glibc-2.42-67-dev/include/bits/libc-header-start.h:33,
+warning: kokoro-tts@0.3.3:                  from /nix/store/m300ngckdmal8wnl3bjbpwca3a5bn74c-glibc-2.42-67-dev/include/stdint.h:26,
+warning: kokoro-tts@0.3.3:                  from /nix/store/7sh9061yj9yl20ndc00rqw4d0bd80m1j-gcc-15.3.0/lib/gcc/x86_64-unknown-linux-gnu/15.3.0/include/stdint.h:11,
+warning: kokoro-tts@0.3.3:                  from src/transcription/en_ipa.c:6:
+warning: kokoro-tts@0.3.3: /nix/store/m300ngckdmal8wnl3bjbpwca3a5bn74c-glibc-2.42-67-dev/include/features.h:435:4: warning: #warning _FORTIFY_SOURCE requires compiling with optimization (-O) [-Wcpp]
+warning: kokoro-tts@0.3.3:   435 | #  warning _FORTIFY_SOURCE requires compiling with optimization (-O)
+warning: kokoro-tts@0.3.3:       |    ^~~~~~~
+    Checking agentix-router v0.1.0 (/tmp/nix-shell.WhmBQI/agentix-bench-53817-1791934222556258251/task-02/agentix-router)
+warning: field `style` is never read
+  --> agentix-indexer/src/ingest/lhs.rs:34:9
+   |
+33 | pub struct ParsedLhs {
+   |            --------- field in this struct
+34 |     pub style: LhsStyle,
+   |         ^^^^^
+   |
+   = note: `ParsedLhs` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: methods `prose_blocks` and `has_code` are never used
+  --> agentix-indexer/src/ingest/lhs.rs:43:12
+   |
+38 | impl ParsedLhs {
+   | -------------- methods in this implementation
+...
+43 |     pub fn prose_blocks(&self) -> impl Iterator<Item = &LhsBlock> {
+   |            ^^^^^^^^^^^^
+...
+47 |     pub fn has_code(&self) -> bool {
+   |            ^^^^^^^^
+
+warning: `agentix-indexer` (bin "ingest") generated 2 warnings
+    Checking agentix-daemon v0.1.0 (/tmp/nix-shell.WhmBQI/agentix-bench-53817-1791934222556258251/task-02/agentix-daemon)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.36s

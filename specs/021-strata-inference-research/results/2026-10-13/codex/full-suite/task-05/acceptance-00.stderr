@@ -1,0 +1,35 @@
+evaluation warning: stdenv.isLinux is deprecated, use stdenv.hostPlatform.isLinux instead
+evaluation warning: stdenv.isDarwin is deprecated, use stdenv.hostPlatform.isDarwin instead
+    Checking smallvec v1.15.2
+    Checking futures-task v0.3.34
+    Checking slab v0.4.12
+    Checking futures-channel v0.3.34
+    Checking tracing-core v0.1.36
+    Checking serde_core v1.0.229
+    Checking bitflags v2.13.1
+    Checking memchr v2.8.3
+    Checking mio v1.2.2
+    Checking getrandom v0.2.17
+    Checking log v0.4.34
+    Checking futures-util v0.3.34
+    Checking icu_normalizer v2.3.0
+    Checking ring v0.17.14
+    Checking tokio v1.53.1
+    Checking tracing v0.1.44
+    Checking idna_adapter v1.2.2
+    Checking idna v1.1.0
+    Checking url v2.5.8
+    Checking rustls-webpki v0.103.15
+    Checking rustls v0.23.43
+    Checking serde v1.0.229
+    Checking serde_json v1.0.151
+    Checking serde_urlencoded v0.7.1
+    Checking hyper v1.11.0
+    Checking tower v0.5.3
+    Checking tower-http v0.6.11
+    Checking hyper-util v0.1.20
+    Checking tokio-rustls v0.26.4
+    Checking hyper-rustls v0.27.9
+    Checking reqwest v0.12.28
+    Checking agentix-harness v0.1.0 (/tmp/nix-shell.zmPdwz/agentix-bench-26812-1791933406284697743/task-05/agentix-harness)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 3.01s

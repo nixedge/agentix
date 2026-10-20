@@ -1,0 +1,537 @@
+Reading prompt from stdin...
+OpenAI Codex v0.162.1
+--------
+workdir: /tmp/nix-shell.zmPdwz/agentix-bench-26812-1791933406284697743/task-06
+model: gpt-6-luna
+provider: openai
+approval: on-request
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: medium
+reasoning summaries: none
+session id: 01a13790-f5da-73e3-9f1b-57b09476052b
+--------
+user
+Task 6 — Nix package/development-shell change
+
+Add a `qwen-check` shell command to the project development shell that runs
+formatting, Qwen crate tests, and Qwen Clippy with warnings denied. Keep the
+existing `nix develop` interface and avoid adding global tools. Document the
+command in the shell's existing help text.
+
+Acceptance commands:
+- `nix develop --command qwen-check`
+
+Work only in this checkout. Do not commit. Make the requested changes and stop.
+warning: Codex could not find bubblewrap on PATH. Install bubblewrap with your OS package manager. See the sandbox prerequisites: https://developers.openai.com/codex/concepts/sandboxing#prerequisites. Codex will use the bundled bubblewrap in the meantime.
+codex
+I’ll inspect the Nix shell definition and its current help text, then add `qwen-check` using the project’s existing Rust tooling and command style. I’ll keep changes limited to this checkout and won’t commit.
+exec
+/run/current-system/sw/bin/bash -lc 'pwd && rg -n "nix develop|help|shellHook|cargo fmt|clippy|qwen" flake.nix *.nix' in /tmp/nix-shell.zmPdwz/agentix-bench-26812-1791933406284697743/task-06
+ exited 1 in 0ms:
+/tmp/nix-shell.zmPdwz/agentix-bench-26812-1791933406284697743/task-06
+
+exec
+/run/current-system/sw/bin/bash -lc "rg --files -g '*.nix' -g 'AGENTS.md' -g 'flake.lock' -g '*.toml' | head -80" in /tmp/nix-shell.zmPdwz/agentix-bench-26812-1791933406284697743/task-06
+ succeeded in 0ms:
+Cargo.toml
+agentix-agent/Cargo.toml
+agentix-agent/dev.toml
+agentix-api/Cargo.toml
+agentix-ax/Cargo.toml
+agentix-daemon/Cargo.toml
+agentix-harness/Cargo.toml
+agentix-indexer/Cargo.toml
+agentix-infer/Cargo.toml
+agentix-jails/Cargo.toml
+agentix-llama/Cargo.toml
+agentix-mcp-server/Cargo.toml
+agentix-qwen-sys/Cargo.toml
+agentix-qwen-worker/Cargo.toml
+agentix-qwen/Cargo.toml
+agentix-router/Cargo.toml
+agentix-search/Cargo.toml
+agentix-tts/Cargo.toml
+agentix-voice/Cargo.toml
+agentix-whisper/Cargo.toml
+flake.lock
+flake.nix
+flake/lib.nix
+flake/nixosModules/agentix.nix
+patches/kokoro-tts/Cargo.toml
+perSystem/devShells.nix
+perSystem/formatter.nix
+perSystem/nixpkgs.nix
+perSystem/packages.nix
+perSystem/processes.nix
+
+exec
+/run/current-system/sw/bin/bash -lc "sed -n '1,240p' perSystem/devShells.nix && sed -n '1,180p' perSystem/packages.nix" in /tmp/nix-shell.zmPdwz/agentix-bench-26812-1791933406284697743/task-06
+ succeeded in 0ms:
+{inputs, ...}: {
+  perSystem = {
+    config,
+    pkgs,
+    inputs',
+    ...
+  }: let
+    toolchain = inputs'.fenix.packages.stable.toolchain;
+    cudaPackages = pkgs.cudaPackages_12;
+    libcublasStatic = pkgs.lib.getOutput "static" cudaPackages.libcublas;
+    # nvcc uses system("/bin/sh -c ...") internally, which fails on NixOS (no /bin/sh).
+    # This wrapper runs cargo inside a bwrap namespace that provides /bin/sh → bash.
+    cargoWrapper = pkgs.writeShellScript "cargo" ''
+      exec ${pkgs.bubblewrap}/bin/bwrap \
+        --dev-bind / / \
+        --tmpfs /bin \
+        --symlink ${pkgs.bash}/bin/bash /bin/sh \
+        -- ${toolchain}/bin/cargo "$@"
+    '';
+    # Pinned GGUF fixture for integration tests (all-MiniLM-L6-v2, embedding-only, ~25 MB).
+    # sha256 obtained via: nix store prefetch-file --json '<url>'
+    fixture-model = pkgs.fetchurl {
+      name = "all-MiniLM-L6-v2-Q8_0.gguf";
+      url = "https://huggingface.co/second-state/All-MiniLM-L6-v2-Embedding-GGUF/resolve/main/all-MiniLM-L6-v2-Q8_0.gguf";
+      sha256 = "sha256-JjIVw8rdbhZ0B0GnYkq0y7bI53doi9UzHs+/VoHC+O0=";
+    };
+    qwenTokenizerFixture = pkgs.fetchurl {
+      name = "qwen-flash-next-tokenizer.json";
+      url = "https://huggingface.co/Qwen/Qwen3.8-Flash-Next/resolve/de4b8e4d43b917e7706784d8bb445c9af86a3540/tokenizer.json";
+      hash = "sha256-CZf0EMV6H05TsJ5L6PShctkO3ZVkNo+whHAwk3IpufM=";
+    };
+    qwenTemplateFixture = pkgs.fetchurl {
+      name = "qwen-flash-next-chat-template.jinja";
+      url = "https://huggingface.co/Qwen/Qwen3.8-Flash-Next/resolve/de4b8e4d43b917e7706784d8bb445c9af86a3540/chat_template.jinja";
+      hash = "sha256-w8+eNKv0+eNsLXIWWqnBMtPipyW2wlhqqjqK+deoEEE=";
+    };
+  in {
+    devShells.default = pkgs.mkShell {
+      packages = with pkgs; [
+        # Rust toolchain (stable from fenix)
+        toolchain
+        pkg-config
+        onnxruntime
+        openssl
+        # C/C++ toolchain required by llama-cpp-sys-2 (cmake build + bindgen)
+        clang
+        cmake
+        ninja
+        libclang.lib
+        # ALSA development libs for cpal (agentix-voice, agentix-whisper)
+        alsa-lib
+        alsa-lib.dev
+        # PostgreSQL client (matches server version)
+        postgresql_17
+        # Ollama
+        ollama
+        # Python + uv for ingest and MCP server scripts
+        uv
+        # Utilities
+        jq
+        just
+        # Formatter
+        config.treefmt.build.wrapper
+        # Lightweight hybrid BM25+semantic search CLI + MCP server (zero-config)
+        inputs'.llm-agents.packages.ck
+        # Claude Code usage analytics
+        inputs'.llm-agents.packages.ccusage
+        config.packages.ax-jail
+        # CUDA toolkit for building agentix-daemon with --features cuda
+        # cuda_cudart: libcudart_static.a is in the default output
+        # libcublas: libcublas_static.a is in a separate 'static' output
+        cudaPackages.cudatoolkit
+        cudaPackages.cuda_cudart
+        cudaPackages.libcublas
+        libcublasStatic
+      ];
+
+      shellHook = ''
+        export ORT_DYLIB_PATH="${pkgs.onnxruntime}/lib/libonnxruntime.so"
+        export LIBCLANG_PATH="${pkgs.libclang.lib}/lib"
+        export CMAKE_GENERATOR="Ninja"
+        export CMAKE_MAKE_PROGRAM="${pkgs.ninja}/bin/ninja"
+        export LD_LIBRARY_PATH="${pkgs.openssl.out}/lib:${pkgs.onnxruntime}/lib:${pkgs.libclang.lib}/lib:${pkgs.stdenv.cc.cc.lib}/lib:${cudaPackages.cuda_cudart}/lib:${cudaPackages.libcublas}/lib:${pkgs.alsa-lib}/lib:$LD_LIBRARY_PATH"
+        export CUDA_HOME="${cudaPackages.cudatoolkit}"
+        export CUDA_PATH="${cudaPackages.cudatoolkit}"
+        export CMAKE_CUDA_COMPILER="${cudaPackages.cudatoolkit}/bin/nvcc"
+        # Static CUDA lib search paths for llama-cpp-sys-2.
+        # cublas/cudart have a separate 'static' output in nixpkgs (not in the default 'lib' output).
+        # lib/stubs contains libcuda.so — the driver API stub needed at link time.
+        export RUSTFLAGS="''${RUSTFLAGS:+$RUSTFLAGS }-L ${cudaPackages.cudatoolkit}/lib -L ${cudaPackages.cudatoolkit}/lib/stubs -L ${cudaPackages.cuda_cudart}/lib -L ${libcublasStatic}/lib"
+        # nvcc uses system("/bin/sh -c ...") internally, but NixOS has no /bin/sh.
+        # Prepend a cargo wrapper that runs the build inside a bwrap namespace with /bin/sh.
+        _CARGO_WRAP_DIR=$(mktemp -d)
+        ln -s ${cargoWrapper} "$_CARGO_WRAP_DIR/cargo"
+        export PATH="$_CARGO_WRAP_DIR:$PATH"
+        # Fixture GGUF for integration tests — pinned FOD derivation, no network needed
+        export AGENTIX_TEST_MODEL_PATH="${fixture-model}"
+        export AGENTIX_QWEN_TOKENIZER_PATH="${qwenTokenizerFixture}"
+        export AGENTIX_QWEN_TEMPLATE_PATH="${qwenTemplateFixture}"
+        echo "Agentic RAG Stack"
+        echo ""
+        echo "Services:"
+        echo "  nix run .#dev              # Start PostgreSQL (ParadeDB) + Ollama"
+        echo ""
+        echo "Indexing:"
+        echo "  just index /path/to/repo   # Index a codebase"
+        echo ""
+        echo "Database:"
+        echo "  psql postgres://127.0.0.1:5432/codebase"
+        echo ""
+        echo "MCP server:"
+        echo "  just build                 # Build the Rust binary"
+        echo "  just mcp                   # Run the MCP server"
+        echo "  nix build .#agentix-mcp-server  # Build with Nix (requires Cargo.lock)"
+        echo ""
+        echo "Quick search (no services needed):"
+        echo "  ck search 'query'              # ad-hoc hybrid search"
+        echo "  ck --serve                     # lightweight MCP server"
+        echo "  ccusage                        # Claude Code usage stats"
+      '';
+    };
+  };
+}
+{inputs, ...}: {
+  perSystem = {
+    inputs',
+    lib,
+    pkgs,
+    ...
+  }: let
+    toolchain = inputs'.fenix.packages.stable.toolchain;
+    craneLib = (inputs.crane.mkLib pkgs).overrideToolchain toolchain;
+
+    # Stub source files used to satisfy cargo's path requirements without
+    # including real source content in derivations that don't need it.
+    stubMain = pkgs.writeText "stub-main.rs" "fn main() {}";
+    stubLib = pkgs.writeText "stub-lib.rs" "";
+
+    # Minimal source for buildDepsOnly: Cargo manifests for all workspace members
+    # plus stubs at every [[bin]]/[lib] entry point so cargo can resolve and
+    # compile all dependencies without touching real source.
+    # This keeps cargoArtifacts stable across source-only changes.
+    # All workspace member Cargo.toml manifests — included in every source tree so
+    # cargo can resolve the full workspace even when building a single package.
+    allManifests = [
+      ../Cargo.toml
+      ../agentix-api/Cargo.toml
+      ../agentix-router/Cargo.toml
+      ../agentix-daemon/Cargo.toml
+      ../agentix-harness/Cargo.toml
+      ../agentix-ax/Cargo.toml
+      ../agentix-infer/Cargo.toml
+      ../agentix-qwen/Cargo.toml
+      ../agentix-qwen-sys/Cargo.toml
+      ../agentix-qwen-worker/Cargo.toml
+      ../agentix-search/Cargo.toml
+      ../agentix-indexer/Cargo.toml
+      ../agentix-llama/Cargo.toml
+      ../agentix-whisper/Cargo.toml
+      ../agentix-mcp-server/Cargo.toml
+      ../agentix-jails/Cargo.toml
+      ../agentix-agent/Cargo.toml
+      ../agentix-tts/Cargo.toml
+      ../agentix-voice/Cargo.toml
+    ];
+
+    depsOnlySrc = let
+      cargoFiles = lib.fileset.toSource {
+        root = ./..;
+        fileset = lib.fileset.unions (
+          allManifests
+          ++ lib.optional (lib.pathExists ../Cargo.lock) ../Cargo.lock
+          ++ lib.optional (lib.pathExists ../patches) ../patches
+        );
+      };
+    in
+      pkgs.runCommand "crane-deps-src" {} ''
+        cp -rT ${cargoFiles} $out
+        chmod -R u+w $out
+        # Workspace member stubs
+        mkdir -p $out/agentix-api/src
+        cp ${stubLib} $out/agentix-api/src/lib.rs
+        mkdir -p $out/agentix-router/src
+        cp ${stubLib} $out/agentix-router/src/lib.rs
+        mkdir -p $out/agentix-daemon/src
+        cp ${stubMain} $out/agentix-daemon/src/main.rs
+        mkdir -p $out/agentix-harness/src
+        cp ${stubLib} $out/agentix-harness/src/lib.rs
+        mkdir -p $out/agentix-ax/src
+        cp ${stubMain} $out/agentix-ax/src/main.rs
+        mkdir -p $out/agentix-infer/src
+        cp ${stubLib} $out/agentix-infer/src/lib.rs
+        mkdir -p $out/agentix-qwen/src
+        cp ${stubLib} $out/agentix-qwen/src/lib.rs
+        mkdir -p $out/agentix-qwen-sys/src
+        cp ${stubLib} $out/agentix-qwen-sys/src/lib.rs
+        mkdir -p $out/agentix-qwen-sys/examples
+        cp ${stubMain} $out/agentix-qwen-sys/examples/compare_cuda_gguf_matvec.rs
+        mkdir -p $out/agentix-qwen-worker/src
+        cp ${stubMain} $out/agentix-qwen-worker/src/main.rs
+        mkdir -p $out/agentix-search/src
+        cp ${stubLib} $out/agentix-search/src/lib.rs
+        mkdir -p $out/agentix-indexer/src
+        cp ${stubLib} $out/agentix-indexer/src/lib.rs
+        cp ${stubMain} $out/agentix-indexer/src/main.rs
+        mkdir -p $out/agentix-llama/src
+        cp ${stubLib} $out/agentix-llama/src/lib.rs
+        cp ${stubMain} $out/agentix-llama/src/main.rs
+        mkdir -p $out/agentix-whisper/src
+        cp ${stubLib} $out/agentix-whisper/src/lib.rs
+        cp ${stubMain} $out/agentix-whisper/src/main.rs
+        mkdir -p $out/agentix-mcp-server/src
+        cp ${stubMain} $out/agentix-mcp-server/src/main.rs
+        mkdir -p $out/agentix-jails/src/jail $out/agentix-jails/src/ax_jail $out/agentix-jails/src/gh_proxy
+        cp ${stubMain} $out/agentix-jails/src/jail/main.rs
+        cp ${stubMain} $out/agentix-jails/src/ax_jail/main.rs
+        cp ${stubMain} $out/agentix-jails/src/gh_proxy/client.rs
+        cp ${stubMain} $out/agentix-jails/src/gh_proxy/server.rs
+        mkdir -p $out/agentix-agent/src
+        cp ${stubMain} $out/agentix-agent/src/main.rs
+        mkdir -p $out/agentix-tts/src
+        cp ${stubLib} $out/agentix-tts/src/lib.rs
+        mkdir -p $out/agentix-voice/src
+        cp ${stubMain} $out/agentix-voice/src/main.rs
+      '';
+
+    # agentix-infer depends on llama-cpp-2 which drives a C++ build via cmake.
+    # All packages share these build tools so that a single cargoArtifacts
+    # covers the full workspace dependency graph.
+    commonArgs = {
+      src = depsOnlySrc;
+      strictDeps = true;
+      nativeBuildInputs = [pkgs.pkg-config pkgs.autoPatchelfHook pkgs.clang pkgs.cmake pkgs.ninja pkgs.alsa-lib.dev];
+      buildInputs = [pkgs.onnxruntime pkgs.openssl pkgs.libclang.lib pkgs.stdenv.cc.cc.lib pkgs.alsa-lib];
+      ORT_DYLIB_PATH = "${pkgs.onnxruntime}/lib/libonnxruntime.so";
+      ORT_LIB_LOCATION = "${pkgs.onnxruntime}/lib";
+      ORT_PREFER_DYNAMIC_LINK = "1";
+      LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
+      CMAKE_GENERATOR = "Ninja";
+      CMAKE_MAKE_PROGRAM = "${pkgs.ninja}/bin/ninja";
+      # ort-sys build scripts (rc.13+) link against libssl dynamically; make it
+      # findable at build-script runtime without patching the intermediate binary.
+      LD_LIBRARY_PATH = "${pkgs.openssl.out}/lib:${pkgs.onnxruntime}/lib:${pkgs.stdenv.cc.cc.lib}/lib";
+      doCheck = false;
+    };
+
+    # Per-package dep artifacts — each only compiles the external crates that
+    # package actually needs, so changes to one package don't invalidate others.
+    agentixDaemonDeps = craneLib.buildDepsOnly (commonArgs
+      // {
+        pname = "agentix-daemon-deps";
+        src = depsOnlySrc;
+        cargoExtraArgs = "--package agentix-daemon";
+      });
+    agentixWhisperDeps = craneLib.buildDepsOnly (commonArgs
+      // {
+        pname = "agentix-whisper-deps";
+        src = depsOnlySrc;
+        cargoExtraArgs = "--package agentix-whisper";
+      });
+    agentixAxDeps = craneLib.buildDepsOnly (commonArgs
+      // {
+        pname = "agentix-ax-deps";
+        src = depsOnlySrc;
+        cargoExtraArgs = "--package agentix-ax";
+      });
+    agentixMcpDeps = craneLib.buildDepsOnly (commonArgs
+      // {
+        pname = "agentix-mcp-deps";
+        src = depsOnlySrc;
+        cargoExtraArgs = "--package agentix-mcp-server";
+      });
+    agentixIndexerDeps = craneLib.buildDepsOnly (commonArgs
+      // {
+        pname = "agentix-indexer-deps";
+        src = depsOnlySrc;
+        cargoExtraArgs = "--package agentix-indexer";
+      });
+    agentixAgentDeps = craneLib.buildDepsOnly (commonArgs
+      // {
+        pname = "agentix-agent-deps";
+        src = depsOnlySrc;
+        cargoExtraArgs = "--package agentix-agent";
+      });
+    agentixVoiceDeps = craneLib.buildDepsOnly (commonArgs
+      // {
+        pname = "agentix-voice-deps";
+        src = depsOnlySrc;
+        cargoExtraArgs = "--package agentix-voice";
+      });
+    agentixJailsDeps = craneLib.buildDepsOnly (commonArgs
+      // {
+        pname = "agentix-jails-deps";
+        src = depsOnlySrc;
+        cargoExtraArgs = "--package agentix-jails";
+      });
+
+    # Pinned whisper.cpp tiny English model (~75 MB) for whisper integration tests.
+    agentixTestWhisperModel = pkgs.fetchurl {
+      url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin";
+      sha256 = "07qbja4m5isssw42prv227gbyrf3nsjms6h8rlyrkpbgd3w4q7lj";
+    };
+
+
+exec
+/run/current-system/sw/bin/bash -lc "rg -n 'cargo (fmt|test|clippy)|writeShellScriptBin|check' perSystem/devShells.nix perSystem/*.nix justfile" in /tmp/nix-shell.zmPdwz/agentix-bench-26812-1791933406284697743/task-06
+ succeeded in 0ms:
+perSystem/packages.nix:462:    axJailSanityCheck = pkgs.writeShellScriptBin "ax-jail-check" ''
+perSystem/packages.nix:469:      check() {
+perSystem/packages.nix:482:      WT=$(git rev-parse --show-toplevel 2>&1) && check "git rev-parse --show-toplevel" "$WT" 1 || check "git rev-parse --show-toplevel" "$WT" 0
+perSystem/packages.nix:483:      STATUS=$(git status 2>&1) && check "git status" "ok" 1 || check "git status" "$STATUS" 0
+perSystem/packages.nix:484:      LOG=$(git log -1 --oneline 2>&1) && check "git log -1" "$LOG" 1 || check "git log -1" "$LOG" 0
+perSystem/packages.nix:488:        check "hooks mask" "cannot determine git-common-dir" 0
+perSystem/packages.nix:492:          check "hooks mask" "empty" 1
+perSystem/packages.nix:494:          check "hooks mask" "NOT empty: $HOOKS_CONTENT" 0
+perSystem/packages.nix:499:        check "config mask" "cannot determine git-common-dir" 0
+perSystem/packages.nix:503:          check "config mask" "write correctly denied" 1
+perSystem/packages.nix:505:          check "config mask" "write was NOT denied (config not masked!)" 0
+perSystem/packages.nix:511:        check "no API keys in environment" "clean" 1
+perSystem/packages.nix:513:        check "no API keys in environment" "FOUND: $KEYS" 0
+perSystem/packages.nix:518:        echo "All $PASS check(s) passed."
+perSystem/packages.nix:521:        echo "$FAIL check(s) FAILED."
+perSystem/packages.nix:621:    packages.agentix-qwen-worker = pkgs.writeShellScriptBin "agentix-qwen-worker" ''
+perSystem/packages.nix:634:    packages.agentix-llama = pkgs.writeShellScriptBin "agentix-llama" ''
+perSystem/packages.nix:647:    packages.agentix-daemon = pkgs.writeShellScriptBin "agentix-daemon" ''
+perSystem/packages.nix:656:    packages.claude-jail = pkgs.writeShellScriptBin "claude-jail" ''
+perSystem/packages.nix:670:    packages.ax-jail = pkgs.writeShellScriptBin "ax-jail" ''
+perSystem/packages.nix:678:    packages.codex-jail = pkgs.writeShellScriptBin "codex-jail" ''
+
+apply patch
+patch: completed
+/tmp/nix-shell.zmPdwz/agentix-bench-26812-1791933406284697743/task-06/perSystem/devShells.nix
+diff --git a/perSystem/devShells.nix b/perSystem/devShells.nix
+index 25829607b9a71dd9df328b6aa8d466e36d67d387..b583591c8c9e6ca14860be7fbbe77c7f205ad224
+--- a/perSystem/devShells.nix
++++ b/perSystem/devShells.nix
+@@ -34,9 +34,16 @@
+       url = "https://huggingface.co/Qwen/Qwen3.8-Flash-Next/resolve/de4b8e4d43b917e7706784d8bb445c9af86a3540/chat_template.jinja";
+       hash = "sha256-w8+eNKv0+eNsLXIWWqnBMtPipyW2wlhqqjqK+deoEEE=";
+     };
++    qwenCheck = pkgs.writeShellScriptBin "qwen-check" ''
++      set -euo pipefail
++      cargo fmt --all --check
++      cargo test -p agentix-qwen -p agentix-qwen-sys -p agentix-qwen-worker
++      cargo clippy -p agentix-qwen -p agentix-qwen-sys -p agentix-qwen-worker -- -D warnings
++    '';
+   in {
+     devShells.default = pkgs.mkShell {
+       packages = with pkgs; [
++        qwenCheck
+         # Rust toolchain (stable from fenix)
+         toolchain
+         pkg-config
+@@ -113,6 +120,9 @@
+         echo "  just mcp                   # Run the MCP server"
+         echo "  nix build .#agentix-mcp-server  # Build with Nix (requires Cargo.lock)"
+         echo ""
++        echo "Qwen development:"
++        echo "  qwen-check                       # Format check, Qwen tests, and Clippy"
++        echo ""
+         echo "Quick search (no services needed):"
+         echo "  ck search 'query'              # ad-hoc hybrid search"
+         echo "  ck --serve                     # lightweight MCP server"
+
+diff --git a/perSystem/devShells.nix b/perSystem/devShells.nix
+index 25829607b9a71dd9df328b6aa8d466e36d67d387..b583591c8c9e6ca14860be7fbbe77c7f205ad224
+--- a/perSystem/devShells.nix
++++ b/perSystem/devShells.nix
+@@ -34,9 +34,16 @@
+       url = "https://huggingface.co/Qwen/Qwen3.8-Flash-Next/resolve/de4b8e4d43b917e7706784d8bb445c9af86a3540/chat_template.jinja";
+       hash = "sha256-w8+eNKv0+eNsLXIWWqnBMtPipyW2wlhqqjqK+deoEEE=";
+     };
++    qwenCheck = pkgs.writeShellScriptBin "qwen-check" ''
++      set -euo pipefail
++      cargo fmt --all --check
++      cargo test -p agentix-qwen -p agentix-qwen-sys -p agentix-qwen-worker
++      cargo clippy -p agentix-qwen -p agentix-qwen-sys -p agentix-qwen-worker -- -D warnings
++    '';
+   in {
+     devShells.default = pkgs.mkShell {
+       packages = with pkgs; [
++        qwenCheck
+         # Rust toolchain (stable from fenix)
+         toolchain
+         pkg-config
+@@ -113,6 +120,9 @@
+         echo "  just mcp                   # Run the MCP server"
+         echo "  nix build .#agentix-mcp-server  # Build with Nix (requires Cargo.lock)"
+         echo ""
++        echo "Qwen development:"
++        echo "  qwen-check                       # Format check, Qwen tests, and Clippy"
++        echo ""
+         echo "Quick search (no services needed):"
+         echo "  ck search 'query'              # ad-hoc hybrid search"
+         echo "  ck --serve                     # lightweight MCP server"
+
+codex
+The shell now exposes `qwen-check` and lists it in the startup help. It checks workspace formatting, runs tests for the three Qwen workspace crates, then runs Clippy on those crates with warnings denied. I’m running the requested acceptance command now.
+diff --git a/perSystem/devShells.nix b/perSystem/devShells.nix
+index 25829607b9a71dd9df328b6aa8d466e36d67d387..b583591c8c9e6ca14860be7fbbe77c7f205ad224
+--- a/perSystem/devShells.nix
++++ b/perSystem/devShells.nix
+@@ -34,9 +34,16 @@
+       url = "https://huggingface.co/Qwen/Qwen3.8-Flash-Next/resolve/de4b8e4d43b917e7706784d8bb445c9af86a3540/chat_template.jinja";
+       hash = "sha256-w8+eNKv0+eNsLXIWWqnBMtPipyW2wlhqqjqK+deoEEE=";
+     };
++    qwenCheck = pkgs.writeShellScriptBin "qwen-check" ''
++      set -euo pipefail
++      cargo fmt --all --check
++      cargo test -p agentix-qwen -p agentix-qwen-sys -p agentix-qwen-worker
++      cargo clippy -p agentix-qwen -p agentix-qwen-sys -p agentix-qwen-worker -- -D warnings
++    '';
+   in {
+     devShells.default = pkgs.mkShell {
+       packages = with pkgs; [
++        qwenCheck
+         # Rust toolchain (stable from fenix)
+         toolchain
+         pkg-config
+@@ -113,6 +120,9 @@
+         echo "  just mcp                   # Run the MCP server"
+         echo "  nix build .#agentix-mcp-server  # Build with Nix (requires Cargo.lock)"
+         echo ""
++        echo "Qwen development:"
++        echo "  qwen-check                       # Format check, Qwen tests, and Clippy"
++        echo ""
+         echo "Quick search (no services needed):"
+         echo "  ck search 'query'              # ad-hoc hybrid search"
+         echo "  ck --serve                     # lightweight MCP server"
+
+codex
+Added `qwen-check` to the development shell and documented it in the shell help text. It checks workspace formatting, tests `agentix-qwen`, `agentix-qwen-sys`, and `agentix-qwen-worker`, then runs Clippy on those crates with warnings denied.
+
+The acceptance command could not run: Nix failed to connect to `/run/nix-container-daemon/socket` (`Operation not permitted`). No commit was made.
+diff --git a/perSystem/devShells.nix b/perSystem/devShells.nix
+index 25829607b9a71dd9df328b6aa8d466e36d67d387..b583591c8c9e6ca14860be7fbbe77c7f205ad224
+--- a/perSystem/devShells.nix
++++ b/perSystem/devShells.nix
+@@ -34,9 +34,16 @@
+       url = "https://huggingface.co/Qwen/Qwen3.8-Flash-Next/resolve/de4b8e4d43b917e7706784d8bb445c9af86a3540/chat_template.jinja";
+       hash = "sha256-w8+eNKv0+eNsLXIWWqnBMtPipyW2wlhqqjqK+deoEEE=";
+     };
++    qwenCheck = pkgs.writeShellScriptBin "qwen-check" ''
++      set -euo pipefail
++      cargo fmt --all --check
++      cargo test -p agentix-qwen -p agentix-qwen-sys -p agentix-qwen-worker
++      cargo clippy -p agentix-qwen -p agentix-qwen-sys -p agentix-qwen-worker -- -D warnings
++    '';
+   in {
+     devShells.default = pkgs.mkShell {
+       packages = with pkgs; [
++        qwenCheck
+         # Rust toolchain (stable from fenix)
+         toolchain
+         pkg-config
+@@ -113,6 +120,9 @@
+         echo "  just mcp                   # Run the MCP server"
+         echo "  nix build .#agentix-mcp-server  # Build with Nix (requires Cargo.lock)"
+         echo ""
++        echo "Qwen development:"
++        echo "  qwen-check                       # Format check, Qwen tests, and Clippy"
++        echo ""
+         echo "Quick search (no services needed):"
+         echo "  ck search 'query'              # ad-hoc hybrid search"
+         echo "  ck --serve                     # lightweight MCP server"
+
+tokens used
+15,824

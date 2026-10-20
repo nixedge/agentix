@@ -1,0 +1,291 @@
+{
+  "task_fixture_sha256": "423e6a8de7187fd20fdc4e7e80ce1f17b4997759f57a3a7ad7e187c1e24297c3",
+  "baseline": "13f2a5cb52ebc801eab154b009b0ab01f19e7a6a",
+  "engine": "/home/sam/bin/codex",
+  "engine_label": "codex-cli-0.162.1-gpt-6.1-sol",
+  "engine_arguments": [
+    "exec",
+    "--approve-for-me",
+    "--model",
+    "gpt-6.1-sol"
+  ],
+  "timeout_seconds": 1800,
+  "tasks": [
+    {
+      "task": 1,
+      "title": "Rust bug fix with regression test",
+      "baseline": "13f2a5cb52ebc801eab154b009b0ab01f19e7a6a",
+      "engine_exit_code": 0,
+      "engine_committed": false,
+      "engine_timed_out": false,
+      "engine_elapsed_ms": 57911,
+      "acceptance": [
+        {
+          "command": "nix develop --command cargo test -p agentix-harness",
+          "exit_code": 0,
+          "success": true,
+          "timed_out": false,
+          "elapsed_ms": 4672,
+          "stdout_file": "/home/sam/home/agentix/021-strata-inference-research/specs/021-strata-inference-research/results/2026-10-13/codex/full-suite-gpt-6.1-sol/task-01/acceptance-00.stdout",
+          "stderr_file": "/home/sam/home/agentix/021-strata-inference-research/specs/021-strata-inference-research/results/2026-10-13/codex/full-suite-gpt-6.1-sol/task-01/acceptance-00.stderr"
+        }
+      ],
+      "all_acceptance_passed": true,
+      "worktree_status": " M agentix-harness/src/stagnation.rs\n",
+      "diff_file": "/home/sam/home/agentix/021-strata-inference-research/specs/021-strata-inference-research/results/2026-10-13/codex/full-suite-gpt-6.1-sol/task-01/diff.patch",
+      "diff_review_required": true
+    },
+    {
+      "task": 2,
+      "title": "Rust API addition across library and caller",
+      "baseline": "13f2a5cb52ebc801eab154b009b0ab01f19e7a6a",
+      "engine_exit_code": 0,
+      "engine_committed": false,
+      "engine_timed_out": false,
+      "engine_elapsed_ms": 125642,
+      "acceptance": [
+        {
+          "command": "nix develop --command cargo test -p agentix-router",
+          "exit_code": 0,
+          "success": true,
+          "timed_out": false,
+          "elapsed_ms": 4529,
+          "stdout_file": "/home/sam/home/agentix/021-strata-inference-research/specs/021-strata-inference-research/results/2026-10-13/codex/full-suite-gpt-6.1-sol/task-02/acceptance-00.stdout",
+          "stderr_file": "/home/sam/home/agentix/021-strata-inference-research/specs/021-strata-inference-research/results/2026-10-13/codex/full-suite-gpt-6.1-sol/task-02/acceptance-00.stderr"
+        },
+        {
+          "command": "nix develop --command cargo check --workspace",
+          "exit_code": 0,
+          "success": true,
+          "timed_out": false,
+          "elapsed_ms": 4682,
+          "stdout_file": "/home/sam/home/agentix/021-strata-inference-research/specs/021-strata-inference-research/results/2026-10-13/codex/full-suite-gpt-6.1-sol/task-02/acceptance-01.stdout",
+          "stderr_file": "/home/sam/home/agentix/021-strata-inference-research/specs/021-strata-inference-research/results/2026-10-13/codex/full-suite-gpt-6.1-sol/task-02/acceptance-01.stderr"
+        }
+      ],
+      "all_acceptance_passed": true,
+      "worktree_status": " M agentix-daemon/src/config.rs\n M agentix-daemon/src/gateway/mod.rs\n M agentix-router/src/lib.rs\n M specs/001-agentix-infer/plan.md\n M specs/001-agentix-infer/spec.md\n M specs/001-agentix-infer/tasks.md\n",
+      "diff_file": "/home/sam/home/agentix/021-strata-inference-research/specs/021-strata-inference-research/results/2026-10-13/codex/full-suite-gpt-6.1-sol/task-02/diff.patch",
+      "diff_review_required": true
+    },
+    {
+      "task": 3,
+      "title": "Multi-file refactor preserving behavior",
+      "baseline": "13f2a5cb52ebc801eab154b009b0ab01f19e7a6a",
+      "engine_exit_code": 0,
+      "engine_committed": false,
+      "engine_timed_out": false,
+      "engine_elapsed_ms": 51699,
+      "acceptance": [
+        {
+          "command": "nix develop --command cargo test -p agentix-qwen --test storage",
+          "exit_code": 0,
+          "success": true,
+          "timed_out": false,
+          "elapsed_ms": 4425,
+          "stdout_file": "/home/sam/home/agentix/021-strata-inference-research/specs/021-strata-inference-research/results/2026-10-13/codex/full-suite-gpt-6.1-sol/task-03/acceptance-00.stdout",
+          "stderr_file": "/home/sam/home/agentix/021-strata-inference-research/specs/021-strata-inference-research/results/2026-10-13/codex/full-suite-gpt-6.1-sol/task-03/acceptance-00.stderr"
+        }
+      ],
+      "all_acceptance_passed": true,
+      "worktree_status": " M agentix-qwen/src/budget.rs\n M agentix-qwen/tests/storage.rs\n",
+      "diff_file": "/home/sam/home/agentix/021-strata-inference-research/specs/021-strata-inference-research/results/2026-10-13/codex/full-suite-gpt-6.1-sol/task-03/diff.patch",
+      "diff_review_required": true
+    },
+    {
+      "task": 4,
+      "title": "Failing-test diagnosis",
+      "baseline": "13f2a5cb52ebc801eab154b009b0ab01f19e7a6a",
+      "engine_exit_code": 0,
+      "engine_committed": false,
+      "engine_timed_out": false,
+      "engine_elapsed_ms": 49787,
+      "acceptance": [
+        {
+          "command": "nix develop --command cargo test -p agentix-router",
+          "exit_code": 0,
+          "success": true,
+          "timed_out": false,
+          "elapsed_ms": 4405,
+          "stdout_file": "/home/sam/home/agentix/021-strata-inference-research/specs/021-strata-inference-research/results/2026-10-13/codex/full-suite-gpt-6.1-sol/task-04/acceptance-00.stdout",
+          "stderr_file": "/home/sam/home/agentix/021-strata-inference-research/specs/021-strata-inference-research/results/2026-10-13/codex/full-suite-gpt-6.1-sol/task-04/acceptance-00.stderr"
+        }
+      ],
+      "all_acceptance_passed": true,
+      "worktree_status": " M agentix-router/src/lib.rs\n",
+      "diff_file": "/home/sam/home/agentix/021-strata-inference-research/specs/021-strata-inference-research/results/2026-10-13/codex/full-suite-gpt-6.1-sol/task-04/diff.patch",
+      "diff_review_required": true
+    },
+    {
+      "task": 5,
+      "title": "Clippy repair",
+      "baseline": "13f2a5cb52ebc801eab154b009b0ab01f19e7a6a",
+      "engine_exit_code": 0,
+      "engine_committed": false,
+      "engine_timed_out": false,
+      "engine_elapsed_ms": 23786,
+      "acceptance": [
+        {
+          "command": "nix develop --command cargo clippy -p agentix-harness -- -D warnings",
+          "exit_code": 0,
+          "success": true,
+          "timed_out": false,
+          "elapsed_ms": 804,
+          "stdout_file": "/home/sam/home/agentix/021-strata-inference-research/specs/021-strata-inference-research/results/2026-10-13/codex/full-suite-gpt-6.1-sol/task-05/acceptance-00.stdout",
+          "stderr_file": "/home/sam/home/agentix/021-strata-inference-research/specs/021-strata-inference-research/results/2026-10-13/codex/full-suite-gpt-6.1-sol/task-05/acceptance-00.stderr"
+        }
+      ],
+      "all_acceptance_passed": true,
+      "worktree_status": "",
+      "diff_file": "/home/sam/home/agentix/021-strata-inference-research/specs/021-strata-inference-research/results/2026-10-13/codex/full-suite-gpt-6.1-sol/task-05/diff.patch",
+      "diff_review_required": true
+    },
+    {
+      "task": 6,
+      "title": "Nix package/development-shell change",
+      "baseline": "13f2a5cb52ebc801eab154b009b0ab01f19e7a6a",
+      "engine_exit_code": 0,
+      "engine_committed": false,
+      "engine_timed_out": false,
+      "engine_elapsed_ms": 47317,
+      "acceptance": [
+        {
+          "command": "nix develop --command qwen-check",
+          "exit_code": 1,
+          "success": false,
+          "timed_out": false,
+          "elapsed_ms": 4632,
+          "stdout_file": "/home/sam/home/agentix/021-strata-inference-research/specs/021-strata-inference-research/results/2026-10-13/codex/full-suite-gpt-6.1-sol/task-06/acceptance-00.stdout",
+          "stderr_file": "/home/sam/home/agentix/021-strata-inference-research/specs/021-strata-inference-research/results/2026-10-13/codex/full-suite-gpt-6.1-sol/task-06/acceptance-00.stderr"
+        }
+      ],
+      "all_acceptance_passed": false,
+      "worktree_status": " M perSystem/devShells.nix\n",
+      "diff_file": "/home/sam/home/agentix/021-strata-inference-research/specs/021-strata-inference-research/results/2026-10-13/codex/full-suite-gpt-6.1-sol/task-06/diff.patch",
+      "diff_review_required": true
+    },
+    {
+      "task": 7,
+      "title": "Configuration and documentation update",
+      "baseline": "13f2a5cb52ebc801eab154b009b0ab01f19e7a6a",
+      "engine_exit_code": 0,
+      "engine_committed": false,
+      "engine_timed_out": false,
+      "engine_elapsed_ms": 34420,
+      "acceptance": [
+        {
+          "command": "rg -n '248,077|248,320' specs/021-strata-inference-research/quickstart.md",
+          "exit_code": 0,
+          "success": true,
+          "timed_out": false,
+          "elapsed_ms": 50,
+          "stdout_file": "/home/sam/home/agentix/021-strata-inference-research/specs/021-strata-inference-research/results/2026-10-13/codex/full-suite-gpt-6.1-sol/task-07/acceptance-00.stdout",
+          "stderr_file": "/home/sam/home/agentix/021-strata-inference-research/specs/021-strata-inference-research/results/2026-10-13/codex/full-suite-gpt-6.1-sol/task-07/acceptance-00.stderr"
+        }
+      ],
+      "all_acceptance_passed": true,
+      "worktree_status": " M specs/021-strata-inference-research/quickstart.md\n",
+      "diff_file": "/home/sam/home/agentix/021-strata-inference-research/specs/021-strata-inference-research/results/2026-10-13/codex/full-suite-gpt-6.1-sol/task-07/diff.patch",
+      "diff_review_required": true
+    },
+    {
+      "task": 8,
+      "title": "Streaming/cancellation bug fix",
+      "baseline": "13f2a5cb52ebc801eab154b009b0ab01f19e7a6a",
+      "engine_exit_code": 0,
+      "engine_committed": false,
+      "engine_timed_out": false,
+      "engine_elapsed_ms": 137938,
+      "acceptance": [
+        {
+          "command": "nix develop --command cargo test -p agentix-daemon --test integration local_chat_streaming_returns_sse",
+          "exit_code": 0,
+          "success": true,
+          "timed_out": false,
+          "elapsed_ms": 5307,
+          "stdout_file": "/home/sam/home/agentix/021-strata-inference-research/specs/021-strata-inference-research/results/2026-10-13/codex/full-suite-gpt-6.1-sol/task-08/acceptance-00.stdout",
+          "stderr_file": "/home/sam/home/agentix/021-strata-inference-research/specs/021-strata-inference-research/results/2026-10-13/codex/full-suite-gpt-6.1-sol/task-08/acceptance-00.stderr"
+        },
+        {
+          "command": "nix develop --command cargo clippy -p agentix-daemon -- -D warnings",
+          "exit_code": 0,
+          "success": true,
+          "timed_out": false,
+          "elapsed_ms": 4756,
+          "stdout_file": "/home/sam/home/agentix/021-strata-inference-research/specs/021-strata-inference-research/results/2026-10-13/codex/full-suite-gpt-6.1-sol/task-08/acceptance-01.stdout",
+          "stderr_file": "/home/sam/home/agentix/021-strata-inference-research/specs/021-strata-inference-research/results/2026-10-13/codex/full-suite-gpt-6.1-sol/task-08/acceptance-01.stderr"
+        }
+      ],
+      "all_acceptance_passed": true,
+      "worktree_status": " M agentix-daemon/src/gateway/proxy.rs\n M agentix-daemon/tests/integration.rs\n",
+      "diff_file": "/home/sam/home/agentix/021-strata-inference-research/specs/021-strata-inference-research/results/2026-10-13/codex/full-suite-gpt-6.1-sol/task-08/diff.patch",
+      "diff_review_required": true
+    },
+    {
+      "task": 9,
+      "title": "Dependency boundary investigation with cited source evidence",
+      "baseline": "13f2a5cb52ebc801eab154b009b0ab01f19e7a6a",
+      "engine_exit_code": 0,
+      "engine_committed": false,
+      "engine_timed_out": false,
+      "engine_elapsed_ms": 88093,
+      "acceptance": [
+        {
+          "command": "nix develop --command cargo tree -p agentix-qwen --edges normal",
+          "exit_code": 0,
+          "success": true,
+          "timed_out": false,
+          "elapsed_ms": 4519,
+          "stdout_file": "/home/sam/home/agentix/021-strata-inference-research/specs/021-strata-inference-research/results/2026-10-13/codex/full-suite-gpt-6.1-sol/task-09/acceptance-00.stdout",
+          "stderr_file": "/home/sam/home/agentix/021-strata-inference-research/specs/021-strata-inference-research/results/2026-10-13/codex/full-suite-gpt-6.1-sol/task-09/acceptance-00.stderr"
+        },
+        {
+          "command": "nix develop --command cargo tree -p agentix-qwen-sys --edges normal",
+          "exit_code": 0,
+          "success": true,
+          "timed_out": false,
+          "elapsed_ms": 4473,
+          "stdout_file": "/home/sam/home/agentix/021-strata-inference-research/specs/021-strata-inference-research/results/2026-10-13/codex/full-suite-gpt-6.1-sol/task-09/acceptance-01.stdout",
+          "stderr_file": "/home/sam/home/agentix/021-strata-inference-research/specs/021-strata-inference-research/results/2026-10-13/codex/full-suite-gpt-6.1-sol/task-09/acceptance-01.stderr"
+        }
+      ],
+      "all_acceptance_passed": true,
+      "worktree_status": " M specs/021-strata-inference-research/quickstart.md\n",
+      "diff_file": "/home/sam/home/agentix/021-strata-inference-research/specs/021-strata-inference-research/results/2026-10-13/codex/full-suite-gpt-6.1-sol/task-09/diff.patch",
+      "diff_review_required": true
+    },
+    {
+      "task": 10,
+      "title": "Multi-step shell, test, and Git-diff task",
+      "baseline": "13f2a5cb52ebc801eab154b009b0ab01f19e7a6a",
+      "engine_exit_code": 0,
+      "engine_committed": false,
+      "engine_timed_out": false,
+      "engine_elapsed_ms": 52747,
+      "acceptance": [
+        {
+          "command": "nix develop --command cargo test -p agentix-qwen --test storage",
+          "exit_code": 0,
+          "success": true,
+          "timed_out": false,
+          "elapsed_ms": 4606,
+          "stdout_file": "/home/sam/home/agentix/021-strata-inference-research/specs/021-strata-inference-research/results/2026-10-13/codex/full-suite-gpt-6.1-sol/task-10/acceptance-00.stdout",
+          "stderr_file": "/home/sam/home/agentix/021-strata-inference-research/specs/021-strata-inference-research/results/2026-10-13/codex/full-suite-gpt-6.1-sol/task-10/acceptance-00.stderr"
+        },
+        {
+          "command": "git diff --check",
+          "exit_code": 0,
+          "success": true,
+          "timed_out": false,
+          "elapsed_ms": 50,
+          "stdout_file": "/home/sam/home/agentix/021-strata-inference-research/specs/021-strata-inference-research/results/2026-10-13/codex/full-suite-gpt-6.1-sol/task-10/acceptance-01.stdout",
+          "stderr_file": "/home/sam/home/agentix/021-strata-inference-research/specs/021-strata-inference-research/results/2026-10-13/codex/full-suite-gpt-6.1-sol/task-10/acceptance-01.stderr"
+        }
+      ],
+      "all_acceptance_passed": true,
+      "worktree_status": " M agentix-qwen/tests/storage.rs\n",
+      "diff_file": "/home/sam/home/agentix/021-strata-inference-research/specs/021-strata-inference-research/results/2026-10-13/codex/full-suite-gpt-6.1-sol/task-10/diff.patch",
+      "diff_review_required": true
+    }
+  ]
+}

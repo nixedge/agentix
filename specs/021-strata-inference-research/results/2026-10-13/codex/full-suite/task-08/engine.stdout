@@ -1,0 +1,3 @@
+Updated [proxy.rs](/tmp/nix-shell.zmPdwz/agentix-bench-26812-1791933406284697743/task-08/agentix-daemon/src/gateway/proxy.rs) so dropping a streamed response stops the body forwarder and aborts the backend connection task. Extended the existing streaming integration test to disconnect after receiving a chunk in [integration.rs](/tmp/nix-shell.zmPdwz/agentix-bench-26812-1791933406284697743/task-08/agentix-daemon/tests/integration.rs).
+
+Both acceptance commands were blocked: Nix could not access `/run/nix-container-daemon/socket`. `git diff --check` passed. No commit was made.

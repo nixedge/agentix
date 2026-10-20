@@ -1,0 +1,213 @@
+Agentic RAG Stack
+
+Services:
+  nix run .#dev              # Start PostgreSQL (ParadeDB) + Ollama
+
+Indexing:
+  just index /path/to/repo   # Index a codebase
+
+Qwen checks:
+  qwen-check                 # Check formatting, Qwen tests and Clippy (-D warnings)
+
+Database:
+  psql postgres://127.0.0.1:5432/codebase
+
+MCP server:
+  just build                 # Build the Rust binary
+  just mcp                   # Run the MCP server
+  nix build .#agentix-mcp-server  # Build with Nix (requires Cargo.lock)
+
+Quick search (no services needed):
+  ck search 'query'              # ad-hoc hybrid search
+  ck --serve                     # lightweight MCP server
+  ccusage                        # Claude Code usage stats
+Diff in /tmp/nix-shell.WhmBQI/agentix-bench-53817-1791934222556258251/task-06/agentix-agent/src/voice/synthesize.rs:24:
+             StatusCode::SERVICE_UNAVAILABLE,
+             Json(serde_json::json!({"error": "voice not configured"})),
+         )
+[31m-        .into_response();
+[0m[32m+            .into_response();
+[0m     };
+ 
+     let model = req
+Diff in /tmp/nix-shell.WhmBQI/agentix-bench-53817-1791934222556258251/task-06/agentix-agent/src/voice/synthesize.rs:49:
+                 StatusCode::BAD_GATEWAY,
+                 Json(serde_json::json!({"error": format!("TTS request failed: {e}")})),
+             )
+[31m-            .into_response();
+[0m[32m+                .into_response();
+[0m         }
+     };
+ 
+Diff in /tmp/nix-shell.WhmBQI/agentix-bench-53817-1791934222556258251/task-06/agentix-agent/src/voice/synthesize.rs:56:
+     if !speech_resp.status().is_success() {
+         let status = speech_resp.status();
+[31m-        let body = speech_resp
+[0m[31m-            .bytes()
+[0m[31m-            .await
+[0m[31m-            .unwrap_or_default();
+[0m[32m+        let body = speech_resp.bytes().await.unwrap_or_default();
+[0m         return Response::builder()
+             .status(status)
+             .header(header::CONTENT_TYPE, "application/json")
+Diff in /tmp/nix-shell.WhmBQI/agentix-bench-53817-1791934222556258251/task-06/agentix-agent/src/voice/synthesize.rs:73:
+                 StatusCode::BAD_GATEWAY,
+                 Json(serde_json::json!({"error": format!("reading TTS response: {e}")})),
+             )
+[31m-            .into_response();
+[0m[32m+                .into_response();
+[0m         }
+     };
+ 
+Diff in /tmp/nix-shell.WhmBQI/agentix-bench-53817-1791934222556258251/task-06/agentix-agent/src/voice/transcribe.rs:71:
+             match resp.text().await {
+                 Ok(body) => match serde_json::from_str::<serde_json::Value>(&body) {
+                     Ok(json) => (status_code, Json(json)).into_response(),
+[31m-                    Err(_) => (
+[0m[31m-                        status_code,
+[0m[31m-                        Json(serde_json::json!({"error": body.trim()})),
+[0m[31m-                    )
+[0m[32m+                    Err(_) => (status_code, Json(serde_json::json!({"error": body.trim()})))
+[0m                         .into_response(),
+                 },
+                 Err(e) => (
+Diff in /tmp/nix-shell.WhmBQI/agentix-bench-53817-1791934222556258251/task-06/agentix-daemon/src/gateway/speech_handler.rs:24:
+     Json(req): Json<SpeechRequest>,
+ ) -> impl IntoResponse {
+     let model_path = state.piper_voices_dir.join(format!("{}.onnx", req.model));
+[31m-    let json_path = state.piper_voices_dir.join(format!("{}.onnx.json", req.model));
+[0m[32m+    let json_path = state
+[0m[32m+        .piper_voices_dir
+[0m[32m+        .join(format!("{}.onnx.json", req.model));
+[0m 
+     if !model_path.exists() {
+         return (
+Diff in /tmp/nix-shell.WhmBQI/agentix-bench-53817-1791934222556258251/task-06/agentix-daemon/src/gateway/speech_handler.rs:33:
+                 "error": format!("voice model not found: {}", model_path.display())
+             })),
+         )
+[31m-        .into_response();
+[0m[32m+            .into_response();
+[0m     }
+ 
+     let sample_rate = read_sample_rate(&json_path).unwrap_or(22050);
+Diff in /tmp/nix-shell.WhmBQI/agentix-bench-53817-1791934222556258251/task-06/agentix-daemon/src/gateway/speech_handler.rs:51:
+                 StatusCode::INTERNAL_SERVER_ERROR,
+                 Json(serde_json::json!({"error": format!("piper spawn failed: {e}")})),
+             )
+[31m-            .into_response();
+[0m[32m+                .into_response();
+[0m         }
+     };
+ 
+Diff in /tmp/nix-shell.WhmBQI/agentix-bench-53817-1791934222556258251/task-06/agentix-daemon/src/gateway/speech_handler.rs:67:
+                 StatusCode::INTERNAL_SERVER_ERROR,
+                 Json(serde_json::json!({"error": format!("piper wait failed: {e}")})),
+             )
+[31m-            .into_response();
+[0m[32m+                .into_response();
+[0m         }
+     };
+ 
+Diff in /tmp/nix-shell.WhmBQI/agentix-bench-53817-1791934222556258251/task-06/agentix-daemon/src/gateway/speech_handler.rs:76:
+             StatusCode::INTERNAL_SERVER_ERROR,
+             Json(serde_json::json!({"error": "piper synthesis failed"})),
+         )
+[31m-        .into_response();
+[0m[32m+            .into_response();
+[0m     }
+ 
+     match encode_wav_i16(&output.stdout, sample_rate) {
+Diff in /tmp/nix-shell.WhmBQI/agentix-bench-53817-1791934222556258251/task-06/agentix-daemon/src/gateway/speech_handler.rs:89:
+             StatusCode::INTERNAL_SERVER_ERROR,
+             Json(serde_json::json!({"error": format!("WAV encoding failed: {e}")})),
+         )
+[31m-        .into_response(),
+[0m[32m+            .into_response(),
+[0m     }
+ }
+ 
+Diff in /tmp/nix-shell.WhmBQI/agentix-bench-53817-1791934222556258251/task-06/agentix-daemon/src/gateway/voices_handler.rs:1:
+ use super::AppState;
+[31m-use axum::{
+[0m[31m-    extract::State,
+[0m[31m-    http::StatusCode,
+[0m[31m-    response::IntoResponse,
+[0m[31m-    Json,
+[0m[31m-};
+[0m[32m+use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
+[0m use serde::Deserialize;
+ use std::path::PathBuf;
+ 
+Diff in /tmp/nix-shell.WhmBQI/agentix-bench-53817-1791934222556258251/task-06/agentix-daemon/src/gateway/voices_handler.rs:11:
+[31m-const PIPER_VOICES_BASE: &str =
+[0m[31m-    "https://huggingface.co/rhasspy/piper-voices/resolve/main";
+[0m[32m+const PIPER_VOICES_BASE: &str = "https://huggingface.co/rhasspy/piper-voices/resolve/main";
+[0m 
+ #[derive(Deserialize)]
+ pub struct PullRequest {
+Diff in /tmp/nix-shell.WhmBQI/agentix-bench-53817-1791934222556258251/task-06/agentix-daemon/src/gateway/voices_handler.rs:26:
+                 StatusCode::INTERNAL_SERVER_ERROR,
+                 Json(serde_json::json!({"error": format!("reading voices dir: {e}")})),
+             )
+[31m-            .into_response();
+[0m[32m+                .into_response();
+[0m         }
+     };
+ 
+Diff in /tmp/nix-shell.WhmBQI/agentix-bench-53817-1791934222556258251/task-06/agentix-daemon/src/gateway/voices_handler.rs:80:
+             StatusCode::INTERNAL_SERVER_ERROR,
+             Json(serde_json::json!({"error": format!("download failed: {e}")})),
+         )
+[31m-        .into_response(),
+[0m[32m+            .into_response(),
+[0m     }
+ }
+ 
+Diff in /tmp/nix-shell.WhmBQI/agentix-bench-53817-1791934222556258251/task-06/agentix-daemon/src/gateway/voices_handler.rs:94:
+         return None;
+     }
+     let lang_region = parts[0]; // e.g. "en_US"
+[31m-    let voice = parts[1];       // e.g. "lessac"
+[0m[31m-    let quality = parts[2];     // e.g. "medium"
+[0m[32m+    let voice = parts[1]; // e.g. "lessac"
+[0m[32m+    let quality = parts[2]; // e.g. "medium"
+[0m 
+     let lang = lang_region.split('_').next()?; // e.g. "en"
+     Some(format!("{lang}/{lang_region}/{voice}/{quality}"))
+Diff in /tmp/nix-shell.WhmBQI/agentix-bench-53817-1791934222556258251/task-06/agentix-voice/src/voice_loop.rs:144:
+             .await?;
+ 
+         let chat_body: serde_json::Value = chat_resp.json().await?;
+[31m-        let response_text = chat_body["reply"]
+[0m[31m-            .as_str()
+[0m[31m-            .unwrap_or("")
+[0m[31m-            .trim()
+[0m[31m-            .to_owned();
+[0m[32m+        let response_text = chat_body["reply"].as_str().unwrap_or("").trim().to_owned();
+[0m 
+         if response_text.is_empty() {
+             tracing::warn!("empty agent response");
+Diff in /tmp/nix-shell.WhmBQI/agentix-bench-53817-1791934222556258251/task-06/agentix-voice/src/voice_loop.rs:218:
+         Ok(resp) if resp.status().is_success() => {
+             tracing::info!(voice, "TTS voice model ready");
+         }
+[31m-        Ok(resp) => tracing::warn!(voice, status = %resp.status(), "failed to pull TTS voice model"),
+[0m[32m+        Ok(resp) => {
+[0m[32m+            tracing::warn!(voice, status = %resp.status(), "failed to pull TTS voice model")
+[0m[32m+        }
+[0m         Err(e) => tracing::warn!(voice, error = %e, "failed to pull TTS voice model"),
+     }
+ }
+Diff in /tmp/nix-shell.WhmBQI/agentix-bench-53817-1791934222556258251/task-06/agentix-whisper/src/lib.rs:99:
+     async fn transcribe(&self, pcm: Vec<f32>) -> Result<String, InferError> {
+         let (reply_tx, reply_rx) = oneshot::channel();
+         self.tx
+[31m-            .send(WorkItem { pcm, reply: reply_tx })
+[0m[32m+            .send(WorkItem {
+[0m[32m+                pcm,
+[0m[32m+                reply: reply_tx,
+[0m[32m+            })
+[0m             .map_err(|_| InferError::Backend("whisper worker channel closed".into()))?;
+         reply_rx
+             .await

@@ -1,0 +1,5 @@
+Refactored reservation totals through a private checked summation helper, preserving the public API and error semantics.
+
+Retained independent host/device admission tests and added overflow boundary and error precedence coverage.
+
+Acceptance command passed: **11 tests, 0 failures**. No commits made.

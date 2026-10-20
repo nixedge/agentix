@@ -1,0 +1,62 @@
+diff --git a/specs/021-strata-inference-research/quickstart.md b/specs/021-strata-inference-research/quickstart.md
+index c7ba4c2..a17ab36 100644
+--- a/specs/021-strata-inference-research/quickstart.md
++++ b/specs/021-strata-inference-research/quickstart.md
+@@ -221,23 +221,44 @@ upper end of the tokenizer vocabulary.
+ 
+ ### Normal dependency tree audit
+ 
+-These exact commands were run in the Nix development shell:
++Audited in this checkout at `13f2a5cb52ebc801eab154b009b0ab01f19e7a6a`.
++Both exact commands completed with exit status 0:
+ 
+ ```sh
+-nix develop path:. --command cargo tree -p agentix-qwen --edges normal
+-nix develop path:. --command cargo tree -p agentix-qwen-sys --edges normal
++nix develop --command cargo tree -p agentix-qwen --edges normal
++nix develop --command cargo tree -p agentix-qwen-sys --edges normal
+ ```
+ 
+-The first tree's direct dependencies are `minijinja 2.24.0`, `safetensors
+-0.8.0`, `serde_json 1.0.151`, `sha2 0.10.9`, and `tokenizers 0.22.2`. It has
+-no `llama-cpp-sys-2` dependency: `agentix-qwen` can parse pinned text
+-configuration, load indexed SafeTensors BF16 PLE rows, and execute CPU
+-reference operations without the native crate, but it does not parse GGUF
+-files. The second tree directly depends on `agentix-qwen` and
+-`llama-cpp-sys-2 0.1.154`; `agentix-qwen-sys` owns GGUF parsing, split-file
+-validation, and quantized row decoding through the GGML/GGUF bindings. Neither
+-normal dependency tree contains Strata. These results establish the current
+-crate boundary; they do not establish a full model loader or runtime.
++Direct normal dependencies from the output (transitive rows omitted here):
++
++| Root crate | Direct dependencies |
++| --- | --- |
++| `agentix-qwen 0.1.0` | `minijinja 2.24.0`, `safetensors 0.8.0`, `serde_json 1.0.151`, `sha2 0.10.9`, `tokenizers 0.22.2` |
++| `agentix-qwen-sys 0.1.0` | `agentix-qwen 0.1.0`, `llama-cpp-sys-2 0.1.154` |
++
++The full normal trees contain neither Strata nor a path from `agentix-qwen`
++to `agentix-qwen-sys` or `llama-cpp-sys-2`. The dependency direction is
++sys → qwen, matching the [qwen manifest](../../agentix-qwen/Cargo.toml)
++and [sys manifest](../../agentix-qwen-sys/Cargo.toml). `--edges normal`
++does not report build or development dependencies.
++
++**Loading/execution without sys: yes, for SafeTensors and CPU reference
++operations.** [`SafeTensorFile::open`, `float_rows`, and `float_vector`](../../agentix-qwen/src/rows.rs)
++parse SafeTensors and read F32/F16/BF16 tensors as F32;
++[`open_qwen4exp_ple_rows`](../../agentix-qwen/src/ple.rs) opens indexed BF16
++PLE shards. [`linear` and `linear_from_rows`](../../agentix-qwen/src/reference.rs)
++execute projections on supplied values or a `LinearWeightRows` provider.
++These primitives do not establish a standalone full-model inference runtime.
++
++**GGUF parsing/dequantization belongs to `agentix-qwen-sys`.** In its
++[`src/lib.rs`](../../agentix-qwen-sys/src/lib.rs), `inspect_gguf` calls
++`ffi::gguf_init_from_file` with `no_alloc: true`, and `QwenGgufTensorStore::open`
++validates the split set and tensor schema. `QuantizedRows::read_row_into`
++dispatches to Rust Q4_0/IQ4_NL/Q8_0 decoders or
++`decode_native_quantized_row_into`, which calls GGML's `ggml_get_type_traits`
++`to_float` callback. Thus the pure crate can consume decoded rows through its
++traits, but the current GGUF reader/dequantization path pulls in sys and the
++pinned native bindings.
+ 
+ The CPU package can be reproduced with the commands above. The configured sys
+ package builds with its CUDA feature and passes its current native boundary

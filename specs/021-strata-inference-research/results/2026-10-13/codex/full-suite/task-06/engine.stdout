@@ -1,0 +1,3 @@
+Added `qwen-check` to the development shell and documented it in the shell help text. It checks workspace formatting, tests `agentix-qwen`, `agentix-qwen-sys`, and `agentix-qwen-worker`, then runs Clippy on those crates with warnings denied.
+
+The acceptance command could not run: Nix failed to connect to `/run/nix-container-daemon/socket` (`Operation not permitted`). No commit was made.

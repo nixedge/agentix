@@ -1,0 +1,3 @@
+Updated [stagnation.rs](/tmp/nix-shell.zmPdwz/agentix-bench-26812-1791933406284697743/task-01/agentix-harness/src/stagnation.rs) so zero-capacity detectors discard pushes safely and never report stagnation. Added a regression test that checks the history remains empty after repeated pushes.
+
+The requested test command could not run: Nix could not connect to `/run/nix-container-daemon/socket` (`Operation not permitted`). No commit was made.

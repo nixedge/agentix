@@ -1,0 +1,5 @@
+Updated `agentix-harness/src/stagnation.rs`: zero-capacity pushes now return immediately. The regression test verifies repeated pushes keep history empty and never report stagnation. Positive-capacity behavior is preserved.
+
+`nix develop --command cargo test -p agentix-harness` passed: 5 unit tests and 1 doc test.
+
+No commits made.

@@ -1,0 +1,3 @@
+Added the permanent regression test in [agentix-router/src/lib.rs](agentix-router/src/lib.rs), asserting both requested routes.
+
+Ran it before any implementation change: all 8 tests passed with `nix develop --command cargo test -p agentix-router`. No code fix was needed. No commit made.

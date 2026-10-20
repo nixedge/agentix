@@ -1,0 +1,204 @@
+diff --git a/agentix-daemon/src/config.rs b/agentix-daemon/src/config.rs
+index 7dd2678..5870708 100644
+--- a/agentix-daemon/src/config.rs
++++ b/agentix-daemon/src/config.rs
+@@ -1,9 +1,11 @@
++use agentix_router::RouteTarget;
+ use std::path::PathBuf;
+ 
+ #[derive(Clone, Debug)]
+ pub struct Config {
+     pub gateway_host: String,
+     pub gateway_port: u16,
++    pub default_route: RouteTarget,
+     pub ollama_base_url: String,
+     pub llama_socket: PathBuf,
+     pub qwen_socket: PathBuf,
+@@ -29,6 +31,16 @@ impl Config {
+                 .ok()
+                 .and_then(|v| v.parse().ok())
+                 .unwrap_or(11434),
++            default_route: match std::env::var("AGENTIX_DEFAULT_ROUTE")
++                .unwrap_or_default()
++                .to_lowercase()
++                .as_str()
++            {
++                "anthropic" => RouteTarget::Anthropic,
++                "openai" => RouteTarget::OpenAI,
++                "openrouter" => RouteTarget::OpenRouter,
++                _ => RouteTarget::Local,
++            },
+             ollama_base_url: std::env::var("OLLAMA_BASE_URL")
+                 .unwrap_or_else(|_| "http://localhost:11434".into()),
+             llama_socket: std::env::var("AGENTIX_LLAMA_SOCKET")
+diff --git a/agentix-daemon/src/gateway/mod.rs b/agentix-daemon/src/gateway/mod.rs
+index d5d8eb4..766e142 100644
+--- a/agentix-daemon/src/gateway/mod.rs
++++ b/agentix-daemon/src/gateway/mod.rs
+@@ -94,7 +94,9 @@ async fn chat_completions_handler(
+         }
+     };
+ 
+-    let target = state.model_router.route(&req.model);
++    let target = state
++        .model_router
++        .route_with_default(&req.model, state.config.default_route.clone());
+     tracing::debug!(model = %req.model, target = ?target, "routing chat completion");
+ 
+     if is_qwen_model(&req.model, &state.qwen_model) {
+diff --git a/agentix-router/src/lib.rs b/agentix-router/src/lib.rs
+index d21fd95..483e764 100644
+--- a/agentix-router/src/lib.rs
++++ b/agentix-router/src/lib.rs
+@@ -16,6 +16,7 @@ pub enum RouteTarget {
+ ///   `gpt*`, `o1*`…        → OpenAI
+ ///   known local families  → Local
+ ///   anything else         → Local  (never silently cloud — Principle II)
++/// `route_with_default` replaces only the final fallback with the caller's explicit target.
+ #[derive(Default)]
+ pub struct Router;
+ 
+@@ -25,6 +26,11 @@ impl Router {
+     }
+ 
+     pub fn route(&self, model: &str) -> RouteTarget {
++        self.route_with_default(model, RouteTarget::Local)
++    }
++
++    /// Uses the supplied default only when no routing rule recognizes the model.
++    pub fn route_with_default(&self, model: &str, default: RouteTarget) -> RouteTarget {
+         let m = model.to_lowercase();
+ 
+         if m.starts_with("local/") {
+@@ -64,10 +70,7 @@ impl Router {
+             return RouteTarget::Local;
+         }
+ 
+-        // Unrecognized model → always local. Cloud backends are reachable only via
+-        // explicit prefix or provider/model syntax. This prevents a misconfigured or
+-        // typo'd model name from becoming an unstructured cloud call (Principle II).
+-        RouteTarget::Local
++        default
+     }
+ }
+ 
+@@ -146,4 +149,60 @@ mod tests {
+             RouteTarget::Local
+         );
+     }
++
++    #[test]
++    fn recognized_models_ignore_explicit_default() {
++        let r = Router::new();
++        for (model, expected, default) in [
++            ("LOCAL/my-model", RouteTarget::Local, RouteTarget::OpenAI),
++            ("openai/gpt-4o", RouteTarget::OpenRouter, RouteTarget::Local),
++            ("hf.co/org/repo", RouteTarget::Local, RouteTarget::Anthropic),
++            ("org/repo:tag", RouteTarget::Local, RouteTarget::OpenRouter),
++            (
++                "Claude-sonnet-4-6",
++                RouteTarget::Anthropic,
++                RouteTarget::Local,
++            ),
++            ("GPT-4o", RouteTarget::OpenAI, RouteTarget::Anthropic),
++            ("o1-preview", RouteTarget::OpenAI, RouteTarget::Local),
++            ("o3-mini", RouteTarget::OpenAI, RouteTarget::Local),
++            ("o4-mini", RouteTarget::OpenAI, RouteTarget::Local),
++        ] {
++            assert_eq!(r.route_with_default(model, default), expected, "{model}");
++        }
++        for model in [
++            "Qwen2.5-coder",
++            "mistral-7b",
++            "llama-3.1-8b",
++            "laguna-xs-2.1",
++            "gemma-3-27b",
++            "phi-4",
++            "deepseek-r1:32b",
++            "falcon-7b",
++            "vicuna-13b",
++            "solar-10b",
++            "kimi-k2",
++        ] {
++            assert_eq!(
++                r.route_with_default(model, RouteTarget::OpenAI),
++                RouteTarget::Local,
++                "{model}"
++            );
++        }
++    }
++
++    #[test]
++    fn unknown_models_use_explicit_default() {
++        let r = Router::new();
++        for default in [
++            RouteTarget::Local,
++            RouteTarget::Anthropic,
++            RouteTarget::OpenAI,
++            RouteTarget::OpenRouter,
++        ] {
++            for model in ["some-unknown-model", ""] {
++                assert_eq!(r.route_with_default(model, default.clone()), default);
++            }
++        }
++    }
+ }
+diff --git a/specs/001-agentix-infer/plan.md b/specs/001-agentix-infer/plan.md
+index 59da3f1..a05f089 100644
+--- a/specs/001-agentix-infer/plan.md
++++ b/specs/001-agentix-infer/plan.md
+@@ -143,3 +143,17 @@ Wire `InferEngine` into agentix-daemon. Remove Ollama proxy for local routes.
+ ## Complexity Tracking
+ 
+ No constitution violations. No entries required.
++
++## Task 2 addendum: Explicit routing fallback
++
++Delegate `Router::route()` to `route_with_default(model, RouteTarget::Local)`.
++Move the current rules unchanged into the new method and return the supplied
++default only at the final unrecognized-model branch. Add a typed `default_route`
++to daemon Config, read `AGENTIX_DEFAULT_ROUTE`, and pass it from the existing chat
++completion handler. Cover conflicting defaults for every rule category and all
++four targets for unknown names in router unit tests.
++
++Constitution: routing remains a pure library and the gateway keeps a Local
++fallback unless explicitly configured otherwise. The user's requested explicit
++cloud fallback is an exception to Principle II's structural escalation policy;
++existing `route()` behavior remains Local. No new dependencies or crates.
+diff --git a/specs/001-agentix-infer/spec.md b/specs/001-agentix-infer/spec.md
+index 865b8f5..5c152bd 100644
+--- a/specs/001-agentix-infer/spec.md
++++ b/specs/001-agentix-infer/spec.md
+@@ -128,3 +128,17 @@ An operator wants to load a Laguna model (safetensors format) that has no GGUF r
+ - llama.cpp blocking C FFI calls are wrapped with `tokio::task::spawn_blocking`; callers treat the engine as fully async.
+ - The Nix flake build gains CUDA toolkit inputs for the daemon derivation; non-CUDA builds remain possible by omitting the `cuda` feature.
+ - The NixOS module lives at `flake/nixosModules/agentix.nix` as a flake-parts module (wrapper + NixOS content inline; `recursiveImports` picks it up automatically). GPU architecture selection is driven by `nixpkgs.config.cudaCapabilities`; the module emits a `config.warnings` entry when that option is unset so operators know inference will be CPU-only.
++
++## Task 2 addendum: Explicit routing fallback
++
++Callers may supply a `RouteTarget` for unrecognized model names through
++`Router::route_with_default(&self, model: &str, default: RouteTarget) -> RouteTarget`.
++Every recognized rule retains its priority and case-insensitive behavior. Existing
++`route()` calls continue to default to Local. The daemon chat completion caller
++uses its configured fallback (`AGENTIX_DEFAULT_ROUTE`: local, anthropic, openai,
++openrouter; missing or unrecognized values select local).
++
++Acceptance: recognized names ignore a conflicting fallback, unknown names use
++each explicitly supplied target, and the existing Local fallback remains intact.
++Validate with `nix develop --command cargo test -p agentix-router` and
++`nix develop --command cargo check --workspace`.
+diff --git a/specs/001-agentix-infer/tasks.md b/specs/001-agentix-infer/tasks.md
+index 2734364..0c28533 100644
+--- a/specs/001-agentix-infer/tasks.md
++++ b/specs/001-agentix-infer/tasks.md
+@@ -217,3 +217,10 @@ Task T034: Integration test               (needs T028, T035)
+ - Blob digest in JSON uses `sha256:hex` (colon); filename on disk uses `sha256-hex` (hyphen) — Ollama convention
+ - Integration tests read fixture model from `AGENTIX_TEST_MODEL_PATH` env var; set by Nix dev shell
+ - Commit `agentix-infer-prd.md` (T055) before or alongside the first code commits
++
++## Task 2 addendum: Explicit routing fallback
++
++- [x] R001 Add `route_with_default` and keep `route()` defaulting to Local in `agentix-router/src/lib.rs`.
++- [x] R002 Add daemon fallback config and update the chat completion caller in `agentix-daemon/src/config.rs` and `agentix-daemon/src/gateway/mod.rs`.
++- [x] R003 Test recognized rules with conflicting defaults and unknown models with all targets in `agentix-router/src/lib.rs`.
++- [x] R004 Run the requested router tests and workspace check through Nix (9 router tests passed; workspace check passed with unrelated indexer/C build warnings).

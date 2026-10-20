@@ -1,0 +1,3 @@
+`storage.rs` already covers both requested cases: context-limit rejection when reducing output by one token would make the request fit, and checked-add overflow at `usize::MAX`. The working tree is clean, and `git diff --check` passes.
+
+The focused test could not run: Nix could not connect to `/run/nix-container-daemon/socket` (`Operation not permitted`). Per the checkout instructions, I’m stopping here rather than trying a different test approach.

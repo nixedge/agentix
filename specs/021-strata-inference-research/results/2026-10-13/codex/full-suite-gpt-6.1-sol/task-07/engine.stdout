@@ -1,0 +1,3 @@
+Updated the quickstart to clarify 248,077 addressable text tokenizer IDs versus 248,320 padded embedding rows, explain their distinct uses, and link the pinned evidence.
+
+Acceptance command and `git diff --check` pass. Only the quickstart changed; no commit created.

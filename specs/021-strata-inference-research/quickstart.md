@@ -162,8 +162,8 @@ chat request through the daemon:
 
 ```sh
 systemctl status agentix-qwen agentix-daemon
-curl -sS http://127.0.0.1:11434/v1/chat/completions \\
-  -H 'content-type: application/json' \\
+curl --fail-with-body -sS http://127.0.0.1:11434/v1/chat/completions \
+  -H 'content-type: application/json' \
   -d '{"model":"qwen3.8-flash-next","messages":[{"role":"user","content":"Reply with OK."}],"temperature":0,"max_tokens":4}'
 ```
 
@@ -196,8 +196,32 @@ freezing the operator tolerance.
 `agentix-qwen` is the pure Rust reference/identity/tokenizer crate. Its locked
 runtime dependencies are MiniJinja, tokenizers, safetensors, serde_json, and
 sha2. The separate `agentix-qwen-sys` package is the only Qwen crate that depends on the
-locked `llama-cpp-sys-2` 0.1.154 GGML/GGUF bindings. `cargo tree` confirms the
-pure crate does not reach those native bindings; neither tree contains Strata.
+locked `llama-cpp-sys-2` 0.1.154 GGML/GGUF bindings.
+
+The normal dependency trees were verified at baseline commit
+`13f2a5cb52ebc801eab154b009b0ab01f19e7a6a` with:
+
+```sh
+nix develop --command cargo tree -p agentix-qwen --edges normal
+nix develop --command cargo tree -p agentix-qwen-sys --edges normal
+```
+
+Both commands exited successfully. The first tree includes MiniJinja,
+safetensors, serde_json, sha2, and tokenizers, with no `llama-cpp-sys-2` or
+Strata. The second includes `agentix-qwen` and `llama-cpp-sys-2 v0.1.154`,
+and no Strata. Their full outputs are retained under
+`results/2026-10-13/codex/full-suite/task-09/` and
+`results/2026-10-13/codex/full-suite-gpt-6.1-sol/task-09/`.
+
+The pure `agentix-qwen` crate can load indexed SafeTensors F32/F16/BF16 rows
+and run CPU reference operations without the native sys crate. It does not
+parse GGUF files. The native GGUF/GGML access is owned by
+`agentix-qwen-sys/src/lib.rs`:
+`inspect_gguf` calls the GGUF FFI, `QwenGgufTensorStore` owns shard/tensor
+access, and quantized row decoders use GGML type/dequantization functions.
+The pure crate's GGUF schema and tensor-name mapping code describes and
+validates expected metadata; it does not load GGUF files.
+
 The CUDA feature is opt-in on the sys crate. Existing Nix package logic derives
 CUDA architecture flags from `pkgs.config.cudaCapabilities`; for the target
 RTX 3090, the expected capability is 8.6. CPU package builds do not establish
@@ -242,8 +266,11 @@ CPU reference smoke run, not an independent parity result or a tokenizer-backed
 prompt generation worker. Set `AGENTIX_QWEN_CHAT_SMOKE=1` when running the
 sampler inside `nix develop` to render the actual `Reply with OK.` user prompt
 through the pinned chat template and tokenizer before full-model decode; the
-sampler reports the prompt source and admitted token count. This opt-in path has
-not yet been run against the full artifact.
+sampler reports the prompt source and admitted token count. A local attempt with
+the full IQ3_S artifact remained CPU-bound for over 30 minutes without
+producing the final summary and was interrupted; this does not establish
+rendered-prompt correctness. The attempt and its limit are recorded in
+`results/2026-10-13/qwen-chat-smoke.md`. Complete this check on the target host.
 Reproduce the
 actual-artifact validation with:
 

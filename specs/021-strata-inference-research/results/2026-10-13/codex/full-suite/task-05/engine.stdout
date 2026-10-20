@@ -1,0 +1,3 @@
+Clippy did not run. `nix develop` failed because Nix’s fetcher cache database at `/home/sam/.cache/nix/fetcher-cache-v4.sqlite` is read-only.
+
+Following the repository instruction to ask before trying a different approach after a failure, I’ve stopped without changing source. Would you like me to retry with Nix’s cache redirected to `/tmp`?

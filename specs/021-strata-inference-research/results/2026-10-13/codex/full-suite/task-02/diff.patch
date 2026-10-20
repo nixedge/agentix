@@ -1,0 +1,63 @@
+diff --git a/agentix-daemon/src/gateway/mod.rs b/agentix-daemon/src/gateway/mod.rs
+index d5d8eb4..19c7e2d 100644
+--- a/agentix-daemon/src/gateway/mod.rs
++++ b/agentix-daemon/src/gateway/mod.rs
+@@ -94,7 +94,9 @@ async fn chat_completions_handler(
+         }
+     };
+ 
+-    let target = state.model_router.route(&req.model);
++    let target = state
++        .model_router
++        .route_with_default(&req.model, RouteTarget::Local);
+     tracing::debug!(model = %req.model, target = ?target, "routing chat completion");
+ 
+     if is_qwen_model(&req.model, &state.qwen_model) {
+diff --git a/agentix-router/src/lib.rs b/agentix-router/src/lib.rs
+index d21fd95..44cea14 100644
+--- a/agentix-router/src/lib.rs
++++ b/agentix-router/src/lib.rs
+@@ -25,6 +25,11 @@ impl Router {
+     }
+ 
+     pub fn route(&self, model: &str) -> RouteTarget {
++        self.route_with_default(model, RouteTarget::Local)
++    }
++
++    /// Route a model, using `default` only when no routing rule recognizes it.
++    pub fn route_with_default(&self, model: &str, default: RouteTarget) -> RouteTarget {
+         let m = model.to_lowercase();
+ 
+         if m.starts_with("local/") {
+@@ -64,10 +69,9 @@ impl Router {
+             return RouteTarget::Local;
+         }
+ 
+-        // Unrecognized model → always local. Cloud backends are reachable only via
+-        // explicit prefix or provider/model syntax. This prevents a misconfigured or
+-        // typo'd model name from becoming an unstructured cloud call (Principle II).
+-        RouteTarget::Local
++        // Cloud backends are reachable only via an explicit prefix or provider/model syntax.
++        // The caller controls the fallback for unrecognized models.
++        default
+     }
+ }
+ 
+@@ -146,4 +150,17 @@ mod tests {
+             RouteTarget::Local
+         );
+     }
++
++    #[test]
++    fn route_with_default_preserves_recognized_rules_and_uses_default_for_unknown() {
++        let r = Router::new();
++        assert_eq!(
++            r.route_with_default("claude-sonnet-4-6", RouteTarget::OpenAI),
++            RouteTarget::Anthropic
++        );
++        assert_eq!(
++            r.route_with_default("some-unknown-model", RouteTarget::OpenAI),
++            RouteTarget::OpenAI
++        );
++    }
+ }

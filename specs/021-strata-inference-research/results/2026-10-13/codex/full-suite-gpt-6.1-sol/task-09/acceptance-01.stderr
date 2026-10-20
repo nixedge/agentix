@@ -1,0 +1,3 @@
+warning: Git tree '/tmp/nix-shell.WhmBQI/agentix-bench-53817-1791934222556258251/task-09' is dirty
+evaluation warning: stdenv.isLinux is deprecated, use stdenv.hostPlatform.isLinux instead
+evaluation warning: stdenv.isDarwin is deprecated, use stdenv.hostPlatform.isDarwin instead

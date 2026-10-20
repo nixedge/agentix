@@ -1,0 +1,3 @@
+`nix develop --command cargo clippy -p agentix-harness -- -D warnings` passed with exit code 0 and no warnings.
+
+No source changes were needed. The checkout remains clean; no commit was made.

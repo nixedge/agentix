@@ -1,0 +1,168 @@
+Agentic RAG Stack
+
+Services:
+  nix run .#dev              # Start PostgreSQL (ParadeDB) + Ollama
+
+Indexing:
+  just index /path/to/repo   # Index a codebase
+
+Database:
+  psql postgres://127.0.0.1:5432/codebase
+
+MCP server:
+  just build                 # Build the Rust binary
+  just mcp                   # Run the MCP server
+  nix build .#agentix-mcp-server  # Build with Nix (requires Cargo.lock)
+
+Quick search (no services needed):
+  ck search 'query'              # ad-hoc hybrid search
+  ck --serve                     # lightweight MCP server
+  ccusage                        # Claude Code usage stats
+agentix-qwen v0.1.0 (/tmp/nix-shell.WhmBQI/agentix-bench-53817-1791934222556258251/task-09/agentix-qwen)
+├── minijinja v2.24.0
+│   ├── memo-map v0.3.3
+│   ├── serde v1.0.229
+│   │   ├── serde_core v1.0.229
+│   │   └── serde_derive v1.0.229 (proc-macro)
+│   │       ├── proc-macro2 v1.0.107
+│   │       │   └── unicode-ident v1.0.24
+│   │       ├── quote v1.0.47
+│   │       │   └── proc-macro2 v1.0.107 (*)
+│   │       └── syn v3.0.4
+│   │           ├── proc-macro2 v1.0.107 (*)
+│   │           ├── quote v1.0.47 (*)
+│   │           └── unicode-ident v1.0.24
+│   └── serde_json v1.0.151
+│       ├── itoa v1.0.18
+│       ├── memchr v2.8.3
+│       ├── serde_core v1.0.229
+│       └── zmij v1.0.23
+├── safetensors v0.8.0
+│   ├── hashbrown v0.16.1
+│   │   ├── allocator-api2 v0.2.21
+│   │   ├── equivalent v1.0.2
+│   │   ├── foldhash v0.2.0
+│   │   └── serde_core v1.0.229
+│   ├── serde v1.0.229 (*)
+│   └── serde_json v1.0.151 (*)
+├── serde_json v1.0.151 (*)
+├── sha2 v0.10.9
+│   ├── cfg-if v1.0.4
+│   ├── cpufeatures v0.2.17
+│   └── digest v0.10.7
+│       ├── block-buffer v0.10.4
+│       │   └── generic-array v0.14.7
+│       │       └── typenum v1.20.1
+│       └── crypto-common v0.1.7
+│           ├── generic-array v0.14.7 (*)
+│           └── typenum v1.20.1
+└── tokenizers v0.22.2
+    ├── ahash v0.8.12
+    │   ├── cfg-if v1.0.4
+    │   ├── getrandom v0.3.4
+    │   │   ├── cfg-if v1.0.4
+    │   │   └── libc v0.2.189
+    │   ├── once_cell v1.21.4
+    │   ├── serde v1.0.229 (*)
+    │   └── zerocopy v0.8.56
+    ├── aho-corasick v1.1.5
+    │   └── memchr v2.8.3
+    ├── compact_str v0.9.1
+    │   ├── castaway v0.2.4
+    │   │   └── rustversion v1.0.23 (proc-macro)
+    │   ├── cfg-if v1.0.4
+    │   ├── itoa v1.0.18
+    │   ├── rustversion v1.0.23 (proc-macro)
+    │   ├── ryu v1.0.23
+    │   ├── serde v1.0.229 (*)
+    │   └── static_assertions v1.1.0
+    ├── dary_heap v0.3.9
+    │   └── serde v1.0.229 (*)
+    ├── derive_builder v0.20.2
+    │   └── derive_builder_macro v0.20.2 (proc-macro)
+    │       ├── derive_builder_core v0.20.2
+    │       │   ├── darling v0.20.11
+    │       │   │   ├── darling_core v0.20.11
+    │       │   │   │   ├── fnv v1.0.7
+    │       │   │   │   ├── ident_case v1.0.1
+    │       │   │   │   ├── proc-macro2 v1.0.107 (*)
+    │       │   │   │   ├── quote v1.0.47 (*)
+    │       │   │   │   ├── strsim v0.11.1
+    │       │   │   │   └── syn v2.0.119
+    │       │   │   │       ├── proc-macro2 v1.0.107 (*)
+    │       │   │   │       ├── quote v1.0.47 (*)
+    │       │   │   │       └── unicode-ident v1.0.24
+    │       │   │   └── darling_macro v0.20.11 (proc-macro)
+    │       │   │       ├── darling_core v0.20.11 (*)
+    │       │   │       ├── quote v1.0.47 (*)
+    │       │   │       └── syn v2.0.119 (*)
+    │       │   ├── proc-macro2 v1.0.107 (*)
+    │       │   ├── quote v1.0.47 (*)
+    │       │   └── syn v2.0.119 (*)
+    │       └── syn v2.0.119 (*)
+    ├── esaxx-rs v0.1.10
+    ├── fancy-regex v0.14.0
+    │   ├── bit-set v0.8.0
+    │   │   └── bit-vec v0.8.0
+    │   ├── regex-automata v0.4.18
+    │   │   ├── aho-corasick v1.1.5 (*)
+    │   │   ├── memchr v2.8.3
+    │   │   └── regex-syntax v0.8.11
+    │   └── regex-syntax v0.8.11
+    ├── getrandom v0.3.4 (*)
+    ├── itertools v0.14.0
+    │   └── either v1.18.0
+    ├── log v0.4.34
+    ├── macro_rules_attribute v0.2.3
+    │   ├── macro_rules_attribute-proc_macro v0.2.3 (proc-macro)
+    │   └── pastey v0.2.3 (proc-macro)
+    ├── monostate v0.1.18
+    │   ├── monostate-impl v0.1.18 (proc-macro)
+    │   │   ├── proc-macro2 v1.0.107 (*)
+    │   │   ├── quote v1.0.47 (*)
+    │   │   └── syn v2.0.119 (*)
+    │   └── serde_core v1.0.229
+    ├── paste v1.0.15 (proc-macro)
+    ├── rand v0.9.5
+    │   ├── rand_chacha v0.9.0
+    │   │   ├── ppv-lite86 v0.2.21
+    │   │   │   └── zerocopy v0.8.56
+    │   │   └── rand_core v0.9.5
+    │   │       └── getrandom v0.3.4 (*)
+    │   └── rand_core v0.9.5 (*)
+    ├── rayon v1.12.0
+    │   ├── either v1.18.0
+    │   └── rayon-core v1.13.0
+    │       ├── crossbeam-deque v0.8.7
+    │       │   ├── crossbeam-epoch v0.9.20
+    │       │   │   └── crossbeam-utils v0.8.22
+    │       │   └── crossbeam-utils v0.8.22
+    │       └── crossbeam-utils v0.8.22
+    ├── rayon-cond v0.4.0
+    │   ├── either v1.18.0
+    │   ├── itertools v0.14.0 (*)
+    │   └── rayon v1.12.0 (*)
+    ├── regex v1.13.1
+    │   ├── aho-corasick v1.1.5 (*)
+    │   ├── memchr v2.8.3
+    │   ├── regex-automata v0.4.18 (*)
+    │   └── regex-syntax v0.8.11
+    ├── regex-syntax v0.8.11
+    ├── serde v1.0.229 (*)
+    ├── serde_json v1.0.151 (*)
+    ├── spm_precompiled v0.1.4
+    │   ├── base64 v0.13.1
+    │   ├── nom v7.1.3
+    │   │   ├── memchr v2.8.3
+    │   │   └── minimal-lexical v0.2.1
+    │   ├── serde v1.0.229 (*)
+    │   └── unicode-segmentation v1.13.3
+    ├── thiserror v2.0.20
+    │   └── thiserror-impl v2.0.20 (proc-macro)
+    │       ├── proc-macro2 v1.0.107 (*)
+    │       ├── quote v1.0.47 (*)
+    │       └── syn v3.0.4 (*)
+    ├── unicode-normalization-alignments v0.1.12
+    │   └── smallvec v1.15.2
+    ├── unicode-segmentation v1.13.3
+    └── unicode_categories v0.1.1

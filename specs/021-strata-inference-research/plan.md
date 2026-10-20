@@ -2,13 +2,13 @@
 
 **Branch**: `021-strata-inference-research` | **Updated**: 2026-10-12
 **Spec**: [spec.md](spec.md)
-**Status**: Staged engineering plan; mathematical operator contract and kernel dependency selection remain pre-implementation gates.
+**Status**: CPU decoder, native GGUF access and isolated worker are implemented. Independent full-model parity, CUDA layer execution, remaining optimization stages and target-host acceptance are open; see `tasks.md` for staged progress.
 
 ## Architecture and boundaries
 
 Agentix owns the model loader, execution graph, scheduler, memory accounting, expert placement, caches, tokenizer integration and lifecycle. Use Rust 2021 for orchestration and independently sourced compute primitives or original kernels behind an isolated native boundary. Do not reimplement an entire arithmetic library without evidence that existing primitives are insufficient.
 
-Proposed `agentix-qwen` library owns Flash Next execution and implements the `agentix-infer` backend contracts; it has no networking. Proposed `agentix-qwen-sys` exists only if native/CUDA bindings require a separate unsafe boundary. These names are proposed, not created crates. Their purposes do not overlap the generic inference/pool layer or existing llama backend. The daemon selects and assembles the backend; process isolation, if justified by native-runtime constraints, must follow the existing Unix-socket worker pattern with no new public listener. Final assembly and implementation base must be resolved against 019/020 before code changes.
+The implemented `agentix-qwen` library owns pure Rust reference execution and model contracts with no networking. `agentix-qwen-sys` isolates native GGUF/GGML access and the optional CUDA boundary. `agentix-qwen-worker` assembles them behind a Unix socket; the daemon dispatches the exact configured Qwen model ID to that socket and retains the existing llama route for other local models. These crates do not replace the generic inference/pool layer or existing llama backend. Broader inference-contract and lifecycle conformance remains tracked in T021.
 
 Target NVIDIA Ampere compute capability 8.6. Do not assume a kernel built for newer GPUs works on the 3090. Independently verify CUDA/compiler/dependency support in Nix. Preserve pure-Rust dependency boundaries for agentix-infer and agentix-router. Large model blobs stay in existing content-addressed storage; no new database.
 
@@ -54,7 +54,7 @@ The reported 3090 Strata speeds are context, not agentix predictions. SC-005 is 
 | VII | Preserve harness state transitions, cancellation and budget semantics |
 | VIII | fmt, Clippy, workspace tests and Nix packages before merge; provenance and unsafe-boundary review |
 
-No exception adopted. Actual dependency graph, fixture adequacy, package builds and worker assembly must be rechecked at Stage 0 and before release. No new crate is created by this plan.
+No exception adopted. Actual dependency graph, fixture adequacy, package builds and worker assembly must be rechecked before release.
 
 ## Complexity and remaining design gates
 

@@ -1,0 +1,56 @@
+warning: Git tree '/tmp/nix-shell.zmPdwz/agentix-bench-26812-1791933406284697743/task-08' is dirty
+evaluation warning: stdenv.isLinux is deprecated, use stdenv.hostPlatform.isLinux instead
+evaluation warning: stdenv.isDarwin is deprecated, use stdenv.hostPlatform.isDarwin instead
+    Checking parking_lot_core v0.9.12
+    Checking serde_core v1.0.229
+    Checking zerovec v0.11.8
+    Checking zerotrie v0.2.5
+    Checking regex-syntax v0.8.11
+    Checking parking_lot v0.12.5
+    Checking tokio v1.53.1
+    Checking tinystr v0.8.4
+    Checking potential_utf v0.1.6
+    Checking icu_collections v2.3.0
+    Checking icu_locale_core v2.3.0
+    Checking regex-automata v0.4.18
+    Checking icu_provider v2.3.1
+    Checking icu_normalizer v2.3.0
+    Checking icu_properties v2.3.0
+    Checking serde v1.0.229
+    Checking serde_json v1.0.151
+    Checking serde_path_to_error v0.1.20
+    Checking serde_urlencoded v0.7.1
+    Checking idna_adapter v1.2.2
+    Checking matchers v0.2.0
+    Checking idna v1.1.0
+    Checking tracing-subscriber v0.3.23
+    Checking agentix-api v0.1.0 (/tmp/nix-shell.zmPdwz/agentix-bench-26812-1791933406284697743/task-08/agentix-api)
+    Checking url v2.5.8
+    Checking agentix-router v0.1.0 (/tmp/nix-shell.zmPdwz/agentix-bench-26812-1791933406284697743/task-08/agentix-router)
+    Checking hyper v1.11.0
+    Checking tower v0.5.3
+    Checking tokio-rustls v0.26.4
+    Checking tokio-util v0.7.19
+    Checking tokio-stream v0.1.19
+    Checking tower-http v0.6.11
+    Checking hyper-util v0.1.20
+    Checking hyper-rustls v0.27.9
+    Checking axum v0.8.9
+    Checking reqwest v0.12.28
+    Checking agentix-daemon v0.1.0 (/tmp/nix-shell.zmPdwz/agentix-bench-26812-1791933406284697743/task-08/agentix-daemon)
+error[E0599]: no method named `next` found for struct `axum::body::BodyDataStream` in the current scope
+   --> agentix-daemon/src/gateway/proxy.rs:105:42
+    |
+105 |         while let Some(frame) = incoming.next().await {
+    |                                          ^^^^ method not found in `axum::body::BodyDataStream`
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: the following traits which provide `next` are implemented but not in scope; perhaps you want to import one of them
+    |
+  1 + use futures_util::stream::stream::StreamExt;
+    |
+  1 + use tokio_stream::StreamExt;
+    |
+
+For more information about this error, try `rustc --explain E0599`.
+error: could not compile `agentix-daemon` (bin "agentix-daemon") due to 1 previous error

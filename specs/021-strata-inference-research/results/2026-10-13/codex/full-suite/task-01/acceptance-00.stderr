@@ -1,0 +1,107 @@
+warning: Git tree '/tmp/nix-shell.zmPdwz/agentix-bench-26812-1791933406284697743/task-01' is dirty
+evaluation warning: stdenv.isLinux is deprecated, use stdenv.hostPlatform.isLinux instead
+evaluation warning: stdenv.isDarwin is deprecated, use stdenv.hostPlatform.isDarwin instead
+building '/nix/store/i4liwd5k5a4cyn1ya33598in2a94q8hy-crane-workspace-src.drv'...
+building '/nix/store/zbhs8dss41idqqkylpzq3mcyjci0946a-ax-jail-0.1.0.drv'...
+building '/nix/store/7mfvlrpay8v1ck5a2g9hxmz3jmk1m2qm-agentix-ax-0.1.0.drv'...
+building '/nix/store/8ja0gafz6y4j9147jnrbnlsxrf7f05y5-ax-jail-tools.drv'...
+building '/nix/store/35xnbych9nz0i9gsf83qw9ls5iswdnam-ax-jail.drv'...
+building '/nix/store/3ygd4wspwxp7fp516drknrcrz5qh93lm-nix-shell-env.drv'...
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.24
+   Compiling libc v0.2.189
+   Compiling stable_deref_trait v1.2.1
+   Compiling pin-project-lite v0.2.17
+   Compiling bytes v1.12.1
+   Compiling futures-core v0.3.34
+   Compiling find-msvc-tools v0.1.11
+   Compiling itoa v1.0.18
+   Compiling shlex v2.0.1
+   Compiling smallvec v1.15.2
+   Compiling writeable v0.6.4
+   Compiling litemap v0.8.3
+   Compiling utf8_iter v1.0.4
+   Compiling icu_properties_data v2.3.0
+   Compiling icu_normalizer_data v2.3.0
+   Compiling zeroize v1.9.0
+   Compiling once_cell v1.21.4
+   Compiling percent-encoding v2.3.2
+   Compiling cfg-if v1.0.4
+   Compiling slab v0.4.12
+   Compiling httparse v1.10.1
+   Compiling untrusted v0.9.0
+   Compiling futures-task v0.3.34
+   Compiling serde_core v1.0.229
+   Compiling tower-service v0.3.3
+   Compiling rustls-pki-types v1.15.1
+   Compiling try-lock v0.2.5
+   Compiling rustls v0.23.43
+   Compiling form_urlencoded v1.2.2
+   Compiling futures-channel v0.3.34
+   Compiling serde v1.0.229
+   Compiling cc v1.4.4
+   Compiling futures-util v0.3.34
+   Compiling want v0.3.1
+   Compiling zmij v1.0.23
+   Compiling atomic-waker v1.1.2
+   Compiling subtle v2.6.1
+   Compiling sync_wrapper v1.0.2
+   Compiling serde_json v1.0.151
+   Compiling ipnet v2.12.1
+   Compiling tower-layer v0.3.3
+   Compiling base64 v0.22.1
+   Compiling tracing-core v0.1.36
+   Compiling ryu v1.0.23
+   Compiling memchr v2.8.3
+   Compiling anyhow v1.0.104
+   Compiling bitflags v2.13.1
+   Compiling log v0.4.34
+   Compiling webpki-roots v1.0.9
+   Compiling http v1.5.0
+   Compiling syn v3.0.4
+   Compiling syn v2.0.119
+   Compiling mio v1.2.2
+   Compiling socket2 v0.6.5
+   Compiling getrandom v0.2.17
+   Compiling http-body v1.1.0
+   Compiling http-body-util v0.1.5
+   Compiling ring v0.17.14
+   Compiling synstructure v0.13.2
+   Compiling zerofrom-derive v0.1.7
+   Compiling yoke-derive v0.8.2
+   Compiling tracing-attributes v0.1.31
+   Compiling zerovec-derive v0.11.6
+   Compiling displaydoc v0.2.7
+   Compiling tokio-macros v2.7.2
+   Compiling serde_derive v1.0.229
+   Compiling async-trait v0.1.92
+   Compiling tokio v1.53.1
+   Compiling tracing v0.1.44
+   Compiling zerofrom v0.1.8
+   Compiling yoke v0.8.3
+   Compiling zerovec v0.11.8
+   Compiling zerotrie v0.2.5
+   Compiling tinystr v0.8.4
+   Compiling potential_utf v0.1.6
+   Compiling icu_collections v2.3.0
+   Compiling icu_locale_core v2.3.0
+   Compiling rustls-webpki v0.103.15
+   Compiling icu_provider v2.3.1
+   Compiling serde_urlencoded v0.7.1
+   Compiling icu_properties v2.3.0
+   Compiling icu_normalizer v2.3.0
+   Compiling idna_adapter v1.2.2
+   Compiling idna v1.1.0
+   Compiling url v2.5.8
+   Compiling hyper v1.11.0
+   Compiling tower v0.5.3
+   Compiling tower-http v0.6.11
+   Compiling hyper-util v0.1.20
+   Compiling tokio-rustls v0.26.4
+   Compiling hyper-rustls v0.27.9
+   Compiling reqwest v0.12.28
+   Compiling agentix-harness v0.1.0 (/tmp/nix-shell.zmPdwz/agentix-bench-26812-1791933406284697743/task-01/agentix-harness)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.86s
+     Running unittests src/lib.rs (/tmp/agentix-021-bench-target/debug/deps/agentix_harness-3c8026448599dc11)
+   Doc-tests agentix_harness

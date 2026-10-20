@@ -1,0 +1,44 @@
+diff --git a/agentix-qwen/tests/storage.rs b/agentix-qwen/tests/storage.rs
+index 0c664ff..f5c0f63 100644
+--- a/agentix-qwen/tests/storage.rs
++++ b/agentix-qwen/tests/storage.rs
+@@ -343,14 +343,31 @@ fn context_admission_preserves_requested_output_and_never_truncates() -> TestRes
+             remaining_tokens: 0,
+         }
+     );
+-    assert!(matches!(
+-        admit_context(3073, 1024, 4096),
+-        Err(Error::Capacity("context window"))
+-    ));
++    for (prompt_tokens, requested_output_tokens) in
++        [(3073, 1024), (3072, 1025), (4097, 1), (1, 4097)]
++    {
++        assert!(matches!(
++            admit_context(prompt_tokens, requested_output_tokens, 4096),
++            Err(Error::Capacity("context window"))
++        ));
++    }
+     assert!(matches!(admit_context(1, 0, 4096), Err(Error::Invalid(_))));
+-    assert!(matches!(
+-        admit_context(usize::MAX, 1, usize::MAX),
+-        Err(Error::Overflow)
+-    ));
++    assert_eq!(
++        admit_context(usize::MAX - 1, 1, usize::MAX)?,
++        agentix_qwen::budget::ContextAdmission {
++            prompt_tokens: usize::MAX - 1,
++            requested_output_tokens: 1,
++            total_tokens: usize::MAX,
++            remaining_tokens: 0,
++        }
++    );
++    for (prompt_tokens, requested_output_tokens) in
++        [(usize::MAX, 1), (1, usize::MAX), (usize::MAX, usize::MAX)]
++    {
++        assert!(matches!(
++            admit_context(prompt_tokens, requested_output_tokens, usize::MAX),
++            Err(Error::Overflow)
++        ));
++    }
+     Ok(())
+ }

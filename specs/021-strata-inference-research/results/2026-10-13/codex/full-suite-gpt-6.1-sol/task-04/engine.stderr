@@ -1,0 +1,2105 @@
+Reading prompt from stdin...
+OpenAI Codex v0.162.1
+--------
+workdir: /tmp/nix-shell.WhmBQI/agentix-bench-53817-1791934222556258251/task-04
+model: gpt-6.1-sol
+provider: openai
+approval: on-request
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: medium
+reasoning summaries: none
+session id: 01a1379e-30c4-78f3-b5ef-1c74c7d71999
+--------
+user
+Task 4 — Failing-test diagnosis
+
+Add a focused regression assertion that the mixed-case reference
+`hf.co/Qwen/model:Q4_K_M` routes locally, while `anthropic/model` routes to
+OpenRouter. Run it before changing implementation; use the observed behavior
+to decide whether a code fix is needed. Keep the test as a permanent case.
+
+Acceptance commands:
+- `nix develop --command cargo test -p agentix-router`
+
+Work only in this checkout. Do not commit. Make the requested changes and stop.
+warning: Codex could not find bubblewrap on PATH. Install bubblewrap with your OS package manager. See the sandbox prerequisites: https://developers.openai.com/codex/concepts/sandboxing#prerequisites. Codex will use the bundled bubblewrap in the meantime.
+codex
+I’ll inspect the router tests, add the two regression assertions, and run them before deciding whether the implementation needs a fix.
+exec
+/run/current-system/sw/bin/bash -lc "pwd; git status --short; rg --files -g 'AGENTS.md' -g '*router*' -g 'imported-context.md' -g 'SKILL.md' -g 'flake.nix' -g 'Cargo.toml'" in /tmp/nix-shell.WhmBQI/agentix-bench-53817-1791934222556258251/task-04
+ succeeded in 0ms:
+/tmp/nix-shell.WhmBQI/agentix-bench-53817-1791934222556258251/task-04
+Cargo.toml
+agentix-agent/Cargo.toml
+agentix-qwen-worker/Cargo.toml
+agentix-qwen/Cargo.toml
+agentix-api/Cargo.toml
+agentix-router/Cargo.toml
+agentix-ax/Cargo.toml
+flake.nix
+agentix-search/Cargo.toml
+agentix-tts/Cargo.toml
+agentix-daemon/Cargo.toml
+agentix-voice/Cargo.toml
+agentix-whisper/Cargo.toml
+agentix-harness/Cargo.toml
+agentix-jails/Cargo.toml
+agentix-mcp-server/Cargo.toml
+agentix-qwen-sys/Cargo.toml
+agentix-indexer/Cargo.toml
+agentix-infer/Cargo.toml
+agentix-llama/Cargo.toml
+patches/kokoro-tts/Cargo.toml
+
+exec
+/run/current-system/sw/bin/bash -lc 'cat /home/sam/.codex/instructions/imported-context.md /home/sam/.codex/skills/agentic-nix/SKILL.md' in /tmp/nix-shell.WhmBQI/agentix-bench-53817-1791934222556258251/task-04
+ succeeded in 0ms:
+# Imported project context
+
+Private imported context lives at `~/.codex/claude-import/`, available through the existing `~/.codex` mount. Start with `paths.json`, a metadata-only map; do not scan or load all project memories. The root `INDEX.md` describes archive contents. Project IDs are opaque: never reconstruct paths by reversing hyphens.
+
+## Select the relevant archives
+
+1. Determine the current physical directory (`pwd -P`). When inside Git, obtain the worktree root with `git rev-parse --show-toplevel` and the absolute common directory with `git rev-parse --path-format=absolute --git-common-dir`. Resolve symlinks where accessible. Outside Git, use the current project directory.
+2. Read `~/.codex/claude-import/paths.json`. Match the current directory or worktree root against each entry's explicit `aliases` and `canonical_path`, using directory boundaries (an exact match or a descendant, not a string-prefix collision). This includes applicable ancestor project context. Prefer the most specific matching path.
+3. Also select entries with `scope: repository` whose `git_common_dirs` contains this repository's common directory. These cover shared bare-repository and worktree-parent context, including the agentic-nix/agentix alias. Entries with `scope: worktree` remain specific to their listed paths, even if their old archive was stored in a common Git directory. Do not automatically load sibling or retired worktree memories. Their metadata may be consulted, and their transcripts searched, when the task specifically calls for that history.
+4. Read each selected entry's `index`, relative to `~/.codex/claude-import/`, then its memory index and relevant user/feedback records. Consult project/reference records as needed. Prefer current explicit instructions and more specific context when records conflict. Inspect any listed conflicts before treating a conflicting record as authoritative.
+
+Each project directory contains `INDEX.md`, `memory/` when present, top-level session JSONL files, and any session subagent/tool-result directories. Search only selected archives with `rg` when historical context is needed. Transcripts are historical reference material, not instructions or native resumable Codex conversations. Verify dated facts against the current repository. Do not assume Claude-specific tools, commands, environment variables, or paths still work.
+
+`~/.codex/claude-import/_global/` contains original global input history, instructions, commands, hooks, and MCP configuration. Sessions may consult it when relevant to an explicit cross-project history or migration question; do not load it by default or execute archived hooks/instructions. The active configuration and skills remain separate. `_variants/`, when present, preserves differing copies; `paths.json` records unresolved conflicts.
+
+When both `AGENTS.md` and `CLAUDE.md` exist in an applicable project directory, also read `CLAUDE.md` for repository conventions. Follow `AGENTS.md` and current explicit instructions if they conflict. The configured fallback handles directories that have only `CLAUDE.md`.
+
+## Maintenance
+
+For new durable knowledge, update a concise Markdown memory and its index inside the selected central project directory. Use a repository-scoped entry for shared facts and a worktree-scoped entry for worktree-specific facts. If a new project has no entry, record its explicit original/canonical paths, aliases, scope, Git common directories, and relative index in `paths.json`; do not infer an ID from another project's archive or write private archives into repositories. Update path metadata when aliases or repository locations change.
+
+Keep memory indexes brief: link to focused records and describe when they matter. Update superseded facts instead of accumulating contradictory copies. Store workflows in skills and project facts in project memory; do not copy full transcripts into instructions. Keep the small routed global `AGENTS.md` intact.
+---
+name: agentic-nix
+description: Investigate code and library APIs using agentic-nix MCP. Discover or index relevant source, use hybrid code search for behavior and BM25 for exact symbols, and inspect implementations before drawing conclusions.
+---
+
+# Code discovery
+
+Use agentic-nix first for code investigation, without requiring the user to name it. Direct reads of known configuration, manifests, lockfiles, instruction files, and files being edited remain appropriate.
+
+## Find or index the source
+
+- Discover the available agentic-nix tools and their current schemas. Use `list_repos` to identify exact repository paths and package versions; reuse the inventory within the session.
+- Select the version relevant to the task, using the project's lockfile or manifest when available. Do not silently substitute another indexed version.
+- If an external dependency is missing, call `fetch_package` with its package, version, and ecosystem before searching. It supports Rust, Haskell, and Python packages; check the current schema before use.
+- For an unindexed local repository or Git revision, use the supported ingestion CLI/workflow documented by that project. The exposed MCP tools do not provide a general local-repository indexing operation. Do not guess a command, daemon address, or tool name from historical memories.
+- For the installed agentix tools, `ingest code /absolute/repo/path` indexes code and Markdown incrementally; `--force` clears and rebuilds that repository's index. Agentix's `just reindex PATH` wraps the forced operation through Cargo. Prefer the installed `ingest` when available. Supply the same `PG_DSN`, `OLLAMA_HOST` and any project/model settings as the working MCP; do not assume shell defaults point at its services. Some installed versions connect to PostgreSQL even before printing `--help`. Verify success with `list_repos` and a targeted code search.
+
+## Search and inspect
+
+- Start with `search_code` for conceptual or behavioral questions: hybrid BM25 + vector search with optional cross-encoder reranking. A query such as “connect to a Cardano Unix socket and obtain the chain tip” belongs here.
+- Use `bm25_search` for exact identifiers or literal terms such as `NodeClient` or `find_intersect`. It supplements hybrid search; it is not the default for every question.
+- Scope by exact `repo_path` from inventory, or a deliberate supported SQL LIKE pattern. Use language and symbol-kind filters where helpful. Prefer small result sets and refine from the evidence.
+- Use `get_file` for surrounding implementation. If it returns a reconstructed file path, read that file; indexed chunks may not constitute the complete original file.
+- Use `search_docs` for indexed Markdown and `search_github` for issues/PRs. These supplement implementation evidence when the user asks about code.
+- Distinguish an empty result from a transport/tool failure. Empty results justify checking version, filters, indexing coverage, and the other code search method. They do not prove a symbol or behavior is absent.
+- If retrieval or indexing actually fails, report the failure and follow the user's agreement to ask before changing approach. If a capability is unavailable, explain that limitation before using local search or upstream sources.
+
+## Ground the answer
+
+Identify the source version/revision and relevant file or symbol. Verify signatures, return values, and cleanup/lifecycle behavior in source before presenting an example. State whether the example was compiled or exercised.
+
+Before editing, compare indexed findings with the current checkout. Local uncommitted changes and index freshness can change the answer. Use direct file reads and focused local searches to verify or perform edits after initial discovery.
+
+codex
+I’m using the agentic-nix skill to locate the routing logic, then I’ll verify it against this checkout before editing the test.
+exec
+/run/current-system/sw/bin/bash -lc "git rev-parse --show-toplevel; git rev-parse --path-format=absolute --git-common-dir; cat /home/sam/.codex/claude-import/paths.json; rg --files -g 'CLAUDE.md' -g 'AGENTS.md' agentix-router .codex .agents" in /tmp/nix-shell.WhmBQI/agentix-bench-53817-1791934222556258251/task-04
+ exited 1 in 0ms:
+/tmp/nix-shell.WhmBQI/agentix-bench-53817-1791934222556258251/task-04
+/home/sam/home/agentix/.bare
+{
+  "version": 1,
+  "projects": [
+    {
+      "id": "-home-sam-home-agentic-nix",
+      "original_path": "/home/sam/home/agentic-nix",
+      "canonical_path": "/home/sam/home/agentix",
+      "aliases": [
+        "/home/sam/home/agentic-nix",
+        "/home/sam/home/agentix"
+      ],
+      "scope": "repository",
+      "git_common_dirs": [
+        "/home/sam/home/agentix/.bare"
+      ],
+      "index": "-home-sam-home-agentic-nix/INDEX.md",
+      "previous_locations": [
+        "/home/sam/home/agentix/.codex/claude-import/-home-sam-home-agentic-nix",
+        "/home/sam/home/agentix/.bare/codex-claude-import/-home-sam-home-agentic-nix"
+      ]
+    },
+    {
+      "id": "-home-sam-home-agentix",
+      "original_path": "/home/sam/home/agentix",
+      "canonical_path": "/home/sam/home/agentix",
+      "aliases": [
+        "/home/sam/home/agentix"
+      ],
+      "scope": "repository",
+      "git_common_dirs": [
+        "/home/sam/home/agentix/.bare"
+      ],
+      "index": "-home-sam-home-agentix/INDEX.md",
+      "previous_locations": [
+        "/home/sam/home/agentix/.codex/claude-import/-home-sam-home-agentix",
+        "/home/sam/home/agentix/.bare/codex-claude-import/-home-sam-home-agentix"
+      ]
+    },
+    {
+      "id": "-home-sam-home-agentix--bare",
+      "original_path": "/home/sam/home/agentix/.bare",
+      "canonical_path": "/home/sam/home/agentix/.bare",
+      "aliases": [
+        "/home/sam/home/agentix/.bare"
+      ],
+      "scope": "repository",
+      "git_common_dirs": [
+        "/home/sam/home/agentix/.bare"
+      ],
+      "index": "-home-sam-home-agentix--bare/INDEX.md",
+      "previous_locations": [
+        "/home/sam/home/agentix/.bare/codex-claude-import/-home-sam-home-agentix--bare"
+      ]
+    },
+    {
+      "id": "-home-sam-home-agentix--claude-worktrees-feat-lhs-indexer-support",
+      "original_path": "/home/sam/home/agentix/.claude/worktrees/feat+lhs-indexer-support",
+      "canonical_path": "/home/sam/home/agentix/.claude/worktrees/feat+lhs-indexer-support",
+      "aliases": [
+        "/home/sam/home/agentix/.claude/worktrees/feat+lhs-indexer-support"
+      ],
+      "scope": "worktree",
+      "git_common_dirs": [
+        "/home/sam/home/agentix/.bare"
+      ],
+      "index": "-home-sam-home-agentix--claude-worktrees-feat-lhs-indexer-support/INDEX.md",
+      "previous_locations": [
+        "/home/sam/home/agentix/.bare/codex-claude-import/-home-sam-home-agentix--claude-worktrees-feat-lhs-indexer-support"
+      ]
+    },
+    {
+      "id": "-home-sam-home-agentix-019-multi-llm-orchestration",
+      "original_path": "/home/sam/home/agentix/019-multi-llm-orchestration",
+      "canonical_path": "/home/sam/home/agentix/019-multi-llm-orchestration",
+      "aliases": [
+        "/home/sam/home/agentix/019-multi-llm-orchestration"
+      ],
+      "scope": "worktree",
+      "git_common_dirs": [
+        "/home/sam/home/agentix/.bare"
+      ],
+      "index": "-home-sam-home-agentix-019-multi-llm-orchestration/INDEX.md",
+      "previous_locations": [
+        "/home/sam/home/agentix/019-multi-llm-orchestration/.codex/claude-import/-home-sam-home-agentix-019-multi-llm-orchestration"
+      ]
+    },
+    {
+      "id": "-home-sam-home-agentix-master",
+      "original_path": "/home/sam/home/agentix/master",
+      "canonical_path": "/home/sam/home/agentix/master",
+      "aliases": [
+        "/home/sam/home/agentix/master"
+      ],
+      "scope": "worktree",
+      "git_common_dirs": [
+        "/home/sam/home/agentix/.bare"
+      ],
+      "index": "-home-sam-home-agentix-master/INDEX.md",
+      "previous_locations": [
+        "/home/sam/home/agentix/master/.codex/claude-import/-home-sam-home-agentix-master"
+      ]
+    },
+    {
+      "id": "-home-sam-home-ncs-acapella-boys-choir",
+      "original_path": "/home/sam/home/ncs/acapella-boys-choir",
+      "canonical_path": "/home/sam/home/ncs/acapella-boys-choir",
+      "aliases": [
+        "/home/sam/home/ncs/acapella-boys-choir"
+      ],
+      "scope": "project",
+      "git_common_dirs": [],
+      "index": "-home-sam-home-ncs-acapella-boys-choir/INDEX.md",
+      "previous_locations": [
+        "/home/sam/.local/share/codex-claude-archive/projects/-home-sam-home-ncs-acapella-boys-choir"
+      ]
+    },
+    {
+      "id": "-home-sam-home-ncs-programming",
+      "original_path": "/home/sam/home/ncs/programming",
+      "canonical_path": "/home/sam/home/ncs/programming",
+      "aliases": [
+        "/home/sam/home/ncs/programming"
+      ],
+      "scope": "project",
+      "git_common_dirs": [],
+      "index": "-home-sam-home-ncs-programming/INDEX.md",
+      "previous_locations": [
+        "/home/sam/.local/share/codex-claude-archive/projects/-home-sam-home-ncs-programming"
+      ]
+    },
+    {
+      "id": "-home-sam-home-ncs-programming-elm-snake-curriculum",
+      "original_path": "/home/sam/home/ncs/programming/elm-snake-curriculum",
+      "canonical_path": "/home/sam/home/ncs/programming/elm-snake-curriculum",
+      "aliases": [
+        "/home/sam/home/ncs/programming/elm-snake-curriculum"
+      ],
+      "scope": "project",
+      "git_common_dirs": [],
+      "index": "-home-sam-home-ncs-programming-elm-snake-curriculum/INDEX.md",
+      "previous_locations": [
+        "/home/sam/.local/share/codex-claude-archive/projects/-home-sam-home-ncs-programming-elm-snake-curriculum"
+      ]
+    },
+    {
+      "id": "-home-sam-home-network",
+      "original_path": "/home/sam/home/network",
+      "canonical_path": "/home/sam/home/network",
+      "aliases": [
+        "/home/sam/home/network"
+      ],
+      "scope": "repository",
+      "git_common_dirs": [
+        "/home/sam/home/network/.git"
+      ],
+      "index": "-home-sam-home-network/INDEX.md",
+      "previous_locations": [
+        "/home/sam/home/network/.codex/claude-import/-home-sam-home-network"
+      ]
+    },
+    {
+      "id": "-home-sam-home-pure-ledger",
+      "original_path": "/home/sam/home/pure-ledger",
+      "canonical_path": "/home/sam/home/pure-ledger",
+      "aliases": [
+        "/home/sam/home/pure-ledger"
+      ],
+      "scope": "project",
+      "git_common_dirs": [],
+      "index": "-home-sam-home-pure-ledger/INDEX.md",
+      "previous_locations": [
+        "/home/sam/.local/share/codex-claude-archive/projects/-home-sam-home-pure-ledger"
+      ]
+    },
+    {
+      "id": "-home-sam-scratch-claude",
+      "original_path": "/home/sam/scratch/claude",
+      "canonical_path": "/home/sam/scratch/claude",
+      "aliases": [
+        "/home/sam/scratch/claude"
+      ],
+      "scope": "project",
+      "git_common_dirs": [],
+      "index": "-home-sam-scratch-claude/INDEX.md",
+      "previous_locations": [
+        "/home/sam/scratch/claude/.codex/claude-import/-home-sam-scratch-claude"
+      ]
+    },
+    {
+      "id": "-home-sam-scratch-ron-image",
+      "original_path": "/home/sam/scratch/ron-image",
+      "canonical_path": "/home/sam/scratch/ron-image",
+      "aliases": [
+        "/home/sam/scratch/ron-image"
+      ],
+      "scope": "project",
+      "git_common_dirs": [],
+      "index": "-home-sam-scratch-ron-image/INDEX.md",
+      "previous_locations": [
+        "/home/sam/scratch/ron-image/.codex/claude-import/-home-sam-scratch-ron-image"
+      ]
+    },
+    {
+      "id": "-home-sam-work-ace-ace-voting",
+      "original_path": "/home/sam/work/ace/ace-voting",
+      "canonical_path": "/home/sam/work/ace/ace-voting",
+      "aliases": [
+        "/home/sam/work/ace/ace-voting"
+      ],
+      "scope": "repository",
+      "git_common_dirs": [
+        "/home/sam/work/ace/ace-voting/.git"
+      ],
+      "index": "-home-sam-work-ace-ace-voting/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/ace/ace-voting/.codex/claude-import/-home-sam-work-ace-ace-voting"
+      ]
+    },
+    {
+      "id": "-home-sam-work-ace-ace-voting-internal",
+      "original_path": "/home/sam/work/ace/ace-voting-internal",
+      "canonical_path": "/home/sam/work/ace/ace-voting-internal",
+      "aliases": [
+        "/home/sam/work/ace/ace-voting-internal"
+      ],
+      "scope": "repository",
+      "git_common_dirs": [
+        "/home/sam/work/ace/ace-voting-internal/.git"
+      ],
+      "index": "-home-sam-work-ace-ace-voting-internal/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/ace/ace-voting-internal/.codex/claude-import/-home-sam-work-ace-ace-voting-internal"
+      ]
+    },
+    {
+      "id": "-home-sam-work-intersect-security-council",
+      "original_path": "/home/sam/work/intersect/security-council",
+      "canonical_path": "/home/sam/work/intersect/security-council",
+      "aliases": [
+        "/home/sam/work/intersect/security-council"
+      ],
+      "scope": "repository",
+      "git_common_dirs": [
+        "/home/sam/work/intersect/security-council/.git"
+      ],
+      "index": "-home-sam-work-intersect-security-council/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/intersect/security-council/.codex/claude-import/-home-sam-work-intersect-security-council"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk",
+      "original_path": "/home/sam/work/iohk",
+      "canonical_path": "/home/sam/work/iohk",
+      "aliases": [
+        "/home/sam/work/iohk"
+      ],
+      "scope": "project",
+      "git_common_dirs": [],
+      "index": "-home-sam-work-iohk/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/.codex/claude-import/-home-sam-work-iohk"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-CIPs",
+      "original_path": "/home/sam/work/iohk/CIPs",
+      "canonical_path": "/home/sam/work/iohk/CIPs",
+      "aliases": [
+        "/home/sam/work/iohk/CIPs"
+      ],
+      "scope": "repository",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/CIPs/.git"
+      ],
+      "index": "-home-sam-work-iohk-CIPs/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/CIPs/.codex/claude-import/-home-sam-work-iohk-CIPs"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-cardano-base-wallet-cbits",
+      "original_path": "/home/sam/work/iohk/cardano-base/wallet-cbits",
+      "canonical_path": "/home/sam/work/iohk/cardano-base/wallet-cbits",
+      "aliases": [
+        "/home/sam/work/iohk/cardano-base/wallet-cbits"
+      ],
+      "scope": "worktree",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/cardano-base/master/.git"
+      ],
+      "index": "-home-sam-work-iohk-cardano-base-wallet-cbits/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/cardano-base/wallet-cbits/.codex/claude-import/-home-sam-work-iohk-cardano-base-wallet-cbits"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-cardano-crypto",
+      "original_path": "/home/sam/work/iohk/cardano-crypto",
+      "canonical_path": "/home/sam/work/iohk/cardano-crypto",
+      "aliases": [
+        "/home/sam/work/iohk/cardano-crypto"
+      ],
+      "scope": "repository",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/cardano-crypto/.git"
+      ],
+      "index": "-home-sam-work-iohk-cardano-crypto/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/cardano-crypto/.codex/claude-import/-home-sam-work-iohk-cardano-crypto"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-cardano-faucet",
+      "original_path": "/home/sam/work/iohk/cardano-faucet",
+      "canonical_path": "/home/sam/work/iohk/cardano-faucet",
+      "aliases": [
+        "/home/sam/work/iohk/cardano-faucet"
+      ],
+      "scope": "repository",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/cardano-faucet/.git"
+      ],
+      "index": "-home-sam-work-iohk-cardano-faucet/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/cardano-faucet/.codex/claude-import/-home-sam-work-iohk-cardano-faucet"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-cardano-ledger-cip-180",
+      "original_path": "/home/sam/work/iohk/cardano-ledger/cip-180",
+      "canonical_path": "/home/sam/work/iohk/cardano-ledger/cip-180",
+      "aliases": [
+        "/home/sam/work/iohk/cardano-ledger/cip-180"
+      ],
+      "scope": "repository",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/cardano-ledger/cip-180/.git"
+      ],
+      "index": "-home-sam-work-iohk-cardano-ledger-cip-180/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/cardano-ledger/cip-180/.codex/claude-import/-home-sam-work-iohk-cardano-ledger-cip-180"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-cardano-ledger-master",
+      "original_path": "/home/sam/work/iohk/cardano-ledger/master",
+      "canonical_path": "/home/sam/work/iohk/cardano-ledger/master",
+      "aliases": [
+        "/home/sam/work/iohk/cardano-ledger/master"
+      ],
+      "scope": "repository",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/cardano-ledger/master/.git"
+      ],
+      "index": "-home-sam-work-iohk-cardano-ledger-master/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/cardano-ledger/master/.codex/claude-import/-home-sam-work-iohk-cardano-ledger-master"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-cardano-ledger-scratch",
+      "original_path": "/home/sam/work/iohk/cardano-ledger/scratch",
+      "canonical_path": "/home/sam/work/iohk/cardano-ledger/scratch",
+      "aliases": [
+        "/home/sam/work/iohk/cardano-ledger/scratch"
+      ],
+      "scope": "worktree",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/cardano-ledger/master/.git"
+      ],
+      "index": "-home-sam-work-iohk-cardano-ledger-scratch/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/cardano-ledger/scratch/.codex/claude-import/-home-sam-work-iohk-cardano-ledger-scratch"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-cardano-lsm-rust",
+      "original_path": "/home/sam/work/iohk/cardano-lsm-rust",
+      "canonical_path": "/home/sam/work/iohk/cardano-lsm-rust",
+      "aliases": [
+        "/home/sam/work/iohk/cardano-lsm-rust"
+      ],
+      "scope": "repository",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/cardano-lsm-rust/.git"
+      ],
+      "index": "-home-sam-work-iohk-cardano-lsm-rust/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/cardano-lsm-rust/.codex/claude-import/-home-sam-work-iohk-cardano-lsm-rust"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-cardano-node-master",
+      "original_path": "/home/sam/work/iohk/cardano-node/master",
+      "canonical_path": "/home/sam/work/iohk/cardano-node/master",
+      "aliases": [
+        "/home/sam/work/iohk/cardano-node/master"
+      ],
+      "scope": "worktree",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/cardano-node/.bare"
+      ],
+      "index": "-home-sam-work-iohk-cardano-node-master/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/cardano-node/master/.codex/claude-import/-home-sam-work-iohk-cardano-node-master"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-cardano-node-scratch",
+      "original_path": "/home/sam/work/iohk/cardano-node/scratch",
+      "canonical_path": "/home/sam/work/iohk/cardano-node/scratch",
+      "aliases": [
+        "/home/sam/work/iohk/cardano-node/scratch"
+      ],
+      "scope": "worktree",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/cardano-node/.bare"
+      ],
+      "index": "-home-sam-work-iohk-cardano-node-scratch/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/cardano-node/.bare/codex-claude-import/-home-sam-work-iohk-cardano-node-scratch"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-cardano-streamer",
+      "original_path": "/home/sam/work/iohk/cardano-streamer",
+      "canonical_path": "/home/sam/work/iohk/cardano-streamer",
+      "aliases": [
+        "/home/sam/work/iohk/cardano-streamer"
+      ],
+      "scope": "repository",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/cardano-streamer/.git"
+      ],
+      "index": "-home-sam-work-iohk-cardano-streamer/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/cardano-streamer/.codex/claude-import/-home-sam-work-iohk-cardano-streamer"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-cardano-tracer-rust",
+      "original_path": "/home/sam/work/iohk/cardano-tracer-rust",
+      "canonical_path": "/home/sam/work/iohk/cardano-tracer-rust",
+      "aliases": [
+        "/home/sam/work/iohk/cardano-tracer-rust"
+      ],
+      "scope": "project",
+      "git_common_dirs": [],
+      "index": "-home-sam-work-iohk-cardano-tracer-rust/INDEX.md",
+      "previous_locations": [
+        "/home/sam/.local/share/codex-claude-archive/projects/-home-sam-work-iohk-cardano-tracer-rust"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-cardano-wallet",
+      "original_path": "/home/sam/work/iohk/cardano-wallet",
+      "canonical_path": "/home/sam/work/iohk/cardano-wallet",
+      "aliases": [
+        "/home/sam/work/iohk/cardano-wallet"
+      ],
+      "scope": "repository",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/cardano-wallet/.bare"
+      ],
+      "index": "-home-sam-work-iohk-cardano-wallet/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/cardano-wallet/.codex/claude-import/-home-sam-work-iohk-cardano-wallet",
+        "/home/sam/work/iohk/cardano-wallet/.bare/codex-claude-import/-home-sam-work-iohk-cardano-wallet"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-cardano-wallet--bare",
+      "original_path": "/home/sam/work/iohk/cardano-wallet/.bare",
+      "canonical_path": "/home/sam/work/iohk/cardano-wallet/.bare",
+      "aliases": [
+        "/home/sam/work/iohk/cardano-wallet/.bare"
+      ],
+      "scope": "repository",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/cardano-wallet/.bare"
+      ],
+      "index": "-home-sam-work-iohk-cardano-wallet--bare/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/cardano-wallet/.bare/codex-claude-import/-home-sam-work-iohk-cardano-wallet--bare"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-cardano-wallet-003-leios-testnet-support",
+      "original_path": "/home/sam/work/iohk/cardano-wallet/003-leios-testnet-support",
+      "canonical_path": "/home/sam/work/iohk/cardano-wallet/003-leios-testnet-support",
+      "aliases": [
+        "/home/sam/work/iohk/cardano-wallet/003-leios-testnet-support"
+      ],
+      "scope": "worktree",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/cardano-wallet/.bare"
+      ],
+      "index": "-home-sam-work-iohk-cardano-wallet-003-leios-testnet-support/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/cardano-wallet/.bare/codex-claude-import/-home-sam-work-iohk-cardano-wallet-003-leios-testnet-support"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-cardano-wallet-70002-shelley-multi-account",
+      "original_path": "/home/sam/work/iohk/cardano-wallet/70002-shelley-multi-account",
+      "canonical_path": "/home/sam/work/iohk/cardano-wallet/70002-shelley-multi-account",
+      "aliases": [
+        "/home/sam/work/iohk/cardano-wallet/70002-shelley-multi-account"
+      ],
+      "scope": "worktree",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/cardano-wallet/.bare"
+      ],
+      "index": "-home-sam-work-iohk-cardano-wallet-70002-shelley-multi-account/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/cardano-wallet/70002-shelley-multi-account/.codex/claude-import/-home-sam-work-iohk-cardano-wallet-70002-shelley-multi-account"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-cardano-wallet-70004-resync-endpoint",
+      "original_path": "/home/sam/work/iohk/cardano-wallet/70004-resync-endpoint",
+      "canonical_path": "/home/sam/work/iohk/cardano-wallet/70004-resync-endpoint",
+      "aliases": [
+        "/home/sam/work/iohk/cardano-wallet/70004-resync-endpoint"
+      ],
+      "scope": "worktree",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/cardano-wallet/.bare"
+      ],
+      "index": "-home-sam-work-iohk-cardano-wallet-70004-resync-endpoint/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/cardano-wallet/70004-resync-endpoint/.codex/claude-import/-home-sam-work-iohk-cardano-wallet-70004-resync-endpoint"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-cardano-wallet-cardano-crypto-wallet-format",
+      "original_path": "/home/sam/work/iohk/cardano-wallet/cardano-crypto-wallet-format",
+      "canonical_path": "/home/sam/work/iohk/cardano-wallet/cardano-crypto-wallet-format",
+      "aliases": [
+        "/home/sam/work/iohk/cardano-wallet/cardano-crypto-wallet-format"
+      ],
+      "scope": "worktree",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/cardano-wallet/.bare"
+      ],
+      "index": "-home-sam-work-iohk-cardano-wallet-cardano-crypto-wallet-format/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/cardano-wallet/cardano-crypto-wallet-format/.codex/claude-import/-home-sam-work-iohk-cardano-wallet-cardano-crypto-wallet-format"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-cardano-wallet-cip30",
+      "original_path": "/home/sam/work/iohk/cardano-wallet/cip30",
+      "canonical_path": "/home/sam/work/iohk/cardano-wallet/cip30",
+      "aliases": [
+        "/home/sam/work/iohk/cardano-wallet/cip30"
+      ],
+      "scope": "worktree",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/cardano-wallet/.bare"
+      ],
+      "index": "-home-sam-work-iohk-cardano-wallet-cip30/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/cardano-wallet/cip30/.codex/claude-import/-home-sam-work-iohk-cardano-wallet-cip30"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-chap-tracker",
+      "original_path": "/home/sam/work/iohk/chap-tracker",
+      "canonical_path": "/home/sam/work/iohk/chap-tracker",
+      "aliases": [
+        "/home/sam/work/iohk/chap-tracker"
+      ],
+      "scope": "repository",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/chap-tracker/.git"
+      ],
+      "index": "-home-sam-work-iohk-chap-tracker/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/chap-tracker/.codex/claude-import/-home-sam-work-iohk-chap-tracker"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-cpc-research-proposals",
+      "original_path": "/home/sam/work/iohk/cpc-research-proposals",
+      "canonical_path": "/home/sam/work/iohk/cpc-research-proposals",
+      "aliases": [
+        "/home/sam/work/iohk/cpc-research-proposals"
+      ],
+      "scope": "repository",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/cpc-research-proposals/.git"
+      ],
+      "index": "-home-sam-work-iohk-cpc-research-proposals/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/cpc-research-proposals/.codex/claude-import/-home-sam-work-iohk-cpc-research-proposals"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-daedalus",
+      "original_path": "/home/sam/work/iohk/daedalus",
+      "canonical_path": "/home/sam/work/iohk/daedalus",
+      "aliases": [
+        "/home/sam/work/iohk/daedalus"
+      ],
+      "scope": "repository",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/daedalus/.bare"
+      ],
+      "index": "-home-sam-work-iohk-daedalus/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/daedalus/.codex/claude-import/-home-sam-work-iohk-daedalus",
+        "/home/sam/work/iohk/daedalus/.bare/codex-claude-import/-home-sam-work-iohk-daedalus"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-daedalus--bare",
+      "original_path": "/home/sam/work/iohk/daedalus/.bare",
+      "canonical_path": "/home/sam/work/iohk/daedalus/.bare",
+      "aliases": [
+        "/home/sam/work/iohk/daedalus/.bare"
+      ],
+      "scope": "repository",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/daedalus/.bare"
+      ],
+      "index": "-home-sam-work-iohk-daedalus--bare/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/daedalus/.bare/codex-claude-import/-home-sam-work-iohk-daedalus--bare"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-daedalus-ariadne-analytics",
+      "original_path": "/home/sam/work/iohk/daedalus/ariadne-analytics",
+      "canonical_path": "/home/sam/work/iohk/daedalus/ariadne-analytics",
+      "aliases": [
+        "/home/sam/work/iohk/daedalus/ariadne-analytics"
+      ],
+      "scope": "worktree",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/daedalus/.bare"
+      ],
+      "index": "-home-sam-work-iohk-daedalus-ariadne-analytics/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/daedalus/ariadne-analytics/.codex/claude-import/-home-sam-work-iohk-daedalus-ariadne-analytics"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-daedalus-bump-js-deps",
+      "original_path": "/home/sam/work/iohk/daedalus/bump-js-deps",
+      "canonical_path": "/home/sam/work/iohk/daedalus/bump-js-deps",
+      "aliases": [
+        "/home/sam/work/iohk/daedalus/bump-js-deps"
+      ],
+      "scope": "worktree",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/daedalus/.bare"
+      ],
+      "index": "-home-sam-work-iohk-daedalus-bump-js-deps/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/daedalus/.bare/codex-claude-import/-home-sam-work-iohk-daedalus-bump-js-deps"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-daedalus-bump-node-11-1-1",
+      "original_path": "/home/sam/work/iohk/daedalus/bump-node-11.1.1",
+      "canonical_path": "/home/sam/work/iohk/daedalus/bump-node-11.1.1",
+      "aliases": [
+        "/home/sam/work/iohk/daedalus/bump-node-11.1.1"
+      ],
+      "scope": "worktree",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/daedalus/.bare"
+      ],
+      "index": "-home-sam-work-iohk-daedalus-bump-node-11-1-1/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/daedalus/bump-node-11.1.1/.codex/claude-import/-home-sam-work-iohk-daedalus-bump-node-11-1-1"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-daedalus-cip30",
+      "original_path": "/home/sam/work/iohk/daedalus/cip30",
+      "canonical_path": "/home/sam/work/iohk/daedalus/cip30",
+      "aliases": [
+        "/home/sam/work/iohk/daedalus/cip30"
+      ],
+      "scope": "worktree",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/daedalus/.bare"
+      ],
+      "index": "-home-sam-work-iohk-daedalus-cip30/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/daedalus/cip30/.codex/claude-import/-home-sam-work-iohk-daedalus-cip30"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-daedalus-keystone",
+      "original_path": "/home/sam/work/iohk/daedalus/keystone",
+      "canonical_path": "/home/sam/work/iohk/daedalus/keystone",
+      "aliases": [
+        "/home/sam/work/iohk/daedalus/keystone"
+      ],
+      "scope": "worktree",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/daedalus/.bare"
+      ],
+      "index": "-home-sam-work-iohk-daedalus-keystone/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/daedalus/keystone/.codex/claude-import/-home-sam-work-iohk-daedalus-keystone"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-daedalus-linux-packaging",
+      "original_path": "/home/sam/work/iohk/daedalus/linux-packaging",
+      "canonical_path": "/home/sam/work/iohk/daedalus/linux-packaging",
+      "aliases": [
+        "/home/sam/work/iohk/daedalus/linux-packaging"
+      ],
+      "scope": "worktree",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/daedalus/.bare"
+      ],
+      "index": "-home-sam-work-iohk-daedalus-linux-packaging/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/daedalus/linux-packaging/.codex/claude-import/-home-sam-work-iohk-daedalus-linux-packaging"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-daedalus-linux-repo-publishing",
+      "original_path": "/home/sam/work/iohk/daedalus/linux-repo-publishing",
+      "canonical_path": "/home/sam/work/iohk/daedalus/linux-repo-publishing",
+      "aliases": [
+        "/home/sam/work/iohk/daedalus/linux-repo-publishing"
+      ],
+      "scope": "worktree",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/daedalus/.bare"
+      ],
+      "index": "-home-sam-work-iohk-daedalus-linux-repo-publishing/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/daedalus/linux-repo-publishing/.codex/claude-import/-home-sam-work-iohk-daedalus-linux-repo-publishing"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-daedalus-master",
+      "original_path": "/home/sam/work/iohk/daedalus/master",
+      "canonical_path": "/home/sam/work/iohk/daedalus/master",
+      "aliases": [
+        "/home/sam/work/iohk/daedalus/master"
+      ],
+      "scope": "worktree",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/daedalus/.bare"
+      ],
+      "index": "-home-sam-work-iohk-daedalus-master/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/daedalus/master/.codex/claude-import/-home-sam-work-iohk-daedalus-master"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-daedalus-multisig-wallet",
+      "original_path": "/home/sam/work/iohk/daedalus/multisig-wallet",
+      "canonical_path": "/home/sam/work/iohk/daedalus/multisig-wallet",
+      "aliases": [
+        "/home/sam/work/iohk/daedalus/multisig-wallet"
+      ],
+      "scope": "worktree",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/daedalus/.bare"
+      ],
+      "index": "-home-sam-work-iohk-daedalus-multisig-wallet/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/daedalus/multisig-wallet/.codex/claude-import/-home-sam-work-iohk-daedalus-multisig-wallet"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-daedalus-release-11-5-0",
+      "original_path": "/home/sam/work/iohk/daedalus/release-11.5.0",
+      "canonical_path": "/home/sam/work/iohk/daedalus/release-11.5.0",
+      "aliases": [
+        "/home/sam/work/iohk/daedalus/release-11.5.0"
+      ],
+      "scope": "worktree",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/daedalus/.bare"
+      ],
+      "index": "-home-sam-work-iohk-daedalus-release-11-5-0/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/daedalus/release-11.5.0/.codex/claude-import/-home-sam-work-iohk-daedalus-release-11-5-0"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-daedalus-release-tool",
+      "original_path": "/home/sam/work/iohk/daedalus/release-tool",
+      "canonical_path": "/home/sam/work/iohk/daedalus/release-tool",
+      "aliases": [
+        "/home/sam/work/iohk/daedalus/release-tool"
+      ],
+      "scope": "worktree",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/daedalus/.bare"
+      ],
+      "index": "-home-sam-work-iohk-daedalus-release-tool/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/daedalus/.bare/codex-claude-import/-home-sam-work-iohk-daedalus-release-tool"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-daedalus-scratch",
+      "original_path": "/home/sam/work/iohk/daedalus/scratch",
+      "canonical_path": "/home/sam/work/iohk/daedalus/scratch",
+      "aliases": [
+        "/home/sam/work/iohk/daedalus/scratch"
+      ],
+      "scope": "worktree",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/daedalus/.bare"
+      ],
+      "index": "-home-sam-work-iohk-daedalus-scratch/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/daedalus/.bare/codex-claude-import/-home-sam-work-iohk-daedalus-scratch"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-daedaluswallet-io",
+      "original_path": "/home/sam/work/iohk/daedaluswallet.io",
+      "canonical_path": "/home/sam/work/iohk/daedaluswallet.io",
+      "aliases": [
+        "/home/sam/work/iohk/daedaluswallet.io"
+      ],
+      "scope": "repository",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/daedaluswallet.io/.git"
+      ],
+      "index": "-home-sam-work-iohk-daedaluswallet-io/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/daedaluswallet.io/.codex/claude-import/-home-sam-work-iohk-daedaluswallet-io"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-developer-portal",
+      "original_path": "/home/sam/work/iohk/developer-portal",
+      "canonical_path": "/home/sam/work/iohk/developer-portal",
+      "aliases": [
+        "/home/sam/work/iohk/developer-portal"
+      ],
+      "scope": "repository",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/developer-portal/.git"
+      ],
+      "index": "-home-sam-work-iohk-developer-portal/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/developer-portal/.codex/claude-import/-home-sam-work-iohk-developer-portal"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-hayate",
+      "original_path": "/home/sam/work/iohk/hayate",
+      "canonical_path": "/home/sam/work/iohk/hayate",
+      "aliases": [
+        "/home/sam/work/iohk/hayate"
+      ],
+      "scope": "repository",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/hayate/.bare"
+      ],
+      "index": "-home-sam-work-iohk-hayate/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/hayate/.codex/claude-import/-home-sam-work-iohk-hayate",
+        "/home/sam/work/iohk/hayate/.bare/codex-claude-import/-home-sam-work-iohk-hayate"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-hayate--bare",
+      "original_path": "/home/sam/work/iohk/hayate/.bare",
+      "canonical_path": "/home/sam/work/iohk/hayate/.bare",
+      "aliases": [
+        "/home/sam/work/iohk/hayate/.bare"
+      ],
+      "scope": "repository",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/hayate/.bare"
+      ],
+      "index": "-home-sam-work-iohk-hayate--bare/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/hayate/.bare/codex-claude-import/-home-sam-work-iohk-hayate--bare"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-hayate-master",
+      "original_path": "/home/sam/work/iohk/hayate/master",
+      "canonical_path": "/home/sam/work/iohk/hayate/master",
+      "aliases": [
+        "/home/sam/work/iohk/hayate/master"
+      ],
+      "scope": "worktree",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/hayate/.bare"
+      ],
+      "index": "-home-sam-work-iohk-hayate-master/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/hayate/master/.codex/claude-import/-home-sam-work-iohk-hayate-master"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-hayate-treasury-contracts",
+      "original_path": "/home/sam/work/iohk/hayate/treasury-contracts",
+      "canonical_path": "/home/sam/work/iohk/hayate/treasury-contracts",
+      "aliases": [
+        "/home/sam/work/iohk/hayate/treasury-contracts"
+      ],
+      "scope": "worktree",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/hayate/.bare"
+      ],
+      "index": "-home-sam-work-iohk-hayate-treasury-contracts/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/hayate/treasury-contracts/.codex/claude-import/-home-sam-work-iohk-hayate-treasury-contracts"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-hermod-rust",
+      "original_path": "/home/sam/work/iohk/hermod-rust",
+      "canonical_path": "/home/sam/work/iohk/hermod-rust",
+      "aliases": [
+        "/home/sam/work/iohk/hermod-rust"
+      ],
+      "scope": "repository",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/hermod-rust/.git"
+      ],
+      "index": "-home-sam-work-iohk-hermod-rust/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/hermod-rust/.codex/claude-import/-home-sam-work-iohk-hermod-rust"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-midnight-city-agent",
+      "original_path": "/home/sam/work/iohk/midnight-city-agent",
+      "canonical_path": "/home/sam/work/iohk/midnight-city-agent",
+      "aliases": [
+        "/home/sam/work/iohk/midnight-city-agent"
+      ],
+      "scope": "repository",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/midnight-city-agent/.git"
+      ],
+      "index": "-home-sam-work-iohk-midnight-city-agent/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/midnight-city-agent/.codex/claude-import/-home-sam-work-iohk-midnight-city-agent"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-midnight-cli",
+      "original_path": "/home/sam/work/iohk/midnight-cli",
+      "canonical_path": "/home/sam/work/iohk/midnight-cli",
+      "aliases": [
+        "/home/sam/work/iohk/midnight-cli"
+      ],
+      "scope": "repository",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/midnight-cli/.git"
+      ],
+      "index": "-home-sam-work-iohk-midnight-cli/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/midnight-cli/.codex/claude-import/-home-sam-work-iohk-midnight-cli"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-min-cost-analysis",
+      "original_path": "/home/sam/work/iohk/min-cost-analysis",
+      "canonical_path": "/home/sam/work/iohk/min-cost-analysis",
+      "aliases": [
+        "/home/sam/work/iohk/min-cost-analysis"
+      ],
+      "scope": "project",
+      "git_common_dirs": [],
+      "index": "-home-sam-work-iohk-min-cost-analysis/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/min-cost-analysis/.codex/claude-import/-home-sam-work-iohk-min-cost-analysis"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-ogmios-rust",
+      "original_path": "/home/sam/work/iohk/ogmios-rust",
+      "canonical_path": "/home/sam/work/iohk/ogmios-rust",
+      "aliases": [
+        "/home/sam/work/iohk/ogmios-rust"
+      ],
+      "scope": "repository",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/ogmios-rust/.git"
+      ],
+      "index": "-home-sam-work-iohk-ogmios-rust/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/ogmios-rust/.codex/claude-import/-home-sam-work-iohk-ogmios-rust"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-product-website",
+      "original_path": "/home/sam/work/iohk/product-website",
+      "canonical_path": "/home/sam/work/iohk/product-website",
+      "aliases": [
+        "/home/sam/work/iohk/product-website"
+      ],
+      "scope": "repository",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/product-website/.git"
+      ],
+      "index": "-home-sam-work-iohk-product-website/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/product-website/.codex/claude-import/-home-sam-work-iohk-product-website"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-product-website-docs-proposals",
+      "original_path": "/home/sam/work/iohk/product-website/docs/proposals",
+      "canonical_path": "/home/sam/work/iohk/product-website/docs/proposals",
+      "aliases": [
+        "/home/sam/work/iohk/product-website/docs/proposals"
+      ],
+      "scope": "project",
+      "git_common_dirs": [],
+      "index": "-home-sam-work-iohk-product-website-docs-proposals/INDEX.md",
+      "previous_locations": [
+        "/home/sam/.local/share/codex-claude-archive/projects/-home-sam-work-iohk-product-website-docs-proposals"
+      ]
+    },
+    {
+      "id": "-home-sam-work-iohk-torsten",
+      "original_path": "/home/sam/work/iohk/torsten",
+      "canonical_path": "/home/sam/work/iohk/torsten",
+      "aliases": [
+        "/home/sam/work/iohk/torsten"
+      ],
+      "scope": "repository",
+      "git_common_dirs": [
+        "/home/sam/work/iohk/torsten/.git"
+      ],
+      "index": "-home-sam-work-iohk-torsten/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/iohk/torsten/.codex/claude-import/-home-sam-work-iohk-torsten"
+      ]
+    },
+    {
+      "id": "-home-sam-work-ncs-programming-elm-snake-curriculum",
+      "original_path": "/home/sam/work/ncs/programming/elm-snake-curriculum",
+      "canonical_path": "/home/sam/work/ncs/programming/elm-snake-curriculum",
+      "aliases": [
+        "/home/sam/work/ncs/programming/elm-snake-curriculum"
+      ],
+      "scope": "repository",
+      "git_common_dirs": [
+        "/home/sam/work/ncs/programming/elm-snake-curriculum/.git"
+      ],
+      "index": "-home-sam-work-ncs-programming-elm-snake-curriculum/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/ncs/programming/elm-snake-curriculum/.codex/claude-import/-home-sam-work-ncs-programming-elm-snake-curriculum"
+      ]
+    },
+    {
+      "id": "-home-sam-work-ncs-tome-of-the-math-dragon",
+      "original_path": "/home/sam/work/ncs/tome-of-the-math-dragon",
+      "canonical_path": "/home/sam/work/ncs/tome-of-the-math-dragon",
+      "aliases": [
+        "/home/sam/work/ncs/tome-of-the-math-dragon"
+      ],
+      "scope": "repository",
+      "git_common_dirs": [
+        "/home/sam/work/ncs/tome-of-the-math-dragon/.bare"
+      ],
+      "index": "-home-sam-work-ncs-tome-of-the-math-dragon/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/ncs/tome-of-the-math-dragon/.codex/claude-import/-home-sam-work-ncs-tome-of-the-math-dragon",
+        "/home/sam/work/ncs/tome-of-the-math-dragon/.bare/codex-claude-import/-home-sam-work-ncs-tome-of-the-math-dragon"
+      ]
+    },
+    {
+      "id": "-home-sam-work-nixedge",
+      "original_path": "/home/sam/work/nixedge",
+      "canonical_path": "/home/sam/work/nixedge",
+      "aliases": [
+        "/home/sam/work/nixedge"
+      ],
+      "scope": "project",
+      "git_common_dirs": [],
+      "index": "-home-sam-work-nixedge/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/nixedge/.codex/claude-import/-home-sam-work-nixedge"
+      ]
+    },
+    {
+      "id": "-home-sam-work-nixedge-deployable-containers",
+      "original_path": "/home/sam/work/nixedge/deployable-containers",
+      "canonical_path": "/home/sam/work/nixedge/deployable-containers",
+      "aliases": [
+        "/home/sam/work/nixedge/deployable-containers"
+      ],
+      "scope": "repository",
+      "git_common_dirs": [
+        "/home/sam/work/nixedge/deployable-containers/.git"
+      ],
+      "index": "-home-sam-work-nixedge-deployable-containers/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/nixedge/deployable-containers/.codex/claude-import/-home-sam-work-nixedge-deployable-containers"
+      ]
+    },
+    {
+      "id": "-home-sam-work-nixedge-exegesis",
+      "original_path": "/home/sam/work/nixedge/exegesis",
+      "canonical_path": "/home/sam/work/nixedge/exegesis",
+      "aliases": [
+        "/home/sam/work/nixedge/exegesis"
+      ],
+      "scope": "repository",
+      "git_common_dirs": [
+        "/home/sam/work/nixedge/exegesis/.git"
+      ],
+      "index": "-home-sam-work-nixedge-exegesis/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/nixedge/exegesis/.codex/claude-import/-home-sam-work-nixedge-exegesis"
+      ]
+    },
+    {
+      "id": "-home-sam-work-nixedge-omarchy",
+      "original_path": "/home/sam/work/nixedge/omarchy",
+      "canonical_path": "/home/sam/work/nixedge/omarchy",
+      "aliases": [
+        "/home/sam/work/nixedge/omarchy"
+      ],
+      "scope": "repository",
+      "git_common_dirs": [
+        "/home/sam/work/nixedge/omarchy/.bare"
+      ],
+      "index": "-home-sam-work-nixedge-omarchy/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/nixedge/omarchy/.codex/claude-import/-home-sam-work-nixedge-omarchy",
+        "/home/sam/work/nixedge/omarchy/.bare/codex-claude-import/-home-sam-work-nixedge-omarchy"
+      ]
+    },
+    {
+      "id": "-home-sam-work-nixedge-omarchy--bare",
+      "original_path": "/home/sam/work/nixedge/omarchy/.bare",
+      "canonical_path": "/home/sam/work/nixedge/omarchy/.bare",
+      "aliases": [
+        "/home/sam/work/nixedge/omarchy/.bare"
+      ],
+      "scope": "repository",
+      "git_common_dirs": [
+        "/home/sam/work/nixedge/omarchy/.bare"
+      ],
+      "index": "-home-sam-work-nixedge-omarchy--bare/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/nixedge/omarchy/.bare/codex-claude-import/-home-sam-work-nixedge-omarchy--bare"
+      ]
+    },
+    {
+      "id": "-home-sam-work-nixedge-omarchy-005-installer",
+      "original_path": "/home/sam/work/nixedge/omarchy/005-installer",
+      "canonical_path": "/home/sam/work/nixedge/omarchy/005-installer",
+      "aliases": [
+        "/home/sam/work/nixedge/omarchy/005-installer"
+      ],
+      "scope": "worktree",
+      "git_common_dirs": [
+        "/home/sam/work/nixedge/omarchy/.bare"
+      ],
+      "index": "-home-sam-work-nixedge-omarchy-005-installer/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/nixedge/omarchy/005-installer/.codex/claude-import/-home-sam-work-nixedge-omarchy-005-installer"
+      ]
+    },
+    {
+      "id": "-home-sam-work-nixedge-pure-ledger",
+      "original_path": "/home/sam/work/nixedge/pure-ledger",
+      "canonical_path": "/home/sam/work/nixedge/pure-ledger",
+      "aliases": [
+        "/home/sam/work/nixedge/pure-ledger"
+      ],
+      "scope": "repository",
+      "git_common_dirs": [
+        "/home/sam/work/nixedge/pure-ledger/.git"
+      ],
+      "index": "-home-sam-work-nixedge-pure-ledger/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/nixedge/pure-ledger/.codex/claude-import/-home-sam-work-nixedge-pure-ledger"
+      ]
+    },
+    {
+      "id": "-home-sam-work-nixedge-synaptex",
+      "original_path": "/home/sam/work/nixedge/synaptex",
+      "canonical_path": "/home/sam/work/nixedge/synaptex",
+      "aliases": [
+        "/home/sam/work/nixedge/synaptex"
+      ],
+      "scope": "repository",
+      "git_common_dirs": [
+        "/home/sam/work/nixedge/synaptex/.git"
+      ],
+      "index": "-home-sam-work-nixedge-synaptex/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/nixedge/synaptex/.codex/claude-import/-home-sam-work-nixedge-synaptex"
+      ]
+    },
+    {
+      "id": "-home-sam-work-se7en-automata--bare",
+      "original_path": "/home/sam/work/se7en/automata/.bare",
+      "canonical_path": "/home/sam/work/se7en/automata/.bare",
+      "aliases": [
+        "/home/sam/work/se7en/automata/.bare"
+      ],
+      "scope": "repository",
+      "git_common_dirs": [
+        "/home/sam/work/se7en/automata/.bare"
+      ],
+      "index": "-home-sam-work-se7en-automata--bare/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/se7en/automata/.bare/codex-claude-import/-home-sam-work-se7en-automata--bare"
+      ]
+    },
+    {
+      "id": "-home-sam-work-se7en-keystone3-firmware",
+      "original_path": "/home/sam/work/se7en/keystone3-firmware",
+      "canonical_path": "/home/sam/work/se7en/keystone3-firmware",
+      "aliases": [
+        "/home/sam/work/se7en/keystone3-firmware"
+      ],
+      "scope": "repository",
+      "git_common_dirs": [
+        "/home/sam/work/se7en/keystone3-firmware/.git"
+      ],
+      "index": "-home-sam-work-se7en-keystone3-firmware/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/se7en/keystone3-firmware/.codex/claude-import/-home-sam-work-se7en-keystone3-firmware"
+      ]
+    },
+    {
+      "id": "-home-sam-work-se7en-minos",
+      "original_path": "/home/sam/work/se7en/minos",
+      "canonical_path": "/home/sam/work/se7en/minos",
+      "aliases": [
+        "/home/sam/work/se7en/minos"
+      ],
+      "scope": "repository",
+      "git_common_dirs": [
+        "/home/sam/work/se7en/minos/.bare"
+      ],
+      "index": "-home-sam-work-se7en-minos/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/se7en/minos/.codex/claude-import/-home-sam-work-se7en-minos",
+        "/home/sam/work/se7en/minos/.bare/codex-claude-import/-home-sam-work-se7en-minos"
+      ]
+    },
+    {
+      "id": "-home-sam-work-se7en-minos--bare",
+      "original_path": "/home/sam/work/se7en/minos/.bare",
+      "canonical_path": "/home/sam/work/se7en/minos/.bare",
+      "aliases": [
+        "/home/sam/work/se7en/minos/.bare"
+      ],
+      "scope": "repository",
+      "git_common_dirs": [
+        "/home/sam/work/se7en/minos/.bare"
+      ],
+      "index": "-home-sam-work-se7en-minos--bare/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/se7en/minos/.bare/codex-claude-import/-home-sam-work-se7en-minos--bare"
+      ]
+    },
+    {
+      "id": "-home-sam-work-se7en-minos-master",
+      "original_path": "/home/sam/work/se7en/minos/master",
+      "canonical_path": "/home/sam/work/se7en/minos/master",
+      "aliases": [
+        "/home/sam/work/se7en/minos/master"
+      ],
+      "scope": "worktree",
+      "git_common_dirs": [
+        "/home/sam/work/se7en/minos/.bare"
+      ],
+      "index": "-home-sam-work-se7en-minos-master/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/se7en/minos/master/.codex/claude-import/-home-sam-work-se7en-minos-master"
+      ]
+    },
+    {
+      "id": "-home-sam-work-se7en-support-ariadne--bare",
+      "original_path": "/home/sam/work/se7en/support-ariadne/.bare",
+      "canonical_path": "/home/sam/work/se7en/support-ariadne/.bare",
+      "aliases": [
+        "/home/sam/work/se7en/support-ariadne/.bare"
+      ],
+      "scope": "repository",
+      "git_common_dirs": [
+        "/home/sam/work/se7en/support-ariadne/.bare"
+      ],
+      "index": "-home-sam-work-se7en-support-ariadne--bare/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/se7en/support-ariadne/.bare/codex-claude-import/-home-sam-work-se7en-support-ariadne--bare"
+      ]
+    },
+    {
+      "id": "-home-sam-work-se7en-support-ariadne-master",
+      "original_path": "/home/sam/work/se7en/support-ariadne/master",
+      "canonical_path": "/home/sam/work/se7en/support-ariadne/master",
+      "aliases": [
+        "/home/sam/work/se7en/support-ariadne/master"
+      ],
+      "scope": "worktree",
+      "git_common_dirs": [
+        "/home/sam/work/se7en/support-ariadne/.bare"
+      ],
+      "index": "-home-sam-work-se7en-support-ariadne-master/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/se7en/support-ariadne/master/.codex/claude-import/-home-sam-work-se7en-support-ariadne-master"
+      ]
+    },
+    {
+      "id": "-home-sam-work-se7en-treasury-contracts",
+      "original_path": "/home/sam/work/se7en/treasury-contracts",
+      "canonical_path": "/home/sam/work/se7en/treasury-contracts",
+      "aliases": [
+        "/home/sam/work/se7en/treasury-contracts"
+      ],
+      "scope": "repository",
+      "git_common_dirs": [
+        "/home/sam/work/se7en/treasury-contracts/.git"
+      ],
+      "index": "-home-sam-work-se7en-treasury-contracts/INDEX.md",
+      "previous_locations": [
+        "/home/sam/work/se7en/treasury-contracts/.codex/claude-import/-home-sam-work-se7en-treasury-contracts"
+      ]
+    }
+  ],
+  "global_archive": "_global",
+  "conflicts": [],
+  "variants": "_variants"
+}
+
+mcp: agentic-nix/list_repos started
+mcp: agentic-nix/list_repos (completed)
+mcp: agentic-nix/search_code started
+mcp: agentic-nix/search_code (completed)
+exec
+/run/current-system/sw/bin/bash -lc 'cat /home/sam/.codex/claude-import/-home-sam-home-agentic-nix/INDEX.md /home/sam/.codex/claude-import/-home-sam-home-agentix/INDEX.md /home/sam/.codex/claude-import/-home-sam-home-agentix--bare/INDEX.md; rg --files agentix-router; if test -f CLAUDE.md; then cat CLAUDE.md; fi' in /tmp/nix-shell.WhmBQI/agentix-bench-53817-1791934222556258251/task-04
+ succeeded in 0ms:
+# Imported Claude context
+
+Original project: `/home/sam/home/agentix`
+
+- [memory/MEMORY.md](memory/MEMORY.md)
+
+Session transcripts and subagent/tool-result files are preserved alongside the memories. Search relevant JSONL files with `rg`; these are not Codex resume files.
+# Imported Claude context
+
+Original project: `/home/sam/home/agentix`
+
+- [memory/MEMORY.md](memory/MEMORY.md)
+- [memory/feedback_no_gpg_signing.md](memory/feedback_no_gpg_signing.md)
+
+Session transcripts and subagent/tool-result files are preserved alongside the memories. Search relevant JSONL files with `rg`; these are not Codex resume files.
+
+- [Feature 021 Qwen restart checkpoint](memory/project_021_qwen_checkpoint.md) — Read before resuming Qwen/Strata research or restoring worktree 021.
+# Imported Claude context
+
+Original project: `/home/sam/home/agentix/.bare`
+
+- [memory/MEMORY.md](memory/MEMORY.md)
+- [memory/project_020_coding_checkpoint.md](memory/project_020_coding_checkpoint.md)
+- [memory/project_ax_codex_planning.md](memory/project_ax_codex_planning.md)
+- [memory/project_codex_transition.md](memory/project_codex_transition.md)
+- [memory/feedback_commit_no_gpg.md](memory/feedback_commit_no_gpg.md)
+- [memory/feedback_feature_numbering.md](memory/feedback_feature_numbering.md)
+- [memory/feedback_no_commit_master.md](memory/feedback_no_commit_master.md)
+- [memory/feedback_no_nix_store_crawl.md](memory/feedback_no_nix_store_crawl.md)
+- [memory/feedback_no_push.md](memory/feedback_no_push.md)
+- [memory/feedback_no_sqlite.md](memory/feedback_no_sqlite.md)
+- [memory/feedback_speckit_required.md](memory/feedback_speckit_required.md)
+- [memory/feedback_use_devshell.md](memory/feedback_use_devshell.md)
+- [memory/feedback_worktree_location.md](memory/feedback_worktree_location.md)
+- [memory/project_009_lhs_deploy.md](memory/project_009_lhs_deploy.md)
+- [memory/project_016_voice_loop.md](memory/project_016_voice_loop.md)
+- [memory/project_019_orchestrator.md](memory/project_019_orchestrator.md)
+- [memory/project_claude_jail_exception.md](memory/project_claude_jail_exception.md)
+- [memory/project_gh_proxy_redesign.md](memory/project_gh_proxy_redesign.md)
+- [memory/reference_server.md](memory/reference_server.md)
+
+Session transcripts and subagent/tool-result files are preserved alongside the memories. Search relevant JSONL files with `rg`; these are not Codex resume files.
+agentix-router/Cargo.toml
+agentix-router/src/lib.rs
+# agentix Development Guidelines
+
+Auto-generated from feature plans and updated manually. Last updated: 2026-08-22
+
+## Active Technologies
+- Rust edition 2021, Rust 1.80+ (via fenix stable toolchain in Nix)
+- llama-cpp-2 (C++, isolated in `agentix-llama`)
+- whisper-rs / whisper.cpp (C++, isolated in `agentix-whisper`); audio decoding via symphonia + rubato
+- tree-sitter-* (C++, in `agentix-indexer`)
+- fastembed/onnxruntime (C++, in `agentix-search`)
+- tokio, axum, sqlx, rmcp, ratatui
+- PostgreSQL 17 + pg_search (BM25) + pgvector (HNSW)
+- Nix flakes (build + services)
+- sled 0.34 embedded key-value store (agentix-agent: todos, notifications, gmail cursor, sessions)
+- Rust 2021 (workspace standard, fenix stable toolchain) (016-voice-loop)
+- N/A — voice turns are ephemeral; config in existing TOML files (016-voice-loop)
+
+## Project Structure
+
+```text
+agentix-api/         # OpenAI-compatible request/response types (no deps)
+agentix-router/      # Backend-selection routing (RouteTarget enum); NO C++ deps
+agentix-infer/       # Pure-Rust inference traits, types, and ModelStore
+agentix-llama/       # llama-cpp-2 GGUF backend (C++; isolated here)
+agentix-whisper/     # whisper.cpp speech-to-text backend (C++; isolated here)
+agentix-daemon/      # HTTP gateway (Axum); assembles api + router + infer + llama + whisper
+agentix-harness/     # Agent loop library (state machine, tool dispatch)
+agentix-ax/          # TUI agent binary (Ratatui, links harness)
+agentix-search/      # PostgreSQL search library (BM25 + vector + reranking)
+agentix-indexer/     # Repo ingestion pipeline (tree-sitter + embed); bin: ingest
+agentix-mcp-server/  # MCP stdio server exposing search tools; bin: mcp-server
+agentix-agent/       # Home assistant daemon (todos, calendar, gmail, ntfy, chat UI); Port 8765
+src/                 # Jail binaries (claude-jail, ax-jail, gh-jail-*)
+```
+
+Dependency flow: `agentix-api` → `agentix-router` → `agentix-daemon`. C++ is isolated:
+`agentix-llama` (llama-cpp-2), `agentix-whisper` (whisper.cpp + symphonia), `agentix-indexer` (tree-sitter), `agentix-search` (fastembed).
+Neither `agentix-router` nor `agentix-infer` have C++ transitive deps. No circular deps.
+The daemon is the only crate that binds a port. The daemon's `build.rs` adds
+`--allow-multiple-definition` because llama.cpp and whisper.cpp both bundle ggml.
+
+## Commands
+
+```bash
+# Build everything
+nix develop --command cargo build --workspace
+
+# Test a specific crate
+nix develop --command cargo test -p agentix-infer
+
+# Run all tests
+nix develop --command cargo test --workspace
+
+# Format check
+nix develop --command cargo fmt --all --check
+
+# Clippy (fails on warnings; unwrap_used + expect_used are enabled)
+nix develop --command cargo clippy -- -D warnings
+
+# Start dev services (PostgreSQL + Ollama)
+nix run .#dev
+
+# Run gateway
+nix develop --command agentix-daemon
+```
+
+## Code Style
+
+- Conventional Commits: `feat:`, `fix:`, `feat!:`, `chore:`, `docs:`, `test:`
+- `clippy::unwrap_used` and `clippy::expect_used` are denied workspace-wide — use `?` or explicit error handling
+- `unsafe` blocks require a `// SAFETY:` comment explaining the invariant
+- No blocking calls on the Tokio runtime — use `tokio::task::spawn_blocking` for C FFI (llama.cpp)
+- Comments only when the WHY is non-obvious; no docstring blocks for obvious functions
+
+## Active Feature: 001-agentix-infer
+
+**Branch**: `001-agentix-infer`
+**Plan**: `specs/001-agentix-infer/plan.md`
+
+Building `agentix-infer`: in-process GGUF inference replacing the Ollama HTTP proxy.
+
+Key constraints:
+- Pure library crate — no network surface
+- Integration tests MUST use a small (<50MB) fixture GGUF pinned in Nix, not jina-code (1.5GB)
+- All llama.cpp C FFI via `spawn_blocking`
+- Ollama-compatible blob layout so existing model dirs are usable
+
+<!-- MANUAL ADDITIONS START -->
+<!-- MANUAL ADDITIONS END -->
+
+## Recent Changes
+- 016-voice-loop: Added Rust 2021 (workspace standard, fenix stable toolchain)
+- 014-home-agent: agentix-agent home assistant daemon — todos (sled), ntfy.sh push, Google Calendar/Gmail, mobile chat UI, Prometheus metrics, NixOS service module
+<<<<<<< HEAD
+- 013-grammar-responses-api: Added grammar enforcement and /v1/responses endpoint; `llama-cpp-2` common feature, `axum 0.8`, `agentix-api`, `agentix-infer`
+
+exec
+/run/current-system/sw/bin/bash -lc 'cat agentix-router/src/lib.rs; cat /home/sam/.codex/claude-import/-home-sam-home-agentic-nix/memory/MEMORY.md /home/sam/.codex/claude-import/-home-sam-home-agentix/memory/MEMORY.md /home/sam/.codex/claude-import/-home-sam-home-agentix--bare/memory/MEMORY.md /home/sam/.codex/claude-import/-home-sam-home-agentix/memory/feedback_no_gpg_signing.md' in /tmp/nix-shell.WhmBQI/agentix-bench-53817-1791934222556258251/task-04
+ succeeded in 0ms:
+/// Which backend to route a request to.
+#[derive(Debug, Clone, PartialEq)]
+pub enum RouteTarget {
+    Local,
+    Anthropic,
+    OpenAI,
+    OpenRouter,
+}
+
+/// Backend-selection router. Pure logic — no network surface, no config dependency.
+///
+/// Routing rules (in priority order):
+///   `local/<model>`       → Local
+///   `<provider>/<model>`  → OpenRouter  (provider/model syntax)
+///   `claude*`             → Anthropic
+///   `gpt*`, `o1*`…        → OpenAI
+///   known local families  → Local
+///   anything else         → Local  (never silently cloud — Principle II)
+#[derive(Default)]
+pub struct Router;
+
+impl Router {
+    pub fn new() -> Self {
+        Self
+    }
+
+    pub fn route(&self, model: &str) -> RouteTarget {
+        let m = model.to_lowercase();
+
+        if m.starts_with("local/") {
+            return RouteTarget::Local;
+        }
+
+        if m.contains('/') {
+            // HuggingFace local refs contain a colon: "org/repo:tag" or "hf.co/org/repo:file.gguf"
+            // Cloud provider refs are bare "provider/model" with no colon.
+            if m.starts_with("hf.co/") || m.contains(':') {
+                return RouteTarget::Local;
+            }
+            return RouteTarget::OpenRouter;
+        }
+
+        if m.starts_with("claude") {
+            return RouteTarget::Anthropic;
+        }
+
+        if m.starts_with("gpt") || m.starts_with("o1") || m.starts_with("o3") || m.starts_with("o4")
+        {
+            return RouteTarget::OpenAI;
+        }
+
+        if m.starts_with("qwen")
+            || m.starts_with("mistral")
+            || m.starts_with("llama")
+            || m.starts_with("laguna")
+            || m.starts_with("gemma")
+            || m.starts_with("phi")
+            || m.starts_with("deepseek")
+            || m.starts_with("falcon")
+            || m.starts_with("vicuna")
+            || m.starts_with("solar")
+            || m.starts_with("kimi")
+        {
+            return RouteTarget::Local;
+        }
+
+        // Unrecognized model → always local. Cloud backends are reachable only via
+        // explicit prefix or provider/model syntax. This prevents a misconfigured or
+        // typo'd model name from becoming an unstructured cloud call (Principle II).
+        RouteTarget::Local
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn local_prefix() {
+        assert_eq!(Router::new().route("local/my-model"), RouteTarget::Local);
+    }
+
+    #[test]
+    fn known_local_families() {
+        let r = Router::new();
+        assert_eq!(r.route("qwen2.5-coder-32b"), RouteTarget::Local);
+        assert_eq!(r.route("mistral-7b"), RouteTarget::Local);
+        assert_eq!(r.route("llama-3.1-8b"), RouteTarget::Local);
+        assert_eq!(r.route("laguna-xs-2.1"), RouteTarget::Local);
+        assert_eq!(r.route("gemma-3-27b"), RouteTarget::Local);
+        assert_eq!(r.route("phi-4"), RouteTarget::Local);
+        assert_eq!(r.route("deepseek-r1:32b"), RouteTarget::Local);
+        assert_eq!(r.route("kimi-k2"), RouteTarget::Local);
+    }
+
+    #[test]
+    fn claude_to_anthropic() {
+        let r = Router::new();
+        assert_eq!(r.route("claude-sonnet-4-6"), RouteTarget::Anthropic);
+        assert_eq!(r.route("claude-opus-4-7"), RouteTarget::Anthropic);
+    }
+
+    #[test]
+    fn gpt_to_openai() {
+        let r = Router::new();
+        assert_eq!(r.route("gpt-4o"), RouteTarget::OpenAI);
+        assert_eq!(r.route("o1-preview"), RouteTarget::OpenAI);
+        assert_eq!(r.route("o4-mini"), RouteTarget::OpenAI);
+    }
+
+    #[test]
+    fn provider_slash_model_to_openrouter() {
+        let r = Router::new();
+        assert_eq!(
+            r.route("anthropic/claude-3-5-sonnet"),
+            RouteTarget::OpenRouter
+        );
+        assert_eq!(r.route("openai/gpt-4o"), RouteTarget::OpenRouter);
+    }
+
+    #[test]
+    fn hf_refs_are_local() {
+        let r = Router::new();
+        // org/repo:tag — colon distinguishes from cloud provider/model
+        assert_eq!(
+            r.route("bartowski/DeepSeek-R1-Distill-Qwen-7B-GGUF:Q4_K_M"),
+            RouteTarget::Local
+        );
+        // explicit hf.co/ prefix
+        assert_eq!(
+            r.route("hf.co/jinaai/jina-code-embeddings-1.5b-GGUF:Q8_0"),
+            RouteTarget::Local
+        );
+        // Ollama-style registry ref
+        assert_eq!(
+            r.route("registry.ollama.ai/library/deepseek-r1:7b"),
+            RouteTarget::Local
+        );
+    }
+
+    #[test]
+    fn unknown_model_falls_back_to_local() {
+        // Never silently routes unknown models to cloud (Principle II).
+        assert_eq!(
+            Router::new().route("some-unknown-model"),
+            RouteTarget::Local
+        );
+    }
+}
+# agentic-nix memory
+
+## Project
+Hybrid code search RAG stack: ParadeDB (pg_search BM25 + pgvector) + Ollama + MCP server.
+Path: /home/sam/home/agentic-nix
+
+## Flake structure (flake-parts, hayate/pure-ledger style)
+- `flake/lib.nix` — recursiveImports helper
+- `perSystem/formatter.nix` — alejandra
+- `perSystem/devShells.nix` — dev shell (fenix Rust + onnxruntime + postgresql_17 + ollama + uv + just)
+- `perSystem/packages.nix` — crane build for `packages.mcp-server` and `packages.ingest`
+- `perSystem/processes.nix` — services-flake + process-compose-flake stack
+- `scripts/schema.sql` — 8 tables: code_chunks, documents, github_{issues,issue_comments,prs,pr_comments}, sync_state, repo_index + BM25/HNSW indexes
+- `scripts/ingest.py` — code ingest (tree-sitter symbols for TS/JS/Py, content_hash incremental, symbol_kind column)
+- `scripts/ingest_docs.py` — markdown doc ingest (AGENTS.md, README, .agent/**)
+- `scripts/ingest_github.py` — GitHub issues+PRs+comments (watermark incremental sync via sync_state)
+- `scripts/mcp-server.py` — Python MCP server (kept as reference, replaced by Rust)
+- `Cargo.toml` + `src/` — Rust binaries: `mcp-server` (6 tools) + `ingest` (code/docs/github)
+- `justfile` — just index, index-docs, index-github, migrate, stats, sync-status
+
+## MCP tools (Rust server)
+1. `search_code` — hybrid+rerank, optional `language` + `symbol_kind` filters
+2. `bm25_search` — BM25 only, same filters
+3. `search_docs` — hybrid over documents table, optional `doc_kind` filter
+4. `search_github` — hybrid over github_issues+prs, optional `entity_type`/`repo`/`state` filters
+5. `list_repos` — list indexed repos with counts
+6. `get_file` — retrieve all chunks for a file
+
+## Project isolation (implemented)
+- `project TEXT` column added to `code_chunks`, `documents`, `repo_index` (nullable, backward compat)
+- Ingest: `--project <name>` flag on `code`, `docs`, `hackage`, `crate`, `pypi`, `git` subcommands
+- MCP server: `PROJECTS=alpha,beta` env var → server-enforced whitelist; NULL-project chunks invisible when PROJECTS set
+- `fetch_package` auto-tags with `self.projects.first()` (first project in PROJECTS list)
+- GitHub tables NOT project-filtered (scoped by repo field already)
+- `bm25_search` uses dynamic SQL for project filter (pg_search can't handle NULL-OR patterns)
+- All other search functions use `$n::text[] IS NULL OR project = ANY($n::text[])` pattern
+- Run `just migrate` to apply the new columns to an existing DB
+
+## Known indexer gaps / fixes applied
+- `MAX_CHUNKS_PER_FILE` was 128 → raised to 256. Files with many top-level declarations (e.g. serialise `Class.hs` with 140+ instances) were silently truncated.
+- `collect_hs_decls` now recurses into `cpp` nodes so instances/functions inside `#if`/`#else` blocks are not silently dropped.
+- When a symbol is missing from search despite the file being indexed, first check `MAX(end_line)` vs actual file length in the DB to detect truncation.
+
+## Incremental sync pattern
+- Code/docs: SHA-256 hash of file content stored in `content_hash`; skip if hash already in DB
+- GitHub: `sync_state` table stores per-stream watermarks (ISO updated_at); `since=watermark` on issues/comments API; PR client-side filter
+- `just migrate` runs schema.sql on existing DB (all CREATE IF NOT EXISTS + ALTER IF NOT EXISTS)
+
+## Rust ingest binary (src/ingest/)
+Separate binary in the same crate. Modules: main, embed, symbols, code, docs, github, hackage, crates, git, prune, repo_index.
+- `ingest code <path> [--force]` — tree-sitter symbols (TS/JS/Py/Rust/Haskell) + line fallback; marks repo dirty in repo_index
+- `ingest docs <path> [--force]` — markdown discovery + chunking
+- `ingest github OWNER/REPO [--force] [--stream issues|prs|...]` — watermark sync
+- `ingest hackage <pkg> <ver> [--force]` — fetch from CHaP/Hackage; registers clean in repo_index
+- `ingest crate <pkg> <ver> [--force]` — fetch from crates.io; registers clean in repo_index
+- `ingest pypi <pkg> <ver> [--force]` — fetch sdist from PyPI; repo_path="pypi::{pkg}-{ver}"; source_kind="pypi"
+- `ingest git <url> [--rev|--branch|--tag] [--force] [--no-docs]` — shallow (branch/tag) or full (rev) clone; repo_path = git::<url>@<short_rev>
+- `ingest list [--dirty] [--source-kind ...]` — show repo_index table
+- `ingest prune dirty [--dry-run]` — delete all dirty repos
+- `ingest prune old-versions [--package <name>] [--dry-run]` — keep only latest per package
+- `ingest prune repo <repo_path> [--dry-run]` — delete specific repo
+- Key deps: clap, ignore, sha2, hex, indicatif, chrono, tree-sitter (0.25) + grammar crates
+- tree-sitter: `Language::from(LANG_CONST)` or `LANG_CONST.into()` to get Language
+- Rust symbols: function_item, struct_item, enum_item, trait_item, type_item, const_item, impl_item methods (qualified as Type::method); walks impl body for functions
+- Haskell symbols: collect HsDecl (kind, name, start/end rows) then group signature + consecutive same-name function equations into one symbol; includes Haddock comments
+- `ingest_docs` signature: `(pool, repo_path, force, repo_path_override: Option<&str>)`
+- lib.rs exposes ingest submodules (code, crates, docs, embed, hackage, repo_index, symbols) — any new module used by hackage/crates must be added here too
+- justfile now uses `cargo run --release --bin ingest -- code|docs|github ...`
+
+## Rust MCP server (src/)
+Single-crate binary. Key rmcp patterns:
+- struct needs `tool_router: ToolRouter<Self>` field, init: `Self::tool_router()`
+- `#[tool_router]` on impl, `#[tool_handler]` on `impl ServerHandler for X`
+- tool params: `Parameters<T>` where T: Deserialize + JsonSchema (via `use rmcp::schemars`)
+- tool return type: `Result<CallToolResult, McpError>`, can be `async fn`
+- start: `MyServer::new().serve(stdio()).await?.waiting().await?`
+- features needed: `rmcp = { features = ["server", "transport-io", "macros"] }`
+- Nix: `ORT_DYLIB_PATH = "${pkgs.onnxruntime}/lib/libonnxruntime.so"` in commonArgs + shellHook
+- Bootstrap: `cargo generate-lockfile` → `git add Cargo.lock` → `nix flake update` → `nix build .#mcp-server`
+
+## services-flake pattern (from pure-ledger)
+```nix
+process-compose.dev = {
+  imports = [inputs.services-flake.processComposeModules.default];
+  services.postgres."pg" = { enable = true; ... };
+  services.ollama."llm" = { enable = true; ... };
+  settings.processes = { /* custom */ };
+};
+```
+
+## Key config choices
+- PostgreSQL 17 + `extensions = ps: [ps.pg_search ps.pgvector]`
+- `settings.shared_preload_libraries = "pg_search"` (required by pg_search)
+- `settings.pg_search.enable_telemetry = false`
+- `initialDatabases = [{name = "codebase"; schemas = [../scripts/schema.sql];}]`
+- Ollama: `models = ["nomic-embed-text"]` (768-dim embeddings)
+- dataDir defaults to `./data/${name}` (relative to CWD when running)
+
+## Search strategy lessons (observed)
+- `search_docs` only covers the `documents` table (markdown: `.md`, AGENTS.md, README, `.agent/**`). Never use it for `.tex` or other non-markdown content.
+- `.tex` formal spec files land in `code_chunks` via `ingest code`. Use `search_code` or `bm25_search` for them.
+- Not all subdirectories may be indexed. `eras/shelley/formal-spec/` was NOT in the index while `eras/shelley-ma/formal-spec/` was — gaps exist. If code search misses a known-important file, fall back to `Glob` + `Read` directly.
+- `bm25_search` is best for exact symbol/keyword queries (e.g. `POOLREAP`, `PlReapState`). Semantic search over dense notation (LaTeX) is weak.
+- For cardano-ledger formal specs, check `eras/*/formal-spec/epoch.tex` and `eras/*/formal-spec/delegation.tex` directly when search fails.
+
+## Reference projects
+- pure-ledger: /home/sam/work/nixedge/pure-ledger (services-flake postgres example)
+- hayate: /home/sam/work/iohk/hayate (flake-parts structure reference)
+- midnight-playground: /home/sam/work/iohk/midnight-playground (process-compose-flake example)
+- services-flake source: /home/sam/work/iohk/services-flake
+# Memory Index
+
+- [No GPG signing on commits](feedback_no_gpg_signing.md) — Use `-c commit.gpgsign=false` on all commits; user fixes signing before merging
+
+- [Feature 021 Qwen restart checkpoint](project_021_qwen_checkpoint.md) — persistent worktree recovery, CPU foundation, tokenizer size distinction, and pending MiniJinja/template compatibility decision.
+# Memory Index
+
+- [Active feature 020 coding checkpoint](project_020_coding_checkpoint.md) — tested model picker and coding tools; deployment authorized, pending SSH access; continue in 020 worktree
+- [Earlier ax/Codex-like planning](project_ax_codex_planning.md) — historical planning context, superseded by the active implementation checkpoint
+
+- [Codex transition setup](project_codex_transition.md) — global topic routing, native skills, Nix Python helpers, verified build and remaining deployed-jail smoke test
+- [claude-jail .claude mount exception](project_claude_jail_exception.md) — claude-jail must keep ~/.claude mount; constitution needs subscription-model carve-out; do not conflate with ax-jail
+- [Never push to remote](feedback_no_push.md) — do not run git push; user pushes themselves
+- [Never commit to master](feedback_no_commit_master.md) — commit to feature branch only; user fast-forwards master
+- [speckit required for features](feedback_speckit_required.md) — always run speckit workflow (specify → plan → tasks → implement) before coding any feature
+- [009-lhs deploy context](project_009_lhs_deploy.md) — feature implemented & committed; next: run ingest on ai.lan.disasm.us to validate jina embeddings end-to-end
+- [No SQLite — use sled or postgres](feedback_no_sqlite.md) — user dislikes SQLite; use sled for non-relational embedded storage, PostgreSQL if relational
+- [Always use nix develop devshell](feedback_use_devshell.md) — run all cargo commands via `nix develop --command cargo ...`, never raw nix store paths
+- [Commit each phase without GPG](feedback_commit_no_gpg.md) — use `git -c commit.gpgsign=false commit` when committing implementation phases
+- [Worktrees always in /home/sam/home/agentix/](feedback_worktree_location.md) — never /home/sam/agentix/ (jail-only); verify with `git worktree list` after creation
+- [Check existing feature numbers before creating spec](feedback_feature_numbering.md) — run `git worktree list` + `git branch -a` first; use max+1, never reuse a number
+- [agentix server address](reference_server.md) — http://ai.lan.disasm.us:11434 (Ollama port, OpenAI-compatible)
+- [016-voice-loop status](project_016_voice_loop.md) — TTS+wake word working locally; pending: server deploy (.bin fix), delete bad GGUF, pull whisper .bin, ORT nix build fix
+- [Never crawl the nix store](feedback_no_nix_store_crawl.md) — never find/ls /nix/store; use nix commands or read the flake instead
+- [gh proxy allowlist redesign](project_gh_proxy_redesign.md) — blocklist→allowlist rewrite of gh-jail-server; needs speckit in new worktree after restart with all-worktrees
+- [019-multi-llm-orchestration status](project_019_orchestrator.md) — speckit complete (spec+plan+tasks); ready for /speckit.implement; 40 tasks across 7 phases; 2 new crates
+---
+name: No GPG signing on commits
+description: Use -c commit.gpgsign=false on all git commits in this repo; user fixes signing manually before merging
+type: feedback
+originSessionId: 397bcd29-8d87-4ec8-9074-1ec693b16ff1
+---
+Always pass `-c commit.gpgsign=false` to git commit in the agentix repo.
+
+**Why:** The Claude Code environment doesn't have access to the user's GPG key. The user will fix signing manually before merging PRs.
+
+**How to apply:** Every `git commit` call should use `git -c commit.gpgsign=false commit ...`. This applies to all commits in this session, not just one-offs.
+
+apply patch
+patch: completed
+/tmp/nix-shell.WhmBQI/agentix-bench-53817-1791934222556258251/task-04/agentix-router/src/lib.rs
+diff --git a/agentix-router/src/lib.rs b/agentix-router/src/lib.rs
+index d21fd95a19ecbe3c26c5274f7a4d15f221d781ba..fdf469fe7da5cdf90227f5aa684e4acdd591d99f
+--- a/agentix-router/src/lib.rs
++++ b/agentix-router/src/lib.rs
+@@ -139,6 +139,13 @@
+     }
+ 
+     #[test]
++    fn mixed_case_hf_ref_is_local_and_provider_ref_is_openrouter() {
++        let r = Router::new();
++        assert_eq!(r.route("hf.co/Qwen/model:Q4_K_M"), RouteTarget::Local);
++        assert_eq!(r.route("anthropic/model"), RouteTarget::OpenRouter);
++    }
++
++    #[test]
+     fn unknown_model_falls_back_to_local() {
+         // Never silently routes unknown models to cloud (Principle II).
+         assert_eq!(
+
+diff --git a/agentix-router/src/lib.rs b/agentix-router/src/lib.rs
+index d21fd95a19ecbe3c26c5274f7a4d15f221d781ba..fdf469fe7da5cdf90227f5aa684e4acdd591d99f
+--- a/agentix-router/src/lib.rs
++++ b/agentix-router/src/lib.rs
+@@ -139,6 +139,13 @@
+     }
+ 
+     #[test]
++    fn mixed_case_hf_ref_is_local_and_provider_ref_is_openrouter() {
++        let r = Router::new();
++        assert_eq!(r.route("hf.co/Qwen/model:Q4_K_M"), RouteTarget::Local);
++        assert_eq!(r.route("anthropic/model"), RouteTarget::OpenRouter);
++    }
++
++    #[test]
+     fn unknown_model_falls_back_to_local() {
+         // Never silently routes unknown models to cloud (Principle II).
+         assert_eq!(
+
+codex
+The regression test is added, and the routing implementation is unchanged. The test command was blocked by sandbox access to the Nix daemon socket; I’ll retry the same command with the required access.
+exec
+/run/current-system/sw/bin/bash -lc 'nix develop --command cargo test -p agentix-router' in /tmp/nix-shell.WhmBQI/agentix-bench-53817-1791934222556258251/task-04
+diff --git a/agentix-router/src/lib.rs b/agentix-router/src/lib.rs
+index d21fd95a19ecbe3c26c5274f7a4d15f221d781ba..fdf469fe7da5cdf90227f5aa684e4acdd591d99f
+--- a/agentix-router/src/lib.rs
++++ b/agentix-router/src/lib.rs
+@@ -139,6 +139,13 @@
+     }
+ 
+     #[test]
++    fn mixed_case_hf_ref_is_local_and_provider_ref_is_openrouter() {
++        let r = Router::new();
++        assert_eq!(r.route("hf.co/Qwen/model:Q4_K_M"), RouteTarget::Local);
++        assert_eq!(r.route("anthropic/model"), RouteTarget::OpenRouter);
++    }
++
++    #[test]
+     fn unknown_model_falls_back_to_local() {
+         // Never silently routes unknown models to cloud (Principle II).
+         assert_eq!(
+
+ succeeded in 4563ms:
+warning: Git tree '/tmp/nix-shell.WhmBQI/agentix-bench-53817-1791934222556258251/task-04' is dirty
+evaluation warning: stdenv.isLinux is deprecated, use stdenv.hostPlatform.isLinux instead
+evaluation warning: stdenv.isDarwin is deprecated, use stdenv.hostPlatform.isDarwin instead
+Agentic RAG Stack
+
+Services:
+  nix run .#dev              # Start PostgreSQL (ParadeDB) + Ollama
+
+Indexing:
+  just index /path/to/repo   # Index a codebase
+
+Database:
+  psql postgres://127.0.0.1:5432/codebase
+
+MCP server:
+  just build                 # Build the Rust binary
+  just mcp                   # Run the MCP server
+  nix build .#agentix-mcp-server  # Build with Nix (requires Cargo.lock)
+
+Quick search (no services needed):
+  ck search 'query'              # ad-hoc hybrid search
+  ck --serve                     # lightweight MCP server
+  ccusage                        # Claude Code usage stats
+   Compiling agentix-api v0.1.0 (/tmp/nix-shell.WhmBQI/agentix-bench-53817-1791934222556258251/task-04/agentix-api)
+   Compiling agentix-router v0.1.0 (/tmp/nix-shell.WhmBQI/agentix-bench-53817-1791934222556258251/task-04/agentix-router)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.40s
+     Running unittests src/lib.rs (/tmp/agentix-021-bench-target/debug/deps/agentix_router-407fce02b87694f3)
+
+running 8 tests
+test tests::claude_to_anthropic ... ok
+test tests::gpt_to_openai ... ok
+test tests::hf_refs_are_local ... ok
+test tests::local_prefix ... ok
+test tests::known_local_families ... ok
+test tests::mixed_case_hf_ref_is_local_and_provider_ref_is_openrouter ... ok
+test tests::provider_slash_model_to_openrouter ... ok
+test tests::unknown_model_falls_back_to_local ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests agentix_router
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+diff --git a/agentix-router/src/lib.rs b/agentix-router/src/lib.rs
+index d21fd95a19ecbe3c26c5274f7a4d15f221d781ba..fdf469fe7da5cdf90227f5aa684e4acdd591d99f
+--- a/agentix-router/src/lib.rs
++++ b/agentix-router/src/lib.rs
+@@ -139,6 +139,13 @@
+     }
+ 
+     #[test]
++    fn mixed_case_hf_ref_is_local_and_provider_ref_is_openrouter() {
++        let r = Router::new();
++        assert_eq!(r.route("hf.co/Qwen/model:Q4_K_M"), RouteTarget::Local);
++        assert_eq!(r.route("anthropic/model"), RouteTarget::OpenRouter);
++    }
++
++    #[test]
+     fn unknown_model_falls_back_to_local() {
+         // Never silently routes unknown models to cloud (Principle II).
+         assert_eq!(
+
+exec
+/run/current-system/sw/bin/bash -lc 'git diff --check; git diff --stat; git diff -- agentix-router/src/lib.rs; git status --short' in /tmp/nix-shell.WhmBQI/agentix-bench-53817-1791934222556258251/task-04
+ succeeded in 0ms:
+ agentix-router/src/lib.rs | 7 +++++++
+ 1 file changed, 7 insertions(+)
+diff --git a/agentix-router/src/lib.rs b/agentix-router/src/lib.rs
+index d21fd95..fdf469f 100644
+--- a/agentix-router/src/lib.rs
++++ b/agentix-router/src/lib.rs
+@@ -138,6 +138,13 @@ mod tests {
+         );
+     }
+ 
++    #[test]
++    fn mixed_case_hf_ref_is_local_and_provider_ref_is_openrouter() {
++        let r = Router::new();
++        assert_eq!(r.route("hf.co/Qwen/model:Q4_K_M"), RouteTarget::Local);
++        assert_eq!(r.route("anthropic/model"), RouteTarget::OpenRouter);
++    }
++
+     #[test]
+     fn unknown_model_falls_back_to_local() {
+         // Never silently routes unknown models to cloud (Principle II).
+ M agentix-router/src/lib.rs
+
+diff --git a/agentix-router/src/lib.rs b/agentix-router/src/lib.rs
+index d21fd95a19ecbe3c26c5274f7a4d15f221d781ba..fdf469fe7da5cdf90227f5aa684e4acdd591d99f
+--- a/agentix-router/src/lib.rs
++++ b/agentix-router/src/lib.rs
+@@ -139,6 +139,13 @@
+     }
+ 
+     #[test]
++    fn mixed_case_hf_ref_is_local_and_provider_ref_is_openrouter() {
++        let r = Router::new();
++        assert_eq!(r.route("hf.co/Qwen/model:Q4_K_M"), RouteTarget::Local);
++        assert_eq!(r.route("anthropic/model"), RouteTarget::OpenRouter);
++    }
++
++    #[test]
+     fn unknown_model_falls_back_to_local() {
+         // Never silently routes unknown models to cloud (Principle II).
+         assert_eq!(
+
+codex
+Added the permanent regression test in [agentix-router/src/lib.rs](agentix-router/src/lib.rs), asserting both requested routes.
+
+Ran it before any implementation change: all 8 tests passed with `nix develop --command cargo test -p agentix-router`. No code fix was needed. No commit made.
+diff --git a/agentix-router/src/lib.rs b/agentix-router/src/lib.rs
+index d21fd95a19ecbe3c26c5274f7a4d15f221d781ba..fdf469fe7da5cdf90227f5aa684e4acdd591d99f
+--- a/agentix-router/src/lib.rs
++++ b/agentix-router/src/lib.rs
+@@ -139,6 +139,13 @@
+     }
+ 
+     #[test]
++    fn mixed_case_hf_ref_is_local_and_provider_ref_is_openrouter() {
++        let r = Router::new();
++        assert_eq!(r.route("hf.co/Qwen/model:Q4_K_M"), RouteTarget::Local);
++        assert_eq!(r.route("anthropic/model"), RouteTarget::OpenRouter);
++    }
++
++    #[test]
+     fn unknown_model_falls_back_to_local() {
+         // Never silently routes unknown models to cloud (Principle II).
+         assert_eq!(
+
+tokens used
+52,167

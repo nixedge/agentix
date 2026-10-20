@@ -1,0 +1,18 @@
+diff --git a/agentix-router/src/lib.rs b/agentix-router/src/lib.rs
+index d21fd95..fdf469f 100644
+--- a/agentix-router/src/lib.rs
++++ b/agentix-router/src/lib.rs
+@@ -138,6 +138,13 @@ mod tests {
+         );
+     }
+ 
++    #[test]
++    fn mixed_case_hf_ref_is_local_and_provider_ref_is_openrouter() {
++        let r = Router::new();
++        assert_eq!(r.route("hf.co/Qwen/model:Q4_K_M"), RouteTarget::Local);
++        assert_eq!(r.route("anthropic/model"), RouteTarget::OpenRouter);
++    }
++
+     #[test]
+     fn unknown_model_falls_back_to_local() {
+         // Never silently routes unknown models to cloud (Principle II).

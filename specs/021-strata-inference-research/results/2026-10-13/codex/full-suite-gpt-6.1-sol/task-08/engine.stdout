@@ -1,0 +1,5 @@
+Fixed disconnect cleanup by tying the backend connection task to the response body. Added a regression test verifying that disconnect releases backend resources. SSE format is unchanged.
+
+Both acceptance commands passed. The existing live-daemon test skipped because no daemon was running; the new regression ran and passed.
+
+Only this checkout was changed. No commit created.

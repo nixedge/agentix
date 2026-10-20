@@ -1,0 +1,3 @@
+Extended `agentix-qwen/tests/storage.rs` with context-limit rejection cases preserving the full request, checked-add overflow cases, and successful admission exactly at `usize::MAX`.
+
+Focused storage tests: 10 passed. `git diff --check` passed. Final diff inspected; only the requested file changed. No commit created.

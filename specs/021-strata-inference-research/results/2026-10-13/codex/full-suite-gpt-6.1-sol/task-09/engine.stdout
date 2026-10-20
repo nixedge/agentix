@@ -1,0 +1,5 @@
+Updated the [Qwen quickstart](/tmp/nix-shell.WhmBQI/agentix-bench-53817-1791934222556258251/task-09/specs/021-strata-inference-research/quickstart.md:222) with exact commands, dependency results, and source citations.
+
+`agentix-qwen` loads SafeTensors and executes CPU reference operations without sys. `agentix-qwen-sys` owns GGUF parsing/dequantization.
+
+Both acceptance commands and `git diff --check` passed. Only the quickstart changed; no commit made.

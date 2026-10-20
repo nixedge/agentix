@@ -1,0 +1,3 @@
+Added `Router::route_with_default(&self, model, default)`. Recognized routing rules retain their behavior, `route()` still defaults unknown models to `Local`, and the daemon gateway now passes `Local` explicitly. Added tests for a recognized model and an unknown model.
+
+I couldn’t run the acceptance checks: `nix develop` failed because the Nix daemon socket at `/run/nix-container-daemon/socket` is inaccessible. Your working agreement says to ask before trying a different approach after a check fails, so I stopped here.

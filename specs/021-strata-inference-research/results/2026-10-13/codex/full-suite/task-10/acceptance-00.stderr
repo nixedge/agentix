@@ -1,0 +1,5 @@
+evaluation warning: stdenv.isLinux is deprecated, use stdenv.hostPlatform.isLinux instead
+evaluation warning: stdenv.isDarwin is deprecated, use stdenv.hostPlatform.isDarwin instead
+   Compiling agentix-qwen v0.1.0 (/tmp/nix-shell.zmPdwz/agentix-bench-26812-1791933406284697743/task-10/agentix-qwen)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.19s
+     Running tests/storage.rs (/tmp/agentix-021-bench-target/debug/deps/storage-83367a262fa890cf)

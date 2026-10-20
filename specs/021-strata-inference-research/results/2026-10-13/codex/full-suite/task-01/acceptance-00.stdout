@@ -1,0 +1,36 @@
+Agentic RAG Stack
+
+Services:
+  nix run .#dev              # Start PostgreSQL (ParadeDB) + Ollama
+
+Indexing:
+  just index /path/to/repo   # Index a codebase
+
+Database:
+  psql postgres://127.0.0.1:5432/codebase
+
+MCP server:
+  just build                 # Build the Rust binary
+  just mcp                   # Run the MCP server
+  nix build .#agentix-mcp-server  # Build with Nix (requires Cargo.lock)
+
+Quick search (no services needed):
+  ck search 'query'              # ad-hoc hybrid search
+  ck --serve                     # lightweight MCP server
+  ccusage                        # Claude Code usage stats
+
+running 5 tests
+test stagnation::tests::not_stagnant_below_threshold ... ok
+test stagnation::tests::evicts_oldest_beyond_capacity ... ok
+test stagnation::tests::not_stagnant_with_mixed_results ... ok
+test stagnation::tests::zero_capacity_discards_results_and_never_reports_stagnation ... ok
+test stagnation::tests::stagnant_on_repeated_result ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 1 test
+test agentix-harness/src/agent.rs - agent::AgentLoop (line 37) - compile ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+

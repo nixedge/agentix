@@ -1,0 +1,5 @@
+Added `qwen-check` and its help entry in [perSystem/devShells.nix](/tmp/nix-shell.WhmBQI/agentix-bench-53817-1791934222556258251/task-06/perSystem/devShells.nix).
+
+It checks workspace formatting, tests all three Qwen crates, and runs Clippy with warnings denied.
+
+`nix develop --command qwen-check` launches successfully but stops on existing formatting errors outside the Qwen crates, before tests and Clippy. No global tools added or commits made.

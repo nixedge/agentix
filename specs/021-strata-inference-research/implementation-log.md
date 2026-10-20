@@ -1,5 +1,34 @@
 # Implementation progress
 
+## 2026-10-20 — uncommitted batch review
+
+- Reviewed the gateway connection-driver ownership fix and its self-contained
+  paused-backend disconnect regression, expanded context admission boundary tests,
+  scoped `qwen-check`, stale agent test fixture repair, workspace formatting, and
+  indexer/GitHub-proxy lint cleanup.
+- `nix develop --command cargo fmt --all --check`,
+  `nix develop --command cargo clippy --workspace -- -D warnings`,
+  `nix develop --command cargo test --workspace`, and
+  `nix develop --command qwen-check` all pass. Three model-dependent tests are
+  ignored. Daemon tests that return early when their external service is absent
+  do not establish live acceptance; the disconnect regression starts its own
+  gateway and backend.
+- Retained both complete coding benchmark runs and the interrupted real-chat
+  attempt. Reconciled stale plan/decision descriptions and corrected the
+  deployment smoke command's shell continuations.
+- Nix package verification passed:
+  `nix build .#agentix-daemon .#agentix-qwen-worker .#agentix-qwen
+  .#agentix-indexer .#agentix-agent .#agentix-voice .#agentix-whisper
+  .#claude-jail --no-link`. The jail closure includes `gh-jail-client`.
+  The first invocation named a nonexistent `gh-proxy-client` attribute; correcting
+  that command to the exported jail package resolved the invocation error.
+  These builds do not rerun the standalone CUDA sys package's driver-dependent
+  check phase or establish GPU execution.
+- This batch is a tested development checkpoint. Full-feature completion still
+  requires independent full-model parity, target GPU execution and resource
+  measurements, streaming tools/reasoning, lifecycle conformance, and remaining
+  optimization/benchmark tasks. These requirements remain unchecked in `tasks.md`.
+
 ## 2026-10-20 — worker prompt-preparation correction
 
 - A live minimal request to `ai.lan.disasm.us:11434` returned HTTP 400,

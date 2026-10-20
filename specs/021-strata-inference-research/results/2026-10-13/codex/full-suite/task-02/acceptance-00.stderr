@@ -1,0 +1,16 @@
+warning: Git tree '/tmp/nix-shell.zmPdwz/agentix-bench-26812-1791933406284697743/task-02' is dirty
+evaluation warning: stdenv.isLinux is deprecated, use stdenv.hostPlatform.isLinux instead
+evaluation warning: stdenv.isDarwin is deprecated, use stdenv.hostPlatform.isDarwin instead
+building '/nix/store/hmr2fn9xa3lpjp16fnsbq0yx781lz44r-ax-jail-tools.drv'...
+building '/nix/store/1fajqgz9nmmknc2wzr47ncs65mkxnn8m-ax-jail.drv'...
+building '/nix/store/qgljhvlfn28kf0aav2y11il5f551xvz4-nix-shell-env.drv'...
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling syn v3.0.4
+   Compiling serde_derive v1.0.229
+   Compiling serde v1.0.229
+   Compiling agentix-api v0.1.0 (/tmp/nix-shell.zmPdwz/agentix-bench-26812-1791933406284697743/task-02/agentix-api)
+   Compiling agentix-router v0.1.0 (/tmp/nix-shell.zmPdwz/agentix-bench-26812-1791933406284697743/task-02/agentix-router)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.63s
+     Running unittests src/lib.rs (/tmp/agentix-021-bench-target/debug/deps/agentix_router-407fce02b87694f3)
+   Doc-tests agentix_router

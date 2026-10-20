@@ -1,0 +1,89 @@
+diff --git a/agentix-qwen/src/budget.rs b/agentix-qwen/src/budget.rs
+index 12e690d..ff63d21 100644
+--- a/agentix-qwen/src/budget.rs
++++ b/agentix-qwen/src/budget.rs
+@@ -1,5 +1,11 @@
+ use crate::{Error, Result};
+ 
++fn checked_sum(values: impl IntoIterator<Item = u64>) -> Result<u64> {
++    values.into_iter().try_fold(0_u64, |sum, value| {
++        sum.checked_add(value).ok_or(Error::Overflow)
++    })
++}
++
+ #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+ pub struct Reservations {
+     pub weights: u64,
+@@ -12,18 +18,14 @@ pub struct Reservations {
+ 
+ impl Reservations {
+     pub fn total(self) -> Result<u64> {
+-        [
++        checked_sum([
+             self.weights,
+             self.context,
+             self.scratch,
+             self.staging,
+             self.lookup_cache,
+             self.headroom,
+-        ]
+-        .into_iter()
+-        .try_fold(0_u64, |sum, value| {
+-            sum.checked_add(value).ok_or(Error::Overflow)
+-        })
++        ])
+     }
+ }
+ 
+diff --git a/agentix-qwen/tests/storage.rs b/agentix-qwen/tests/storage.rs
+index 0c664ff..7b70621 100644
+--- a/agentix-qwen/tests/storage.rs
++++ b/agentix-qwen/tests/storage.rs
+@@ -332,6 +332,47 @@ fn independent_memory_tiers_and_checked_totals() -> TestResult {
+     Ok(())
+ }
+ 
++#[test]
++fn reservation_overflow_preserves_admission_error_order() -> TestResult {
++    let empty = Reservations::default();
++    let full = Reservations {
++        weights: u64::MAX - 5,
++        context: 1,
++        scratch: 1,
++        staging: 1,
++        lookup_cache: 1,
++        headroom: 1,
++    };
++    assert_eq!(empty.total()?, 0);
++    assert_eq!(full.total()?, u64::MAX);
++    let admitted = admit(u64::MAX, u64::MAX, full, full)?;
++    assert_eq!(admitted.host_remaining, 0);
++    assert_eq!(admitted.device_remaining, 0);
++
++    let overflow = Reservations {
++        headroom: 2,
++        ..full
++    };
++    assert!(matches!(overflow.total(), Err(Error::Overflow)));
++    assert!(matches!(
++        admit(u64::MAX, u64::MAX, overflow, empty),
++        Err(Error::Overflow)
++    ));
++    assert!(matches!(
++        admit(u64::MAX, u64::MAX, empty, overflow),
++        Err(Error::Overflow)
++    ));
++    assert!(matches!(
++        admit(0, u64::MAX, full, overflow),
++        Err(Error::Capacity("host RAM"))
++    ));
++    assert!(matches!(
++        admit(0, 0, overflow, full),
++        Err(Error::Overflow)
++    ));
++    Ok(())
++}
++
+ #[test]
+ fn context_admission_preserves_requested_output_and_never_truncates() -> TestResult {
+     assert_eq!(

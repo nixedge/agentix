@@ -1,0 +1,5 @@
+Added `Router::route_with_default`, preserving all recognized rules and `route()`’s Local fallback. Updated the daemon caller to use `AGENTIX_DEFAULT_ROUTE`, which defaults to Local.
+
+Tests cover recognized and unknown models. Both acceptance commands passed: 9 router tests passed; workspace check passed with unrelated warnings.
+
+Changes remain in this checkout. No commit created.

@@ -1,0 +1,8 @@
+warning: Git tree '/tmp/nix-shell.zmPdwz/agentix-bench-26812-1791933406284697743/task-04' is dirty
+evaluation warning: stdenv.isLinux is deprecated, use stdenv.hostPlatform.isLinux instead
+evaluation warning: stdenv.isDarwin is deprecated, use stdenv.hostPlatform.isDarwin instead
+   Compiling agentix-api v0.1.0 (/tmp/nix-shell.zmPdwz/agentix-bench-26812-1791933406284697743/task-04/agentix-api)
+   Compiling agentix-router v0.1.0 (/tmp/nix-shell.zmPdwz/agentix-bench-26812-1791933406284697743/task-04/agentix-router)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.41s
+     Running unittests src/lib.rs (/tmp/agentix-021-bench-target/debug/deps/agentix_router-407fce02b87694f3)
+   Doc-tests agentix_router

@@ -1,0 +1,2 @@
+215:The pinned text tokenizer has 248,077 addressable IDs (maximum ID 248,076), as
+217:embeddings are padded to 248,320 rows, matching `text_config.vocab_size` in the

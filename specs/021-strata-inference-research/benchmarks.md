@@ -46,7 +46,35 @@ nix run .#agentix-bench -- \
   --output /path/to/results/2026-10-13/engine/model-id
 ```
 
-One baseline-checkout evaluator task has been exercised. Codex CLI 0.162.1 completed Task 7 from baseline `13f2a5cb52ebc801eab154b009b0ab01f19e7a6a` in 15.4 seconds; its exact `rg` acceptance command passed, and manual review confirmed the diff only clarifies the 248,077 tokenizer IDs versus 248,320 padded embedding rows. The accepted run is retained under `results/2026-10-13/codex/task-07-retry/`. The first invocation used incompatible CLI flags and is retained separately under `results/2026-10-13/codex/task-07/`; it failed before the engine ran. This is one task, not a ten-task baseline/candidate result, and it provides no model-runtime benchmark. T009 remains partial until both engines complete the frozen suite, all diffs are reviewed, and the records are retained.
+Two full ten-task runs used Codex CLI 0.162.1 on the same pinned baseline
+`13f2a5cb52ebc801eab154b009b0ab01f19e7a6a` and frozen task fixture. The
+configured-default model run accepted 8/10 command sets; Tasks 6 and 8 failed.
+Manual diff review found Task 9's quickstart incorrectly reported both Cargo
+tree commands as blocked, despite their successful acceptance outputs, so 7/10
+tasks met the full acceptance-and-diff criterion. Median engine time among
+those seven was 16.83 seconds (range 8.98–21.87 seconds).
+
+The `gpt-6.1-sol` run accepted 9/10 command sets; only Task 6 failed, so 9/10
+tasks met the full acceptance-and-diff criterion. Median engine time was 52.75
+seconds (range 23.79–137.94 seconds). Task 6 failed because the generated
+`qwen-check` ran workspace-wide formatting and reported pre-existing changes
+outside the Qwen crates. Task 8 passed its disconnect regression and Clippy
+checks. Task 9 documented the actual successful dependency-tree outputs and
+the distinction between SafeTensors reference access and GGUF loading. Task 5
+was already Clippy-clean and needed no diff; Task 7's requested tokenizer and
+embedding sizes were already present in the baseline. All transcripts,
+acceptance outputs, diffs, and summaries are retained under
+`results/2026-10-13/codex/full-suite/` and
+`results/2026-10-13/codex/full-suite-gpt-6.1-sol/`.
+
+The comparison uses two model configurations of the same Codex CLI, not two
+independent vendors, and provides no model-runtime benchmark. T009 remains
+partial until the target-host runtime measurements are collected.
+
+Follow-up fixes in the working checkout scope `qwen-check` formatting to the
+three Qwen packages and add a paused-backend disconnect test. The complete
+`nix develop --command qwen-check` command passed; the focused daemon streaming
+tests and strict Clippy also passed.
 
 ## Comparison and reporting rules
 

@@ -1,0 +1,223 @@
+diff --git a/agentix-daemon/src/gateway/proxy.rs b/agentix-daemon/src/gateway/proxy.rs
+index 9420c43..00c257c 100644
+--- a/agentix-daemon/src/gateway/proxy.rs
++++ b/agentix-daemon/src/gateway/proxy.rs
+@@ -5,9 +5,46 @@ use axum::{
+ };
+ use hyper::Request;
+ use hyper_util::rt::TokioIo;
+-use std::path::Path;
++use std::{
++    path::Path,
++    pin::Pin,
++    task::{Context, Poll},
++};
+ use tokio::net::UnixStream;
+ 
++struct ConnectionTask(tokio::task::JoinHandle<()>);
++
++impl Drop for ConnectionTask {
++    fn drop(&mut self) {
++        self.0.abort();
++    }
++}
++
++struct BackendBody {
++    incoming: hyper::body::Incoming,
++    _connection: ConnectionTask,
++}
++
++impl hyper::body::Body for BackendBody {
++    type Data = axum::body::Bytes;
++    type Error = hyper::Error;
++
++    fn poll_frame(
++        self: Pin<&mut Self>,
++        cx: &mut Context<'_>,
++    ) -> Poll<Option<Result<hyper::body::Frame<Self::Data>, Self::Error>>> {
++        Pin::new(&mut self.get_mut().incoming).poll_frame(cx)
++    }
++
++    fn is_end_stream(&self) -> bool {
++        self.incoming.is_end_stream()
++    }
++
++    fn size_hint(&self) -> hyper::body::SizeHint {
++        self.incoming.size_hint()
++    }
++}
++
+ /// Forward an HTTP request to a backend Unix socket.
+ ///
+ /// Connects fresh per-request (no pooling needed for local IPC).
+@@ -46,12 +83,13 @@ pub async fn forward(
+         }
+     };
+ 
+-    // Drive the connection in the background
+-    tokio::spawn(async move {
++    // Keep ownership through request setup, then transfer it to the response body.
++    // Dropping a JoinHandle alone detaches the driver and can leave generation running.
++    let connection = ConnectionTask(tokio::spawn(async move {
+         if let Err(e) = conn.await {
+             tracing::debug!("backend connection closed: {e}");
+         }
+-    });
++    }));
+ 
+     // Build a hyper request from the parts we have
+     let uri_parsed: Uri = match uri.parse() {
+@@ -98,6 +136,9 @@ pub async fn forward(
+     for (name, value) in &parts.headers {
+         resp = resp.header(name, value);
+     }
+-    resp.body(Body::new(incoming))
+-        .unwrap_or_else(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())
++    resp.body(Body::new(BackendBody {
++        incoming,
++        _connection: connection,
++    }))
++    .unwrap_or_else(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())
+ }
+diff --git a/agentix-daemon/tests/integration.rs b/agentix-daemon/tests/integration.rs
+index e4783fd..78ecbbe 100644
+--- a/agentix-daemon/tests/integration.rs
++++ b/agentix-daemon/tests/integration.rs
+@@ -8,6 +8,9 @@
+ ///   AGENTIX_TEST_URL=http://localhost:11430 cargo test -p agentix-daemon -- --test-output immediate
+ use serde_json::{json, Value};
+ 
++#[path = "../src/gateway/proxy.rs"]
++mod proxy;
++
+ fn test_url() -> String {
+     std::env::var("AGENTIX_TEST_URL").unwrap_or_else(|_| "http://localhost:11430".into())
+ }
+@@ -187,6 +190,127 @@ async fn local_chat_streaming_returns_sse() {
+     assert!(text.contains("[DONE]"), "SSE body must end with [DONE]");
+ }
+ 
++#[tokio::test]
++async fn local_chat_streaming_returns_sse_disconnect_cancels_backend(
++) -> Result<(), Box<dyn std::error::Error>> {
++    use axum::{body::Body, http::HeaderMap, routing::post, Router};
++    use std::time::Duration;
++    use tokio::{
++        io::{AsyncReadExt, AsyncWriteExt},
++        net::{TcpListener, UnixListener},
++        sync::oneshot,
++        time::timeout,
++    };
++
++    struct OwnedResource(Option<oneshot::Sender<()>>);
++    impl Drop for OwnedResource {
++        fn drop(&mut self) {
++            if let Some(released) = self.0.take() {
++                let _ = released.send(());
++            }
++        }
++    }
++
++    struct TestServer<T> {
++        task: tokio::task::JoinHandle<T>,
++        socket: std::path::PathBuf,
++    }
++    impl<T> Drop for TestServer<T> {
++        fn drop(&mut self) {
++            self.task.abort();
++            let _ = std::fs::remove_file(&self.socket);
++        }
++    }
++
++    let socket = std::env::temp_dir().join(format!(
++        "agentix-stream-{}-{}.sock",
++        std::process::id(),
++        std::time::SystemTime::now()
++            .duration_since(std::time::UNIX_EPOCH)?
++            .as_nanos()
++    ));
++    let backend = UnixListener::bind(&socket)?;
++    let (released, mut resource_released) = oneshot::channel();
++    let generation = tokio::spawn(async move {
++        let (mut connection, _) = backend.accept().await?;
++        let _resource = OwnedResource(Some(released));
++        let mut request = Vec::new();
++        let mut buf = [0; 1024];
++        while !request.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
++            let read = connection.read(&mut buf).await?;
++            if read == 0 {
++                return Err(std::io::Error::from(std::io::ErrorKind::UnexpectedEof));
++            }
++            request.extend_from_slice(&buf[..read]);
++        }
++        let event = "data: {\"choices\":[{\"delta\":{\"content\":\"pong\"}}]}\n\n";
++        connection
++            .write_all(
++                format!(
++                    "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{event}\r\n",
++                    event.len()
++                )
++                .as_bytes(),
++            )
++            .await?;
++
++        // Generation is paused between tokens: cancellation cannot rely on a failed send.
++        while connection.read(&mut buf).await? != 0 {}
++        Ok::<_, std::io::Error>(())
++    });
++    let backend_server = TestServer {
++        task: generation,
++        socket: socket.clone(),
++    };
++
++    let app = Router::new().route(
++        "/v1/chat/completions",
++        post(
++            move |headers: HeaderMap, body: axum::body::Bytes| async move {
++                proxy::forward(
++                    &socket,
++                    axum::http::Method::POST,
++                    "/v1/chat/completions",
++                    headers,
++                    Body::from(body),
++                )
++                .await
++            },
++        ),
++    );
++    let listener = TcpListener::bind("127.0.0.1:0").await?;
++    let address = listener.local_addr()?;
++    let gateway = TestServer {
++        task: tokio::spawn(async move {
++            let _ = axum::serve(listener, app).await;
++        }),
++        socket: backend_server.socket.clone(),
++    };
++
++    let mut response = timeout(
++        Duration::from_secs(5),
++        client()
++            .post(format!("http://{address}/v1/chat/completions"))
++            .json(&json!({"model": "test", "messages": [], "stream": true}))
++            .send(),
++    )
++    .await??;
++    assert_eq!(response.status(), 200);
++    assert_eq!(response.headers()["content-type"], "text/event-stream");
++    let chunk = timeout(Duration::from_secs(5), response.chunk()).await??;
++    assert!(chunk.is_some_and(|bytes| bytes.starts_with(b"data: ")));
++    assert!(matches!(
++        resource_released.try_recv(),
++        Err(oneshot::error::TryRecvError::Empty)
++    ));
++
++    drop(response);
++    timeout(Duration::from_secs(5), &mut resource_released).await??;
++    drop(gateway);
++    drop(backend_server);
++    Ok(())
++}
++
+ // ── Anthropic proxy ───────────────────────────────────────────────────────────
+ 
+ #[tokio::test]

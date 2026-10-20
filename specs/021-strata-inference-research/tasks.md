@@ -15,6 +15,38 @@ Paths are relative to this spec directory unless a workspace path is named. Prio
 
 ## Design and benchmark gates
 
+Batch verification, 2026-10-20: workspace formatting, strict workspace Clippy,
+workspace tests and `qwen-check` pass on the reviewed uncommitted batch.
+Three model-dependent tests remain ignored, and external-daemon tests may return
+early without a running service. The self-contained disconnect regression passes.
+The worker prompt-preparation correction is already committed as `2e50141`.
+Nix builds pass for Qwen, worker, daemon, indexer, agent, voice, Whisper and
+claude-jail (including the GitHub proxy client). The standalone CUDA sys
+driver-dependent check phase was not rerun and remains unresolved.
+This is readiness for further deployment testing, not closure of T020/T021/T027
+or the overall feature; see the implementation log for exact commands.
+
+Resume reconciliation, 2026-10-19: restored this task list from HEAD after
+finding the working copy empty. The following evidence updates supersede the
+older progress descriptions below without closing their remaining gates:
+
+- T009: both frozen ten-task Codex runs are retained in `results/2026-10-13/codex/`.
+  Their summaries record 8/10 and 9/10 passing command sets. The existing manual
+  review in `benchmarks.md` reports 7/10 and 9/10 accepted tasks respectively.
+  These compare two Codex model configurations; target model-runtime measurements
+  remain open.
+- T020: the rendered-chat path was attempted with the full IQ3_S artifact, then
+  interrupted after more than 30 minutes without a final summary. See
+  `results/2026-10-13/qwen-chat-smoke.md`; successful chat generation and
+  independent output parity remain unverified.
+- T029: the former disk-space blocker is no longer present at this probe
+  (616 GiB available on `/nix`). This does not establish a successful package
+  rebuild or resolve the CUDA sandbox's missing driver.
+  On 2026-10-20, `nix develop --command qwen-check` passed formatting, tests,
+  and strict all-target Clippy for all three Qwen crates. The focused daemon
+  `local_chat_streaming_returns_sse_disconnect_cancels_backend` integration
+  test also passed. These checks do not close the full workspace/package gate.
+
 Update 2026-10-13: T007's candidate storage coverage now includes all 13 types
 observed in the pinned IQ3_S candidate, and a ranged-header two-shard set passes
 schema validation (see `evidence/ista_iq3s_candidate_inventory.json`). This

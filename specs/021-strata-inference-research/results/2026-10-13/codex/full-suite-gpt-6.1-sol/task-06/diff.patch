@@ -1,0 +1,35 @@
+diff --git a/perSystem/devShells.nix b/perSystem/devShells.nix
+index 2582960..1bc0611 100644
+--- a/perSystem/devShells.nix
++++ b/perSystem/devShells.nix
+@@ -17,6 +17,12 @@
+         --symlink ${pkgs.bash}/bin/bash /bin/sh \
+         -- ${toolchain}/bin/cargo "$@"
+     '';
++    qwenCheck = pkgs.writeShellScriptBin "qwen-check" ''
++      set -euo pipefail
++      cargo fmt --all --check
++      cargo test -p agentix-qwen -p agentix-qwen-sys -p agentix-qwen-worker
++      cargo clippy -p agentix-qwen -p agentix-qwen-sys -p agentix-qwen-worker --all-targets -- -D warnings
++    '';
+     # Pinned GGUF fixture for integration tests (all-MiniLM-L6-v2, embedding-only, ~25 MB).
+     # sha256 obtained via: nix store prefetch-file --json '<url>'
+     fixture-model = pkgs.fetchurl {
+@@ -39,6 +45,7 @@
+       packages = with pkgs; [
+         # Rust toolchain (stable from fenix)
+         toolchain
++        qwenCheck
+         pkg-config
+         onnxruntime
+         openssl
+@@ -105,6 +112,9 @@
+         echo "Indexing:"
+         echo "  just index /path/to/repo   # Index a codebase"
+         echo ""
++        echo "Qwen checks:"
++        echo "  qwen-check                 # Check formatting, Qwen tests and Clippy (-D warnings)"
++        echo ""
+         echo "Database:"
+         echo "  psql postgres://127.0.0.1:5432/codebase"
+         echo ""

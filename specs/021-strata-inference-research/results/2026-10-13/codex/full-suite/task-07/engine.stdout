@@ -1,0 +1,1 @@
+The Qwen quickstart already documents the distinction at [quickstart.md](/tmp/nix-shell.zmPdwz/agentix-bench-26812-1791933406284697743/task-07/specs/021-strata-inference-research/quickstart.md:215), consistent with the pinned tokenizer and model configuration. The acceptance `rg` command passes. No changes were needed.

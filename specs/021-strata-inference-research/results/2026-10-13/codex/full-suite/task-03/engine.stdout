@@ -1,0 +1,3 @@
+Refactored `Reservations::total()` to use a private checked summation helper in [budget.rs](/tmp/nix-shell.zmPdwz/agentix-bench-26812-1791933406284697743/task-03/agentix-qwen/src/budget.rs). The existing storage test covers overflow and independent host/device admission behavior.
+
+The acceptance command could not run: Nix was unable to connect to `/run/nix-container-daemon/socket` (`Operation not permitted`). I stopped without trying another test method. No commit was made.
