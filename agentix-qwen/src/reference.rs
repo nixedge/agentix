@@ -2541,6 +2541,12 @@ impl DeltaState {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GatedDeltaLayout {
+    Checkpoint,
+    Gguf,
+}
+
 /// Multi-head GatedDeltaNet recurrence. Key heads are repeated across
 /// contiguous value-head groups as in the pinned Qwen implementation.
 #[derive(Clone, Debug, PartialEq)]
@@ -2615,6 +2621,25 @@ impl GatedDeltaState {
         log_decay: &[f32],
         beta: &[f32],
     ) -> Result<Vec<f32>> {
+        self.step_with_layout(
+            query,
+            key,
+            values,
+            log_decay,
+            beta,
+            GatedDeltaLayout::Checkpoint,
+        )
+    }
+
+    fn step_with_layout(
+        &mut self,
+        query: &[f32],
+        key: &[f32],
+        values: &[f32],
+        log_decay: &[f32],
+        beta: &[f32],
+        layout: GatedDeltaLayout,
+    ) -> Result<Vec<f32>> {
         let key_width = self
             .key_heads
             .checked_mul(self.key_dim)
@@ -2655,7 +2680,10 @@ impl GatedDeltaState {
             .map_err(|_| Error::Capacity("GatedDeltaNet output"))?;
         let repeats = self.value_heads / self.key_heads;
         for value_head in 0..self.value_heads {
-            let key_head = value_head / repeats;
+            let key_head = match layout {
+                GatedDeltaLayout::Checkpoint => value_head / repeats,
+                GatedDeltaLayout::Gguf => value_head % self.key_heads,
+            };
             let key_start = key_head * self.key_dim;
             let value_start = value_head * self.value_dim;
             let head_output = staged[value_head].step(
@@ -2681,6 +2709,7 @@ pub struct GatedDeltaNetWeights<'a> {
     pub decay_projection: &'a [f32],
     /// `[qkv_channels, kernel_size]`, in depthwise Conv1d order.
     pub convolution: &'a [f32],
+    /// Source `A_log`, or converted `-exp(A_log)` for `new_gguf` state.
     pub a_log: &'a [f32],
     pub dt_bias: &'a [f32],
     pub norm: &'a [f32],
@@ -2699,6 +2728,7 @@ pub struct GatedDeltaNetState {
     value_dim: usize,
     convolution: DepthwiseConvState,
     recurrence: GatedDeltaState,
+    layout: GatedDeltaLayout,
 }
 
 impl GatedDeltaNetState {
@@ -2736,7 +2766,30 @@ impl GatedDeltaNetState {
             value_dim,
             convolution: DepthwiseConvState::new(qkv_channels, kernel_size, 1)?,
             recurrence: GatedDeltaState::new(key_heads, value_heads, key_dim, value_dim)?,
+            layout: GatedDeltaLayout::Checkpoint,
         })
+    }
+
+    /// Uses converted GGUF weights: tiled value heads and `ssm_a = -exp(A_log)`.
+    /// Q/K remain in source order; all value-axis weights and state stay tiled.
+    pub fn new_gguf(
+        hidden_size: usize,
+        key_heads: usize,
+        value_heads: usize,
+        key_dim: usize,
+        value_dim: usize,
+        kernel_size: usize,
+    ) -> Result<Self> {
+        let mut state = Self::new(
+            hidden_size,
+            key_heads,
+            value_heads,
+            key_dim,
+            value_dim,
+            kernel_size,
+        )?;
+        state.layout = GatedDeltaLayout::Gguf;
+        Ok(state)
     }
 
     pub fn convolution_history(&self) -> &[f32] {
@@ -2756,6 +2809,7 @@ impl GatedDeltaNetState {
             value_dim: self.value_dim,
             convolution: self.convolution.try_clone_state()?,
             recurrence: self.recurrence.try_clone_state()?,
+            layout: self.layout,
         })
     }
 
@@ -2820,7 +2874,7 @@ impl GatedDeltaNetState {
         let beta_logits = linear(hidden, weights.beta_projection, None)?;
         let decay_logits = linear(hidden, weights.decay_projection, None)?;
         let (log_decay, beta) =
-            gated_delta_parameters(&decay_logits, &beta_logits, weights.a_log, weights.dt_bias)?;
+            self.decay_parameters(&decay_logits, &beta_logits, weights.a_log, weights.dt_bias)?;
 
         let mut next_convolution = self.convolution.try_clone_state()?;
         let convolved = next_convolution.process(&qkv, weights.convolution)?;
@@ -2830,7 +2884,8 @@ impl GatedDeltaNetState {
         let key = &convolved[q_width..2 * q_width];
         let value = &convolved[2 * q_width..2 * q_width + v_width];
         let mut next_recurrence = self.recurrence.try_clone_state()?;
-        let core = next_recurrence.step(query, key, value, &log_decay, &beta)?;
+        let core =
+            next_recurrence.step_with_layout(query, key, value, &log_decay, &beta, self.layout)?;
         let normalized = gated_rms_norm_grouped(&core, weights.norm, &z, self.value_dim, epsilon)?;
         let output = linear(&normalized, weights.output_projection, None)?;
         self.convolution = next_convolution;
@@ -2904,7 +2959,7 @@ impl GatedDeltaNetState {
         let beta_logits = linear_from_rows(hidden, beta_projection, None)?;
         let decay_logits = linear_from_rows(hidden, decay_projection, None)?;
         let (log_decay, beta) =
-            gated_delta_parameters(&decay_logits, &beta_logits, a_log, dt_bias)?;
+            self.decay_parameters(&decay_logits, &beta_logits, a_log, dt_bias)?;
         let mut next_convolution = self.convolution.try_clone_state()?;
         let convolved = next_convolution.process(&qkv, convolution)?;
         let q_width = self.key_heads * self.key_dim;
@@ -2913,12 +2968,29 @@ impl GatedDeltaNetState {
         let key = &convolved[q_width..2 * q_width];
         let value = &convolved[2 * q_width..2 * q_width + v_width];
         let mut next_recurrence = self.recurrence.try_clone_state()?;
-        let core = next_recurrence.step(query, key, value, &log_decay, &beta)?;
+        let core =
+            next_recurrence.step_with_layout(query, key, value, &log_decay, &beta, self.layout)?;
         let normalized = gated_rms_norm_grouped(&core, norm, &z, self.value_dim, epsilon)?;
         let output = linear_from_rows(&normalized, output_projection, None)?;
         self.convolution = next_convolution;
         self.recurrence = next_recurrence;
         Ok(output)
+    }
+
+    fn decay_parameters(
+        &self,
+        decay_logits: &[f32],
+        beta_logits: &[f32],
+        decay_weight: &[f32],
+        dt_bias: &[f32],
+    ) -> Result<(Vec<f32>, Vec<f32>)> {
+        gated_delta_parameters_with_layout(
+            decay_logits,
+            beta_logits,
+            decay_weight,
+            dt_bias,
+            self.layout,
+        )
     }
 
     /// Processes a token-major chunk atomically using row-backed weights.
@@ -3014,6 +3086,22 @@ pub fn gated_delta_parameters(
     a_log: &[f32],
     dt_bias: &[f32],
 ) -> Result<(Vec<f32>, Vec<f32>)> {
+    gated_delta_parameters_with_layout(
+        decay_logits,
+        beta_logits,
+        a_log,
+        dt_bias,
+        GatedDeltaLayout::Checkpoint,
+    )
+}
+
+fn gated_delta_parameters_with_layout(
+    decay_logits: &[f32],
+    beta_logits: &[f32],
+    a_log: &[f32],
+    dt_bias: &[f32],
+    layout: GatedDeltaLayout,
+) -> Result<(Vec<f32>, Vec<f32>)> {
     if decay_logits.is_empty()
         || decay_logits.len() != beta_logits.len()
         || decay_logits.len() != a_log.len()
@@ -3035,9 +3123,17 @@ pub fn gated_delta_parameters(
     for (((&a, &a_log), &bias), &b) in decay_logits.iter().zip(a_log).zip(dt_bias).zip(beta_logits)
     {
         let x = a + bias;
-        let coefficient = a_log.exp();
+        let coefficient = match layout {
+            GatedDeltaLayout::Checkpoint => -a_log.exp(),
+            GatedDeltaLayout::Gguf if a_log <= 0.0 => a_log,
+            GatedDeltaLayout::Gguf => {
+                return Err(Error::Invalid(
+                    "GGUF GatedDeltaNet decay coefficient is positive",
+                ));
+            }
+        };
         let softplus = x.max(0.0) + (-x.abs()).exp().ln_1p();
-        let decay = -coefficient * softplus;
+        let decay = coefficient * softplus;
         if !x.is_finite() || !decay.is_finite() || decay > 0.0 {
             return Err(Error::Invalid("GatedDeltaNet decay transform overflow"));
         }

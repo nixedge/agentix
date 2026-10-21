@@ -1,5 +1,43 @@
 # Implementation progress
 
+## 2026-10-21 — GGUF norm, decay and value-head correctness
+
+- The requested live retest returned `/v1/models` HTTP 200 and a four-token
+  Qwen chat HTTP 200 in 6.375715 seconds. The reply was `6\n(@-Ch` rather than
+  the requested `OK`. This resolves the earlier prompt-preparation failure only;
+  the response, exact request and limits are in `results/2026-10-21/ai-lan-chat.md`.
+- Compared the loader and recurrence with the pinned original Transformers and
+  llama.cpp converter contracts. GGUF already adds one to non-gated norm vectors,
+  transforms `A_log` to `-exp(A_log)`, and tiles value heads while retaining Q/K
+  order. The decoder incorrectly reapplied the norm/decay transforms and used
+  source-grouped key/value head associations.
+- Translate small converted norm vectors to offsets at load time, preserving
+  the direct gated recurrent norm. `GatedDeltaNetState::new_gguf` explicitly
+  selects direct negative decay coefficients and tiled value-head associations.
+  Positive decay coefficients are rejected. Checkpoint-reference behavior stays
+  unchanged; large encoded matrices are not permuted or expanded.
+- Added independently specified source-to-GGUF head-order parity across three
+  nonzero tokens and row-backed prefill, recurrent-state parity and rejection
+  atomicity. Actual compact-GGUF loaders check all affected norm categories and
+  compare recurrent outputs with source equations. Native CPU/CUDA decoder
+  fixtures now use two key heads/six value heads and valid negative coefficients;
+  the historical zero fixture and SHA256 are unchanged.
+- `nix develop --command qwen-check` passed formatting, all focused library/sys/
+  worker tests and strict all-target Clippy. `git diff --check` passes. Nix
+  CUDA-enabled worker/device-check builds passed:
+  `nix build .#agentix-qwen-worker .#agentix-qwen-cuda-check --no-link
+  --print-out-paths --print-build-logs`.
+  Worker: `/nix/store/qfgzkaqrix0ib3mirxn4ca5yh479n21g-agentix-qwen-worker`;
+  device check: `/nix/store/5n3npvs2l0z9nk9wykg8vhb2j0y6bz2m-agentix-qwen-cuda-check`.
+- No corrected-worker deployment, GPU execution, post-fix live chat or independent
+  production-model parity is claimed. The user owns deployment.
+  T038/T039 are complete and T040 remains open.
+- Before the user-requested commit, workspace formatting and
+  `nix develop --command cargo test --workspace` passed. Existing model-dependent
+  ignored tests remain skipped; this does not establish deployed-model acceptance.
+- Incremental source ingestion stopped at 230/231 files with HTTP 500 from
+  `/api/embed`. The user approved direct local source reads before continuing.
+
 ## 2026-10-20 — iviron CUDA device checks passed
 
 - User-provided output reports all three CUDA checks passing on iviron's

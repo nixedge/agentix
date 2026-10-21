@@ -47,6 +47,20 @@ those execution checks.
 
 ## Stage 2 — Residency and overlapping work
 
+### 2026-10-21 GGUF correctness repair (T020)
+
+The live gateway returns HTTP 200 but incorrect text for the minimal chat prompt.
+Repair three confirmed representation mismatches before further optimization:
+GGUF norm vectors already include the zero-centered offset, `ssm_a` already
+contains `-exp(A_log)`, and recurrent value heads use tiled rather than source
+grouped ordering. Keep source-reference semantics intact; explicitly select
+GGUF recurrent semantics at the loader boundary and translate stored direct norm
+scales to the reference's offset representation. Do not materialize or permute
+large quantized matrices. Add nonzero converted-weight/source-equation parity
+tests with unequal key/value-head counts, distinct per-head parameters, multiple
+tokens, and GGUF loader coverage. Run focused Qwen checks and rebuild the worker;
+deployment and a successful real-model response remain separate acceptance gates.
+
 Keep appropriate dense/state tensors on GPU, bound expert residency after context/scratch reservations, and execute remaining experts on CPU or via staged GPU transfers according to measured cost. Begin with deterministic placement; add adaptive caching only with hit/miss evidence. Use bounded pinned-memory staging and explicit completion events; do not reuse buffers while any CPU/device operation still owns them. Validate each placement against baseline results and profile CPU bandwidth, transfer volume and GPU idle time.
 
 ## Stage 3 — Prefill, PLE and prefix reuse

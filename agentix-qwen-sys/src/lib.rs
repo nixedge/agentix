@@ -1506,6 +1506,15 @@ impl QwenGgufTensorStore {
         .validate_compute_capacity()
     }
 
+    fn read_norm_offset(&self, tensor_name: &str) -> Result<Vec<f32>, Error> {
+        let mut values = self.open_rows(tensor_name)?.read_row(0)?;
+        // GGUF conversion already adds one; the source reference expects offsets.
+        for value in &mut values {
+            *value -= 1.0;
+        }
+        Ok(values)
+    }
+
     /// Opens one expert matrix from a rank-three `[in, out, experts]` tensor.
     pub fn open_group_matrix_rows(
         &self,
@@ -1557,7 +1566,7 @@ pub struct GatedDeltaNetGgufLayer {
     beta: GgufMatrixRows,
     decay: GgufMatrixRows,
     convolution: Vec<f32>,
-    a_log: Vec<f32>,
+    decay_coefficient: Vec<f32>,
     dt_bias: Vec<f32>,
     norm: Vec<f32>,
     output: GgufMatrixRows,
@@ -1626,7 +1635,7 @@ impl ResidualMixerGguf {
                 None,
             ),
         };
-        let norm = store.open_rows(&norm_name)?.read_row(0)?;
+        let norm = store.read_norm_offset(&norm_name)?;
         let down = store.open_matrix_rows(&down_name)?;
         let up = store.open_matrix_rows(&up_name)?;
         let injection = injection_name
@@ -1707,15 +1716,9 @@ impl PleGgufLayer {
         let embedding = store.open_ple_rows("per_layer_token_embd.weight")?;
         let key_projection = store.open_matrix_rows(&tensor_name("ple_key.weight"))?;
         let value_projection = store.open_matrix_rows(&tensor_name("ple_value.weight"))?;
-        let key_norm = store
-            .open_rows(&tensor_name("ple_norm_key.weight"))?
-            .read_row(0)?;
-        let query_norm = store
-            .open_rows(&tensor_name("ple_norm_query.weight"))?
-            .read_row(0)?;
-        let conv_norm = store
-            .open_rows(&tensor_name("ple_norm_conv.weight"))?
-            .read_row(0)?;
+        let key_norm = store.read_norm_offset(&tensor_name("ple_norm_key.weight"))?;
+        let query_norm = store.read_norm_offset(&tensor_name("ple_norm_query.weight"))?;
+        let conv_norm = store.read_norm_offset(&tensor_name("ple_norm_conv.weight"))?;
         let conv_rows = store.open_rows(&tensor_name("ple_conv1d.weight"))?;
         if embedding.row_width() != row_width
             || usize::try_from(embedding.row_count()).ok() != Some(expected_table_rows)
@@ -1884,10 +1887,10 @@ impl GatedDeltaNetGgufLayer {
         let vector = |suffix: &str| -> Result<Vec<f32>, Error> {
             store.open_rows(&tensor_name(suffix))?.read_row(0)
         };
-        let a_log = vector("ssm_a")?;
+        let decay_coefficient = vector("ssm_a")?;
         let dt_bias = vector("ssm_dt.bias")?;
         let norm = vector("ssm_norm.weight")?;
-        if a_log.len() != config.gdn_value_heads
+        if decay_coefficient.len() != config.gdn_value_heads
             || dt_bias.len() != config.gdn_value_heads
             || norm.len() != config.gdn_value_head_dim
         {
@@ -1895,7 +1898,12 @@ impl GatedDeltaNetGgufLayer {
                 "GatedDeltaNet GGUF vector geometry mismatch",
             ));
         }
-        let state = agentix_qwen::reference::GatedDeltaNetState::new(
+        if decay_coefficient.iter().any(|&value| value > 0.0) {
+            return Err(Error::Invalid(
+                "GGUF GatedDeltaNet decay coefficient is positive",
+            ));
+        }
+        let state = agentix_qwen::reference::GatedDeltaNetState::new_gguf(
             config.hidden_size,
             config.gdn_key_heads,
             config.gdn_value_heads,
@@ -1910,7 +1918,7 @@ impl GatedDeltaNetGgufLayer {
             beta,
             decay,
             convolution,
-            a_log,
+            decay_coefficient,
             dt_bias,
             norm,
             output,
@@ -1931,7 +1939,7 @@ impl GatedDeltaNetGgufLayer {
             &mut self.beta,
             &mut self.decay,
             &self.convolution,
-            &self.a_log,
+            &self.decay_coefficient,
             &self.dt_bias,
             &self.norm,
             &mut self.output,
@@ -1947,7 +1955,7 @@ impl GatedDeltaNetGgufLayer {
             &mut self.beta,
             &mut self.decay,
             &self.convolution,
-            &self.a_log,
+            &self.decay_coefficient,
             &self.dt_bias,
             &self.norm,
             &mut self.output,
@@ -2005,13 +2013,10 @@ impl QsaGgufLayer {
         let attention_key = store.open_matrix_rows(&tensor_name("attn_k.weight"))?;
         let attention_value = store.open_matrix_rows(&tensor_name("attn_v.weight"))?;
         let attention_output = store.open_matrix_rows(&tensor_name("attn_output.weight"))?;
-        let read_vector = |suffix: &str| -> Result<Vec<f32>, Error> {
-            store.open_rows(&tensor_name(suffix))?.read_row(0)
-        };
-        let indexer_query_norm = read_vector("indexer.q_norm.weight")?;
-        let indexer_key_norm = read_vector("indexer.k_norm.weight")?;
-        let attention_query_norm = read_vector("attn_q_norm.weight")?;
-        let attention_key_norm = read_vector("attn_k_norm.weight")?;
+        let indexer_query_norm = store.read_norm_offset(&tensor_name("indexer.q_norm.weight"))?;
+        let indexer_key_norm = store.read_norm_offset(&tensor_name("indexer.k_norm.weight"))?;
+        let attention_query_norm = store.read_norm_offset(&tensor_name("attn_q_norm.weight"))?;
+        let attention_key_norm = store.read_norm_offset(&tensor_name("attn_k_norm.weight"))?;
         let indexer_query_width = config
             .indexer_query_heads
             .checked_mul(config.indexer_head_dim)
@@ -4092,7 +4097,9 @@ mod tests {
                     };
                     let salt = geometry.name.bytes().map(usize::from).sum::<usize>();
                     for (index, value) in values.iter_mut().enumerate() {
-                        *value = if geometry.name.contains("norm") {
+                        *value = if geometry.name.ends_with(".ssm_a") {
+                            -0.5 - index as f32 * 0.1
+                        } else if geometry.name.contains("norm") {
                             1.0
                         } else {
                             (((index * 17 + salt) % 23) as f32 - 11.0) * 0.002
@@ -4279,7 +4286,8 @@ mod tests {
     fn native_matrix_dispatch_preserves_nonzero_stateful_decoder_and_prefill(
     ) -> Result<(), Box<dyn std::error::Error>> {
         let file = TempFile::new();
-        let config = compact_decoder_config()?;
+        let mut config = compact_decoder_config()?;
+        config.gdn_value_heads = 6;
         write_compact_decoder_shard_with_values(&file, &config, true)?;
         compare_native_decoder(
             &config,
@@ -4294,13 +4302,112 @@ mod tests {
     fn cuda_matrix_dispatch_preserves_nonzero_stateful_decoder_and_prefill(
     ) -> Result<(), Box<dyn std::error::Error>> {
         let file = TempFile::new();
-        let config = compact_decoder_config()?;
+        let mut config = compact_decoder_config()?;
+        config.gdn_value_heads = 6;
         write_compact_decoder_shard_with_values(&file, &config, true)?;
         compare_native_decoder(
             &config,
             std::slice::from_ref(&file.0),
             compute::NativeCompute::cuda(0, 64 * 1024 * 1024)?,
         )
+    }
+
+    #[test]
+    fn gguf_loaders_preserve_converted_norms_and_recurrent_equations(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        use agentix_qwen::reference::{GatedDeltaNetState, GatedDeltaNetWeights};
+        let file = TempFile::new();
+        let mut config = compact_decoder_config()?;
+        config.gdn_value_heads = 6;
+        write_compact_decoder_shard_with_values(&file, &config, true)?;
+        let store = QwenGgufTensorStore::open(std::slice::from_ref(&file.0), &config)?;
+        for kind in [
+            ResidualMixerKind::Attention,
+            ResidualMixerKind::FeedForward,
+            ResidualMixerKind::Final,
+        ] {
+            let mixer = ResidualMixerGguf::open(&store, 0, kind, &config)?;
+            assert!(mixer.norm.iter().all(|&value| value == 0.0));
+        }
+        let ple = PleGgufLayer::open(&store, 1, &config)?;
+        for norm in [&ple.key_norm, &ple.query_norm, &ple.conv_norm] {
+            assert!(norm.iter().all(|&value| value == 0.0));
+        }
+        let qsa = QsaGgufLayer::open(&store, 3, &config)?;
+        for norm in [
+            &qsa.indexer_query_norm,
+            &qsa.indexer_key_norm,
+            &qsa.attention_query_norm,
+            &qsa.attention_key_norm,
+        ] {
+            assert!(norm.iter().all(|&value| value == 0.0));
+        }
+        let mut layer = GatedDeltaNetGgufLayer::open(&store, 0, &config)?;
+        assert_eq!(layer.norm, [1.0; 2]);
+        // Inverse of the pinned converter's [0, 3, 1, 4, 2, 5] head order.
+        let untile = |input: &[f32], width: usize| -> Vec<f32> {
+            [0, 2, 4, 1, 3, 5]
+                .iter()
+                .flat_map(|&head| input[head * width..(head + 1) * width].iter().copied())
+                .collect()
+        };
+        let matrix = |rows: &GgufMatrixRows| -> Result<Vec<f32>, Error> {
+            let mut values = Vec::new();
+            for row in 0..rows.output_features() {
+                values.extend(rows.read_row(row)?);
+            }
+            Ok(values)
+        };
+        let hidden = config.hidden_size;
+        let dim = config.gdn_value_head_dim;
+        let qk = 2 * config.gdn_key_heads * config.gdn_key_head_dim;
+        let stored_qkv = matrix(&layer.qkv)?;
+        let mut qkv = stored_qkv[..qk * hidden].to_vec();
+        qkv.extend(untile(&stored_qkv[qk * hidden..], dim * hidden));
+        let z = untile(&matrix(&layer.z)?, dim * hidden);
+        let beta = untile(&matrix(&layer.beta)?, hidden);
+        let decay = untile(&matrix(&layer.decay)?, hidden);
+        let kernel = config.gdn_conv_kernel_size;
+        let mut conv = layer.convolution[..qk * kernel].to_vec();
+        conv.extend(untile(&layer.convolution[qk * kernel..], dim * kernel));
+        let a_log = untile(&layer.decay_coefficient, 1)
+            .into_iter()
+            .map(|coefficient| (-coefficient).ln())
+            .collect::<Vec<_>>();
+        let dt_bias = untile(&layer.dt_bias, 1);
+        let output = matrix(&layer.output)?
+            .chunks_exact(config.gdn_value_heads * dim)
+            .flat_map(|row| untile(row, dim))
+            .collect::<Vec<_>>();
+        let norm = layer.norm.clone();
+        let weights = GatedDeltaNetWeights {
+            qkv_projection: &qkv,
+            z_projection: &z,
+            beta_projection: &beta,
+            decay_projection: &decay,
+            convolution: &conv,
+            a_log: &a_log,
+            dt_bias: &dt_bias,
+            norm: &norm,
+            output_projection: &output,
+        };
+        let mut source = GatedDeltaNetState::new(
+            hidden,
+            config.gdn_key_heads,
+            config.gdn_value_heads,
+            config.gdn_key_head_dim,
+            dim,
+            kernel,
+        )?;
+        let tokens = (0..hidden * 3)
+            .map(|i| (i % 17) as f32 * 0.05 - 0.4)
+            .collect::<Vec<_>>();
+        let expected = source.process(&tokens, &weights, config.rms_norm_epsilon)?;
+        let actual = layer.process(&tokens)?;
+        for (&actual, &expected) in actual.iter().zip(&expected) {
+            assert!((actual - expected).abs() < 1e-6, "{actual} != {expected}");
+        }
+        Ok(())
     }
 
     fn write_test_f32_vector(

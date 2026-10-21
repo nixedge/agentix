@@ -1563,6 +1563,126 @@ fn gated_delta_value_head_reorder_matches_pinned_group_to_tiled_order() -> Resul
 }
 
 #[test]
+fn converted_gguf_gated_delta_matches_source_across_tokens_and_prefill() -> Result<()> {
+    const HIDDEN: usize = 3;
+    const KEY_HEADS: usize = 2;
+    const VALUE_HEADS: usize = 6;
+    const DIM: usize = 2;
+    const KERNEL: usize = 2;
+    const QK: usize = 2 * KEY_HEADS * DIM;
+    const VALUE: usize = VALUE_HEADS * DIM;
+    // Independent source-to-file head map from the pinned converter contract.
+    let heads = [0, 3, 1, 4, 2, 5];
+    let tile = |input: &[f32], width: usize| -> Vec<f32> {
+        heads
+            .iter()
+            .flat_map(|&head| input[head * width..(head + 1) * width].iter().copied())
+            .collect()
+    };
+    let values = |count: usize, salt: usize| -> Vec<f32> {
+        (0..count)
+            .map(|i| ((i * 7 + salt) % 29) as f32 * 0.03 - 0.35)
+            .collect()
+    };
+    let qkv = values((QK + VALUE) * HIDDEN, 1);
+    let z = values(VALUE * HIDDEN, 2);
+    let beta = values(VALUE_HEADS * HIDDEN, 3);
+    let decay = values(VALUE_HEADS * HIDDEN, 4);
+    let conv = values((QK + VALUE) * KERNEL, 5);
+    let a_log = [-0.8, -0.4, 0.0, 0.3, 0.6, 1.0];
+    let dt_bias = [-0.7, -0.2, 0.1, 0.4, 0.8, 1.2];
+    let norm = [1.1, 0.9];
+    let output = values(HIDDEN * VALUE, 6);
+    let source_weights = GatedDeltaNetWeights {
+        qkv_projection: &qkv,
+        z_projection: &z,
+        beta_projection: &beta,
+        decay_projection: &decay,
+        convolution: &conv,
+        a_log: &a_log,
+        dt_bias: &dt_bias,
+        norm: &norm,
+        output_projection: &output,
+    };
+    let mut gguf_qkv = qkv[..QK * HIDDEN].to_vec();
+    gguf_qkv.extend(tile(&qkv[QK * HIDDEN..], DIM * HIDDEN));
+    let gguf_z = tile(&z, DIM * HIDDEN);
+    let gguf_beta = tile(&beta, HIDDEN);
+    let gguf_decay = tile(&decay, HIDDEN);
+    let mut gguf_conv = conv[..QK * KERNEL].to_vec();
+    gguf_conv.extend(tile(&conv[QK * KERNEL..], DIM * KERNEL));
+    let gguf_a = tile(&a_log.map(|a: f32| -a.exp()), 1);
+    let gguf_dt = tile(&dt_bias, 1);
+    let gguf_output: Vec<f32> = output
+        .chunks_exact(VALUE)
+        .flat_map(|row| tile(row, DIM))
+        .collect();
+    let gguf_weights = GatedDeltaNetWeights {
+        qkv_projection: &gguf_qkv,
+        z_projection: &gguf_z,
+        beta_projection: &gguf_beta,
+        decay_projection: &gguf_decay,
+        convolution: &gguf_conv,
+        a_log: &gguf_a,
+        dt_bias: &gguf_dt,
+        norm: &norm,
+        output_projection: &gguf_output,
+    };
+    let fresh = || GatedDeltaNetState::new_gguf(HIDDEN, KEY_HEADS, VALUE_HEADS, DIM, DIM, KERNEL);
+    let mut source = GatedDeltaNetState::new(HIDDEN, KEY_HEADS, VALUE_HEADS, DIM, DIM, KERNEL)?;
+    let mut gguf = fresh()?;
+    let tokens = [0.4, -0.6, 0.9, -0.3, 0.7, 0.2, 0.8, 0.1, -0.5];
+    let mut expected = Vec::new();
+    for token in tokens.chunks_exact(HIDDEN) {
+        let source_output = source.step(token, &source_weights, 1e-6)?;
+        close(&gguf.step(token, &gguf_weights, 1e-6)?, &source_output);
+        expected.extend(source_output);
+        for (target, &original) in heads.iter().enumerate() {
+            close(
+                gguf.recurrent_states()[target].values(),
+                source.recurrent_states()[original].values(),
+            );
+        }
+    }
+    let rows = |values: &[f32], outputs, inputs| TestLinearRows {
+        values: values.to_vec(),
+        output_features: outputs,
+        input_features: inputs,
+    };
+    let mut qkv_rows = rows(&gguf_qkv, (QK + VALUE) as u64, HIDDEN);
+    let mut z_rows = rows(&gguf_z, VALUE as u64, HIDDEN);
+    let mut beta_rows = rows(&gguf_beta, VALUE_HEADS as u64, HIDDEN);
+    let mut decay_rows = rows(&gguf_decay, VALUE_HEADS as u64, HIDDEN);
+    let mut output_rows = rows(&gguf_output, HIDDEN as u64, VALUE);
+    let mut prefill = fresh()?;
+    close(
+        &prefill.process_from_rows(
+            &tokens,
+            &mut qkv_rows,
+            &mut z_rows,
+            &mut beta_rows,
+            &mut decay_rows,
+            &gguf_conv,
+            &gguf_a,
+            &gguf_dt,
+            &norm,
+            &mut output_rows,
+            1e-6,
+        )?,
+        &expected,
+    );
+    assert_eq!(prefill, gguf);
+    let before = prefill.clone();
+    let bad_weights = GatedDeltaNetWeights {
+        a_log: &[1.0; VALUE_HEADS],
+        ..gguf_weights
+    };
+    assert!(prefill.step(&tokens[..HIDDEN], &bad_weights, 1e-6).is_err());
+    assert_eq!(prefill, before);
+    Ok(())
+}
+
+#[test]
 fn gated_delta_value_head_reorder_rejects_bad_geometry_and_non_finite_values() {
     assert!(reorder_gdn_value_heads_axis0(&[1.0], 0, 1, 1, 1).is_err());
     assert!(reorder_gdn_value_heads_axis0(&[1.0], 1, 1, 1, 2).is_err());
