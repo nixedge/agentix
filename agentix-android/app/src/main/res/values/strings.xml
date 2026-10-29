@@ -30,7 +30,7 @@
     <string name="settings_detail">Enter the HTTPS address reachable through your phone’s WireGuard tunnel. WireGuard remains managed by its own app.</string>
     <string name="endpoint_label">Server URL</string>
     <string name="endpoint_example">https://assistant.example</string>
-    <string name="endpoint_invalid">Use an HTTPS URL with a host, without credentials, query parameters, or a fragment.</string>
+    <string name="endpoint_invalid">Use a valid HTTPS address and owner token. Resolve any pending instruction before changing the address.</string>
     <string name="save">Save</string>
     <string name="clear">Clear</string>
     <string name="endpoint_saved">Address saved. Server connectivity has not been checked.</string>
@@ -76,13 +76,13 @@
     <string name="assistant_choose">Choose default assistant</string>
     <string name="assistant_open">Open assistant</string>
     <string name="assistant_no_wakeword">Custom wake-word listening is not enabled. This version uses button or gesture activation.</string>
-    <string name="assistant_local_detail">Dictate or type an instruction. Speech recognition stays on this device. Backend actions are not connected yet.</string>
+    <string name="assistant_local_detail">Dictate or type an instruction. Speech recognition stays on this device. Backend actions require explicit enablement in Settings. Pending instructions stay on this device for safe retries.</string>
     <string name="assistant_idle">Ready for an instruction.</string>
     <string name="assistant_instruction">Your instruction</string>
     <string name="assistant_talk">Talk</string>
     <string name="assistant_finish">Finish speaking</string>
-    <string name="assistant_preview_instruction">Try instruction</string>
-    <string name="assistant_cancel">Cancel</string>
+    <string name="assistant_preview_instruction">Send instruction</string>
+    <string name="assistant_cancel">Stop waiting</string>
     <string name="assistant_close">Close</string>
     <string name="assistant_speak_replies">Speak replies offline</string>
     <string name="assistant_stop_speaking">Stop speaking</string>
@@ -101,8 +101,14 @@
     <string name="assistant_not_connected">Your instruction is ready, but the Agentix backend is not connected. No action has been taken.</string>
     <string name="assistant_preview">Local preview — no action taken.</string>
     <string name="assistant_reply">Agentix replied.</string>
-    <string name="assistant_request_failed">The instruction could not be processed. Please retry.</string>
+    <string name="assistant_request_failed">No final response was received. Any pending instruction is retained; retry it to check the outcome.</string>
     <string name="assistant_speaking">Speaking…</string>
     <string name="assistant_speech_done">Spoken reply finished.</string>
     <string name="assistant_tts_missing">Offline speech output is unavailable for your device language. The reply is shown above.</string>
+    <string name="backend_token">Owner token</string>
+    <string name="backend_enable">Enable assistant backend</string>
+    <string name="assistant_pending">An instruction is unresolved. Retry it before sending another. Stopping the wait does not undo server changes.</string>
+    <string name="assistant_pending_instruction">Pending instruction: %1$s</string>
+    <string name="assistant_retry_pending">Retry pending instruction</string>
+    <string name="assistant_storage_failed">Assistant state could not be read. Sending is blocked until local storage is recovered.</string>
 </resources>

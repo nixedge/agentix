@@ -1,6 +1,6 @@
 use agentix_assistant_core::{
     bounded_text, Command, CommandRequest, Error, Intent, PreparedPlan, Record, RecordBody, Result,
-    TellStatus,
+    TellStatus, UnsupportedCapability,
 };
 use uuid::Uuid;
 
@@ -277,6 +277,15 @@ pub(crate) fn prepare(intent: Intent, records: &[Record]) -> Result<PreparedPlan
         Intent::Clarify { question } => {
             bounded_text(&question, 2_048)?;
             return Ok(clarify(question));
+        }
+        Intent::Unsupported { capability } => {
+            plan.status = TellStatus::Answer;
+            plan.reply = match capability {
+                UnsupportedCapability::Email => "I can't send email yet.",
+                UnsupportedCapability::Calendar => "I can't access or change your calendar yet.",
+                UnsupportedCapability::Reminder => "I can't deliver reminders yet. I can save a task with a due date.",
+                UnsupportedCapability::Other => "I can't do that yet. I can save notes and tasks, manage list items, and mark tasks complete.",
+            }.into();
         }
     }
     plan.validate()?;

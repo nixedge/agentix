@@ -17,7 +17,7 @@ use std::sync::Arc;
 use tower::ServiceExt;
 use uuid::Uuid;
 use wiremock::{
-    matchers::{method, path},
+    matchers::{body_partial_json, method, path},
     Mock, MockServer, ResponseTemplate,
 };
 
@@ -60,7 +60,20 @@ async fn authenticated_http_grocery_save_retry_conflict_and_actual_history() -> 
     let directory = tempfile::tempdir()?;
     let store = SledRepository::open(directory.path()).await?;
     let gateway = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .and(body_partial_json(
+            json!({"response_format":{"json_schema":{"name":"personal_assistant_operation"}}}),
+        ))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(completion(json!({"operation":"add_list_item"}))),
+        )
+        .expect(1)
+        .mount(&gateway)
+        .await;
     Mock::given(method("POST")).and(path("/v1/chat/completions"))
+        .and(body_partial_json(json!({"response_format":{"json_schema":{"name":"personal_assistant_action"}}})))
         .respond_with(ResponseTemplate::new(200).set_body_json(completion(json!({"action":"add_list_item","list_name":"groceries","list_id":null,"text":"pineapple"}))))
         .expect(1).mount(&gateway).await;
     let shared = Arc::new(store.clone());
@@ -104,7 +117,8 @@ async fn authenticated_http_grocery_save_retry_conflict_and_actual_history() -> 
         .received_requests()
         .await
         .ok_or("missing gateway requests")?;
-    let sent: Value = serde_json::from_slice(&captured[0].body)?;
+    assert_eq!(captured.len(), 2);
+    let sent: Value = serde_json::from_slice(&captured[1].body)?;
     assert_eq!(sent["response_format"]["type"], "json_schema");
     assert_eq!(sent["temperature"], 0.0);
     assert_eq!(sent["max_tokens"], 512);
@@ -267,7 +281,32 @@ async fn installed_qwen_acceptance() -> TestResult {
         (
             "unsupported_email",
             "Email my grocery list to Alex.",
-            TellStatus::Clarification,
+            TellStatus::Answer,
+        ),
+        (
+            "unsupported_email_address",
+            "Alex's address is alex@example.invalid. Send it there.",
+            TellStatus::Answer,
+        ),
+        (
+            "unsupported_email_confirm",
+            "Yes, send the email now.",
+            TellStatus::Answer,
+        ),
+        (
+            "unsupported_email_status",
+            "Did you send the email?",
+            TellStatus::Answer,
+        ),
+        (
+            "unsupported_calendar",
+            "Add a meeting with Pat to my calendar tomorrow at noon.",
+            TellStatus::Answer,
+        ),
+        (
+            "unsupported_reminder",
+            "Send me a reminder tomorrow at noon to call Pat.",
+            TellStatus::Answer,
         ),
     ];
     for (case, text, expected) in cases {
@@ -281,6 +320,19 @@ async fn installed_qwen_acceptance() -> TestResult {
             json!({"case":case,"elapsed_ms":started.elapsed().as_millis(),"http_status":http_status.as_u16(),"status":response.status,"reply":response.reply,"saved_outcomes":response.outcomes.len()})
         );
         assert_eq!(response.status, expected, "unexpected outcome for {case}");
+        if case.starts_with("unsupported_email") {
+            assert_eq!(response.reply, "I can't send email yet.");
+        } else if case == "unsupported_calendar" {
+            assert_eq!(
+                response.reply,
+                "I can't access or change your calendar yet."
+            );
+        } else if case == "unsupported_reminder" {
+            assert_eq!(
+                response.reply,
+                "I can't deliver reminders yet. I can save a task with a due date."
+            );
+        }
         assert_eq!(
             post(&app, &request, Some(TOKEN)).await?.1,
             body,
@@ -304,6 +356,123 @@ async fn installed_qwen_acceptance() -> TestResult {
                 assert!(response.outcomes.is_empty());
                 assert_eq!(records, before);
             }
+        }
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn unsupported_http_answer_replays_without_effects_or_repeat_inference() -> TestResult {
+    let directory = tempfile::tempdir()?;
+    let store = SledRepository::open(directory.path()).await?;
+    let gateway = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(completion(json!({
+            "operation":"unsupported_email"
+        }))))
+        .expect(1)
+        .mount(&gateway)
+        .await;
+    let shared = Arc::new(store.clone());
+    let app = routes(
+        Arc::new(Assistant::new(
+            shared.clone(),
+            shared,
+            Arc::new(LocalGateway::new(&gateway.uri(), "qwen-test")?),
+        )),
+        TOKEN.into(),
+    )?;
+    let input = request(Uuid::new_v4(), "Email my grocery list to Alex.");
+    let (status, body) = post(&app, &input, Some(TOKEN)).await?;
+    assert_eq!(status, StatusCode::OK);
+    let response: TellResponse = serde_json::from_value(body.clone())?;
+    assert_eq!(response.status, TellStatus::Answer);
+    assert_eq!(response.reply, "I can't send email yet.");
+    assert!(response.outcomes.is_empty());
+    assert!(response.records.is_empty());
+    assert_eq!(post(&app, &input, Some(TOKEN)).await?.1, body);
+    assert!(store.records().await?.is_empty());
+    assert!(store.pending_projections(20).await?.is_empty());
+    assert_eq!(
+        store
+            .recent_messages(input.conversation_id, 100)
+            .await?
+            .len(),
+        2
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn two_step_selection_and_filling_disagreements_never_write() -> TestResult {
+    for (selection, fill) in [
+        (json!({"operation":"unknown"}), None),
+        (json!({"operation":"save_note","extra":"not allowed"}), None),
+        (
+            json!({"operation":"save_note"}),
+            Some(
+                json!({"action":"add_list_item","list_name":"groceries","list_id":null,"text":"pineapple"}),
+            ),
+        ),
+        (
+            json!({"operation":"save_note"}),
+            Some(json!({"action":"unsupported","capability":"email"})),
+        ),
+        (
+            json!({"operation":"save_note"}),
+            Some(json!({"action":"save_note","text":"ok","extra":true})),
+        ),
+    ] {
+        let directory = tempfile::tempdir()?;
+        let store = SledRepository::open(directory.path()).await?;
+        let gateway = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(body_partial_json(
+                json!({"response_format":{"json_schema":{"name":"personal_assistant_operation"}}}),
+            ))
+            .respond_with(ResponseTemplate::new(200).set_body_json(completion(selection)))
+            .expect(1)
+            .mount(&gateway)
+            .await;
+        if let Some(fill) = fill {
+            Mock::given(method("POST"))
+                .and(body_partial_json(
+                    json!({"response_format":{"json_schema":{"name":"personal_assistant_action"}}}),
+                ))
+                .respond_with(ResponseTemplate::new(200).set_body_json(completion(fill)))
+                .expect(1)
+                .mount(&gateway)
+                .await;
+        }
+        let shared = Arc::new(store.clone());
+        let app = routes(
+            Arc::new(Assistant::new(
+                shared.clone(),
+                shared,
+                Arc::new(LocalGateway::new(&gateway.uri(), "qwen-test")?),
+            )),
+            TOKEN.into(),
+        )?;
+        let input = request(Uuid::new_v4(), "Save a note.");
+        let (_, body) = post(&app, &input, Some(TOKEN)).await?;
+        assert_eq!(body["status"], "failed");
+        assert_eq!(body["outcomes"], json!([]));
+        assert!(store.records().await?.is_empty());
+        let requests = gateway
+            .received_requests()
+            .await
+            .ok_or("missing requests")?;
+        if requests.len() == 2 {
+            let fill: Value = serde_json::from_slice(&requests[1].body)?;
+            let allowed = fill["response_format"]["json_schema"]["schema"]["oneOf"]
+                .as_array()
+                .ok_or("missing schema")?;
+            assert_eq!(allowed.len(), 2);
+            assert!(allowed.iter().all(|variant| matches!(
+                variant["properties"]["action"]["const"].as_str(),
+                Some("save_note" | "clarify")
+            )));
         }
     }
     Ok(())

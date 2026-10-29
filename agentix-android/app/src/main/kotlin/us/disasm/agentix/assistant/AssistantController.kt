@@ -19,7 +19,6 @@ import us.disasm.agentix.R
 import us.disasm.agentix.core.assistant.AssistantClient
 import us.disasm.agentix.core.assistant.AssistantReply
 import us.disasm.agentix.core.assistant.AssistantTurn
-import us.disasm.agentix.core.assistant.DisconnectedAssistantClient
 import us.disasm.agentix.core.assistant.TellCommand
 import us.disasm.agentix.core.assistant.TurnPhase
 import us.disasm.agentix.recording.CapturePhase
@@ -27,7 +26,7 @@ import us.disasm.agentix.recording.PhoneCaptureState
 
 internal class AssistantController(
     private val context: Context,
-    private val client: AssistantClient = DisconnectedAssistantClient,
+    private val client: AssistantClient = BackendClient.get(context),
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val turn = AssistantTurn()
@@ -41,6 +40,8 @@ internal class AssistantController(
         private set
     var reply by mutableStateOf("")
         private set
+    var pendingText by mutableStateOf<String?>(null)
+        private set
     var message by mutableStateOf(R.string.assistant_idle)
         private set
     var speechStatus by mutableStateOf<Int?>(null)
@@ -49,7 +50,34 @@ internal class AssistantController(
         private set
     private val speaker = OfflineSpeaker(context) { speechStatus = it }
 
-    fun resume() { resumed = true }
+    fun resume() {
+        resumed = true
+        refreshBackend()
+    }
+
+    private fun refreshBackend() {
+        try {
+            val state = (client as? BackendClient)?.snapshot() ?: return
+            pendingText = state.pending?.text
+            if (phase != TurnPhase.LISTENING && phase != TurnPhase.PROCESSING) {
+                if (pendingText != null) {
+                    draft = pendingText.orEmpty()
+                    message = R.string.assistant_pending
+                } else {
+                    state.lastResult?.let { reply = it.reply }
+                }
+            }
+        } catch (_: Exception) {
+            message = R.string.assistant_storage_failed
+        }
+    }
+
+    fun retryPending() {
+        refreshBackend()
+        val text = pendingText ?: return
+        draft = text
+        submitTyped()
+    }
 
     fun pause() {
         resumed = false
@@ -72,6 +100,11 @@ internal class AssistantController(
 
     fun listen() {
         if (!canUse()) return
+        refreshBackend()
+        if (pendingText != null) {
+            message = R.string.assistant_pending
+            return
+        }
         if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             message = R.string.assistant_permission
             return
@@ -148,6 +181,7 @@ internal class AssistantController(
         request = scope.launch {
             try {
                 val result = client.tell(command)
+                refreshBackend()
                 if (!resumed || !turn.complete(id)) return@launch
                 phase = turn.phase
                 reply = when (result) {
@@ -157,11 +191,13 @@ internal class AssistantController(
                 message = if (result == AssistantReply.NotConnected) R.string.assistant_preview else R.string.assistant_reply
                 if (speakReplies) speaker.speak(reply)
             } catch (cancelled: CancellationException) {
+                refreshBackend()
                 throw cancelled
             } catch (_: Exception) {
                 if (turn.fail(id)) {
                     phase = turn.phase
                     message = R.string.assistant_request_failed
+                    refreshBackend()
                 }
             }
         }
@@ -191,6 +227,7 @@ internal class AssistantController(
         stopSpeaking()
         phase = turn.phase
         message = R.string.assistant_idle
+        refreshBackend()
     }
 
     fun close() {

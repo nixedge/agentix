@@ -7,7 +7,7 @@ use agentix_assistant_core::{
     TurnState,
 };
 use chrono::{DateTime, Utc};
-pub use schema::{decision_schema, SYSTEM_PROMPT};
+pub use schema::decision_schema;
 use std::{cmp::Reverse, collections::HashSet, sync::Arc, time::Duration};
 use tokio::sync::Mutex;
 

@@ -605,3 +605,39 @@ async fn oversized_originals_are_omitted_explicitly_and_latest_instruction_reach
     );
     Ok(())
 }
+
+#[tokio::test]
+async fn unsupported_capabilities_are_durable_answers_without_effects() -> TestResult {
+    use agentix_assistant_core::UnsupportedCapability;
+    let directory = tempfile::tempdir()?;
+    let store = SledRepository::open(directory.path()).await?;
+    let script = Arc::new(Script::new(vec![
+        Intent::Unsupported {
+            capability: UnsupportedCapability::Email,
+        },
+        Intent::Unsupported {
+            capability: UnsupportedCapability::Calendar,
+        },
+        Intent::Unsupported {
+            capability: UnsupportedCapability::Reminder,
+        },
+        Intent::Unsupported {
+            capability: UnsupportedCapability::Other,
+        },
+    ]));
+    let assistant = service(&store, script);
+    let conversation = Uuid::new_v4();
+    for capability in ["email", "calendar", "reminder", "other"] {
+        let input = request(conversation, capability);
+        let response = assistant.tell(input.clone()).await?;
+        assert_eq!(response.status, TellStatus::Answer);
+        assert!(response.reply.starts_with("I can't"));
+        assert!(response.outcomes.is_empty());
+        assert!(response.records.is_empty());
+        assert_eq!(assistant.tell(input).await?, response);
+        assert!(store.records().await?.is_empty());
+        assert!(store.pending_projections(20).await?.is_empty());
+    }
+    assert_eq!(store.recent_messages(conversation, 100).await?.len(), 8);
+    Ok(())
+}

@@ -40,7 +40,7 @@ Full workspace Cargo tests/Clippy, live Qwen evaluation, personal semantic-profi
 
 ## Conversational backend work in progress
 
-Increment C adds the engine-free `agentix-assistant` application library, additive Sled turn/message journal and opt-in `POST /v1/assistant/tell` routes in agentix-agent. The new API requires an owner bearer token, request/conversation UUIDs and an IANA timezone. No service was deployed. Owner-approved focused item-text/task-completion tools replace generic model replacement; Rust validates target/revision and preserves other fields. Live synthetic operation/replay checks pass, but broader clarification quality remains incomplete. See research.md. Android remains disconnected.
+Increment C adds the engine-free `agentix-assistant` application library, additive Sled turn/message journal and opt-in `POST /v1/assistant/tell` routes in agentix-agent. The new API requires an owner bearer token, request/conversation UUIDs and an IANA timezone. No service was deployed. Owner-approved focused item-text/task-completion tools replace generic model replacement; Rust validates target/revision and preserves other fields. The expanded two-step operation/replay gate now passes; Android has an opt-in HTTPS adapter. Service deployment and physical phone acceptance remain open. See the final increment below and research.md.
 
 Backend checks:
 
@@ -70,6 +70,33 @@ AGENTIX_ACCEPTANCE_MODEL=hf.co/bartowski/Qwen2.5-7B-Instruct-GGUF:Qwen2.5-7B-Ins
 nix develop .#assistant --command cargo test -p agentix-agent assistant::tests::installed_qwen_acceptance -- --ignored --nocapture
 ```
 
-This opt-in live gate is distinct from hermetic fixture/HTTP tests. It checks actual persisted effects and request replay for grocery add/read/correction, note/task creation, task completion and no-write clarification for ambiguous time/unsupported email. The final prompt passed three fresh-store trials (24 cases). Earlier task-completion failures used the next revision instead of the current one; the prompt now states the distinction explicitly. These assertions do not establish the quality of clarification text: Qwen still sometimes offers email confirmation although email is unavailable. Broader conversational quality, VRAM and full load/phone/backup acceptance remain unestablished.
+This opt-in live gate is distinct from hermetic fixture/HTTP tests. It checks actual persisted effects, immutable replay, ambiguous-time clarification and fixed unsupported-action replies. The two-step adapter passed13 cases in three fresh stores; see the final increment below. Broader model reliability, VRAM, load, phone and backup acceptance remain separate gates.
 
-Focused backend validation (2026-10-29): 25 core/Sled/application tests and17 agent regression tests passed, with the manual Qwen gate ignored in hermetic runs. Strict all-targets Clippy passed for core/Sled/application; production-agent Clippy and workspace rustfmt passed. Canonical `assistant-core`, `assistant-lance` (8 projection tests), `assistant-api` (3 HTTP fixture tests) and `agentix-agent` Nix targets all completed successfully for the final source. Full workspace/GPU checks were not run.
+
+## Two-step capability and Android increment
+
+The local adapter selects an operation first, then fills only that operation's fields (or clarification). Unsupported email/calendar/reminder/other operations return fixed Rust answers without a second model call or mutation. Three fresh-store trials passed all13 cases, including supplied email address, send confirmation/status, calendar, reminders and the original ambiguous-time/task/correction cases. Warm synthetic times were about0.35–0.4s for unsupported answers and0.7–1.5s for supported operations; not a general reliability or memory qualification.
+
+Backend validation:45 regression tests (26 core/Sled/application +19 agent) and strict targeted Clippy pass. Canonical assistant-core, assistant-lance (8 projection tests), assistant-api (5 HTTP fixture tests) and agentix-agent targets pass. Full workspace/GPU tests and runtime memory measurement remain open.
+
+Android now defaults to the owner-supplied configurable address `https://ai.lan.disasm.us`, with backend disabled until explicitly enabled and given the owner token in Settings. Settings are private and backup-excluded. The immutable instruction/request/conversation/timezone/endpoint envelope is committed locally before dispatch. Uncertain HTTP/auth/transport/parse/cancellation results keep it; retry reuses the same request. Other instructions and endpoint changes are blocked while unresolved. A validated definitive response is persisted atomically with clearing the pending envelope. Recovered replies/pending instructions are visible when the activity reopens. No auto-retry or default-assistant change.
+
+```bash
+nix build .#agentix-android --out-link result-assistant-android
+```
+
+APK: `result-assistant-android/share/agentix-android/agentix-android-debug.apk`. Canonical build runs all core JVM tests (including4 new retry/identity/recreation/storage-failure tests) and Android lint. No new Gradle dependencies. HTTPS uses normal certificate validation, no redirects, bounded response size/read deadlines; bearer token is never in Git/Nix or request logs.
+
+Live handoff: the supplied HTTPS endpoint returned502 during a GET of `/v1/assistant/tell`; routing/deployment/readiness is not established. Configure the existing agentix-agent service with the opt-in `[assistant]` section above, provide its owner token privately through the runtime environment file, and route only the protected assistant path from HTTPS to that listener. Then enable matching settings on the phone and test grocery add/read/correction and an uncertain retry. API401 without a token, followed by a valid authenticated instruction and unchanged replay, are required live checks. No service was deployed or phone installed/toggled here. Keep current default assistant until real usefulness is verified; never uninstall an existing app with pending requests or recordings to work around debug-signature changes. Physical persistence, lifecycle/TLS/network behavior and microphone/TTS remain phone acceptance items, separate from JVM fixtures/lint.
+
+For nginx on the same host as agentix-agent, whose example `bind_addr` is `127.0.0.1:8765`, the upstream is that agent listener:
+
+```nginx
+location /v1/assistant/ {
+    proxy_pass http://127.0.0.1:8765;
+    proxy_set_header Authorization $http_authorization;
+    proxy_read_timeout 150s;
+}
+```
+
+Use the service's actual configured bind address if different. Preserve the full `/v1/assistant/tell` path; `proxy_pass` above has no URI suffix. The agent service performs bearer-token checks and talks separately to the configured inference gateway (`http://ai.lan.disasm.us:11434` in the development config). No nginx configuration was changed by this feature work.

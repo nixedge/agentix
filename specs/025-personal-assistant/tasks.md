@@ -17,7 +17,7 @@
 
 ## C — Conversational backend and phone
 - [x] T012 Implement deterministic tool handlers over the core; connect recent messages and retrieved context to inference through interfaces, preserving router policy.
-- [ ] T013 Implement request/conversation lifecycle and append-only message persistence; validate clarification and correction turns with scripted and actual local-model tests.
+- [x] T013 Implement request/conversation lifecycle and append-only message persistence; validate clarification and correction turns with scripted and actual local-model tests.
 - [x] T014 Expose a versioned tell API in existing agentix-agent with bounded requests/timeouts and owner-access configuration; test actual storage effects/retries.
 - [ ] T015 Evaluate Qwen2.5-7B-Instruct via agentix-llama on grocery/list/note/task/correction cases; record latency, correctness and memory. Backend swap remains an adapter concern.
 - [ ] T016 Connect Android's existing tell seam over WireGuard only after server acceptance; preserve the user's default assistant until real backend usefulness is verified.
@@ -35,7 +35,10 @@
 - [x] T024 Implement bounded application state machine, exact tool resolution, context/history delivery and receipt-derived replies; test storage uncertainty and cancellation recovery.
 - [x] T025 Add opt-in protected HTTP route and local gateway adapter to agentix-agent, with real storage and HTTP contract tests and canonical Nix checks.
 - [x] T026 Run explicit synthetic acceptance against the installed Qwen baseline; record correctness and latency separately from scripted tests.
-- [ ] T027 After server acceptance, wire HTTPS Android tell client, explicit enablement/private owner token, durable retry envelope and contract tests; build APK and record physical acceptance limits.
+- [x] T027 After server acceptance, wire HTTPS Android tell client, explicit enablement/private owner token, durable retry envelope and contract tests; build APK and record physical acceptance limits.
 - [x] T028 Replace generic model replacement with owner-approved typed item-text/task-completion tools; validate target/revision and preserve unrelated fields in Rust, with actual-Sled regression tests. Actual-model evaluation is recorded under T026.
 
-T026 evidence is limited to eight synthetic operation/replay cases across three fresh stores; broader conversational acceptance remains open under T013/T015/T021. In particular, unsupported-email clarification can imply an unavailable capability despite causing no mutation. Keep T016/T027 Android integration gated until that quality gap is addressed. Runtime memory has not been measured.
+T026 now covers13 operation/replay cases across three fresh stores using the approved two-step adapter. Capability and ambiguous-time cases pass; Android implementation and APK checks are complete. T016 remains open for actual server deployment/phone acceptance; T015 runtime memory and T021 broader gates remain unestablished.
+- [x] T029 Add typed unsupported capability answers and deterministic no-write replies; actual-store tests plus live follow-up/address/confirmation acceptance.
+- [x] T030 After T029 acceptance, implement Android immutable pending-envelope lifecycle, private opt-in configuration and bounded HTTPS client; test retry/recreation/identity/endpoint guards and build canonical APK.
+- [x] T031 Implement owner-approved two-step local inference: bounded operation selection, per-operation field schema, deterministic capability rejection, mismatch/no-repeat-replay tests and full live acceptance.

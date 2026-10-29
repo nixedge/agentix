@@ -17,3 +17,13 @@ Phone integration follows server acceptance and reads its configured HTTPS base 
 Replace the model-facing generic `update_record` action with `edit_list_item{id, expected_revision, text}` and narrowly scoped task-state updates. The item handler must load an original ListItem, validate its revision, and construct Command::Replace with the same list_id/completed fields and only the requested new text. A list/task/note ID cannot pass as an item edit. Task completion similarly preserves title/due_at; additional edits require explicit typed actions. Unchanged edits report no mutation rather than incrementing a revision and claiming success. Existing stored Command/PreparedPlan formats and the phone HTTP v1 envelope stay unchanged.
 
 The owner approved this revision after reviewing the live Qwen failure. Generic replacement is no longer a model-facing action. Unsupported edits require clarification. Stored domain commands and prepared plans remain compatible.
+
+## Capability answers
+
+Internal `unsupported{capability:email|calendar|reminder|other}` generates a deterministic `answer` with empty outcomes/records. Email returns “I can't send email yet.” Calendar and reminder answers explicitly state their unavailable action. Providing contact details or confirming the action does not enable a capability. `clarify` is only for ambiguous supported operations. No new wire status or persisted-plan schema version is needed.
+
+Android stores pending envelopes and the last definitive response in private backup-excluded preferences. Only a valid identity-matched v1 response clears a pending envelope. All HTTP/auth/transport/malformed/unknown results retain it; app cancellation stops waiting but does not imply rollback. Endpoint changes cannot redirect an unresolved request. Retry is an explicit user action; a new instruction is blocked while pending. App display acknowledges only validated server results.
+
+## Two-step local inference
+
+The local adapter first selects a typed operation from a small enum. Unsupported operations map directly to Intent::Unsupported and deterministic replies with one model call. Supported operations make a second bounded call whose schema permits only the selected action or clarification. The second schema offers clarification first; mismatched operations or unknown fields are rejected before plan preparation. Original IDs/current revisions are still validated by Rust. Both calls share the application's turn timeout; prepared/completed replays do not repeat either call. No wire envelope or stored journal schema changes.

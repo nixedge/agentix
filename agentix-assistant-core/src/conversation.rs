@@ -76,6 +76,18 @@ pub enum Intent {
     Clarify {
         question: String,
     },
+    Unsupported {
+        capability: UnsupportedCapability,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UnsupportedCapability {
+    Email,
+    Calendar,
+    Reminder,
+    Other,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

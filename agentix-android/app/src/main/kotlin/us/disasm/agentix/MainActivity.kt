@@ -18,7 +18,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -30,11 +32,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.KeyboardType
 import us.disasm.agentix.device.PlaudScanner
 import us.disasm.agentix.settings.AssistantSettings
 import us.disasm.agentix.assistant.AgentixVoiceService
@@ -180,6 +185,8 @@ private fun SettingsScreen(settings: AssistantSettings) {
     var endpoint by rememberSaveable { mutableStateOf(settings.endpoint()) }
     var invalid by rememberSaveable { mutableStateOf(false) }
     var configured by rememberSaveable { mutableStateOf(settings.endpoint().isNotBlank()) }
+    var ownerToken by remember { mutableStateOf(settings.token()) }
+    var enabled by rememberSaveable { mutableStateOf(settings.enabled()) }
 
     Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.headlineSmall)
     Text(stringResource(R.string.settings_detail))
@@ -193,19 +200,35 @@ private fun SettingsScreen(settings: AssistantSettings) {
         isError = invalid,
         supportingText = { if (invalid) Text(stringResource(R.string.endpoint_invalid)) },
     )
+    OutlinedTextField(
+        value = ownerToken,
+        onValueChange = { ownerToken = it; invalid = false },
+        modifier = Modifier.fillMaxWidth(),
+        label = { Text(stringResource(R.string.backend_token)) },
+        visualTransformation = PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+        singleLine = true,
+    )
+    Row {
+        Checkbox(checked = enabled, onCheckedChange = { enabled = it })
+        Text(stringResource(R.string.backend_enable), Modifier.padding(top = 12.dp))
+    }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Button(onClick = {
-            invalid = !settings.saveEndpoint(endpoint)
+            invalid = !runCatching { settings.configure(endpoint, ownerToken, enabled) }.getOrDefault(false)
             if (!invalid) {
                 endpoint = settings.endpoint()
                 configured = true
             }
         }) { Text(stringResource(R.string.save)) }
         TextButton(onClick = {
-            settings.clearEndpoint()
-            endpoint = ""
-            configured = false
-            invalid = false
+            invalid = !runCatching { settings.clearEndpoint() }.getOrDefault(false)
+            if (!invalid) {
+                endpoint = ""
+                ownerToken = ""
+                enabled = false
+                configured = false
+            }
         }) { Text(stringResource(R.string.clear)) }
     }
     Text(stringResource(if (configured) R.string.endpoint_saved else R.string.endpoint_unconfigured))

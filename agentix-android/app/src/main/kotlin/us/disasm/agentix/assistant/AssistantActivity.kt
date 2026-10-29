@@ -132,6 +132,12 @@ private fun AssistantConversation(
             Text(stringResource(R.string.assistant_title), style = MaterialTheme.typography.headlineLarge)
             Text(stringResource(R.string.assistant_local_detail))
             Text(stringResource(controller.message))
+            controller.pendingText?.let {
+                Text(stringResource(R.string.assistant_pending_instruction, it))
+                Button(onClick = controller::retryPending, enabled = !busy) {
+                    Text(stringResource(R.string.assistant_retry_pending))
+                }
+            }
             OutlinedTextField(
                 value = controller.draft,
                 onValueChange = controller::updateDraft,
@@ -141,11 +147,11 @@ private fun AssistantConversation(
                 label = { Text(stringResource(R.string.assistant_instruction)) },
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = talk, enabled = !busy) { Text(stringResource(R.string.assistant_talk)) }
+                Button(onClick = talk, enabled = !busy && controller.pendingText == null) { Text(stringResource(R.string.assistant_talk)) }
                 if (controller.phase == TurnPhase.LISTENING) {
                     Button(onClick = controller::stopListening) { Text(stringResource(R.string.assistant_finish)) }
                 } else {
-                    Button(onClick = controller::submitTyped, enabled = !busy && controller.draft.isNotBlank()) {
+                    Button(onClick = controller::submitTyped, enabled = !busy && controller.pendingText == null && controller.draft.isNotBlank()) {
                         Text(stringResource(R.string.assistant_preview_instruction))
                     }
                 }

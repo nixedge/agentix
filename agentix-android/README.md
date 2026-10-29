@@ -1,8 +1,8 @@
 # agentix-android
 
-A native Kotlin/Jetpack Compose client for the Agentix assistant, with optional Plaud Note NB-100 integration. It provides a selectable Android voice assistant, on-device instruction transcription and offline spoken preview replies, local phone note recording, read-only Bluetooth discovery, and saved HTTPS endpoint configuration.
+A native Kotlin/Jetpack Compose client for the Agentix assistant, with optional Plaud Note NB-100 integration. It provides a selectable Android voice assistant, on-device instruction transcription, offline spoken replies, opt-in HTTPS assistant commands with durable retries, local phone note recording and read-only Bluetooth discovery.
 
-Plaud recording downloads, server uploads, recorded-note transcription, task execution, reminders, and backend chat are subsequent work. The Devices screen does not pair, connect, reset, modify firmware, or delete recordings. Saving a server address does not contact the server.
+Plaud recording downloads, audio uploads, recorded-note transcription, task execution and reminder delivery are subsequent work. The backend can store notes/tasks, manage lists and mark tasks complete. The Devices screen does not pair, connect, reset, modify firmware, or delete recordings. Saving a server address does not contact the server.
 
 ## Build with Nix
 
@@ -41,7 +41,7 @@ The Nix build uses an ephemeral debug signing key. A later build may require uni
 
 On Devices, wake the Plaud, disconnect any official-app connection, and tap Scan. Grant permission, then tap Scan again to begin discovery. Scanning stops after 15 seconds, when leaving Devices, or when the activity is backgrounded. Android versions before 12 also require Location services for BLE scanning. A displayed project code is advertisement metadata, not a verified model/firmware result.
 
-On Settings, save your HTTPS server address, including any port/base path. It survives restart, is excluded from Android backup, and is never logged. Authentication and backend API selection are deferred. The phone's existing WireGuard tunnel will route future network traffic; the app does not manage the VPN.
+On Settings, configure the HTTPS base address (default `https://ai.lan.disasm.us`), enter the runtime owner token, explicitly enable the assistant backend and Save. The protected route is `POST /v1/assistant/tell`. Configuration is private, excluded from backup and never logged; a saved address does not establish connectivity. The phone's existing WireGuard tunnel routes traffic; the app does not manage the VPN. Normal TLS certificate validation applies and redirects are rejected. The server must be deployed/configured separately; the supplied address returned502 during development, so live phone use has not been accepted.
 
 ## Record directly on the phone
 
@@ -73,13 +73,13 @@ Configure the phone's power-button or assistant gesture as desired. Invoking Age
 
 Talk uses Android's explicit **on-device** recognizer, available on Android 12+ where a compatible service and language model are installed. It never silently switches to a cloud recognizer. The device's current language is used. Missing recognition/language support and microphone conflicts produce visible errors; typed instructions remain available on older or unsupported devices. **Finish speaking** requests a final transcript; **Cancel**, losing focus, or leaving the activity cancels capture and rejects delayed results. A turn times out after 45 seconds, or 8 seconds after Finish speaking. Note recording and assistant recognition cannot acquire the microphone simultaneously.
 
-Review/edit the instruction and select **Try instruction** to exercise the Android command boundary. The same `TellCommand(text)` goes to `AssistantClient.tell` after spoken recognition. The supplied `DisconnectedAssistantClient` makes no network call and returns **backend not connected / no action taken**. Nothing reaches the configured endpoint, Gemini, an MCP server, or a model yet. A later backend feature can replace this client without changing voice capture or the assistant role.
+Type an instruction and select **Send instruction**, or speak an instruction; final recognized speech uses the same tell boundary. With the backend disabled, no network call is made and the app reports not connected. With it enabled, the client durably stores an immutable request/conversation ID, instruction, IANA timezone and endpoint before sending it. HTTP/authentication/transport/malformed-response uncertainty retains that envelope. Use **Retry pending instruction** to check the same request; another instruction or endpoint is blocked until it resolves. The owner token may be corrected for the same endpoint. **Stop waiting** stops the UI wait; a server change may still complete. There are no automatic retries. A definitive identity-matched reply is persisted atomically with removal of the pending envelope and recovered when the activity reopens. Explicitly repeat a resolved instruction only when you intend a new action.
 
-**Speak replies offline** uses an installed TTS voice matching the device language that does not require a network connection. If no offline voice is available, the reply remains visible and the app explains the condition. Stop speaking cancels output. The app never downloads voice data automatically. Instructions, partial transcripts and replies are held only in activity memory, disappear on activity recreation, and are not logged or saved as recordings. Only the spoken-reply preference is persisted.
+**Speak replies offline** uses an installed TTS voice matching the device language that does not require a network connection. If no offline voice is available, the reply remains visible and the app explains the condition. Stop speaking cancels output. The app never downloads voice data automatically. Partial transcripts and drafts stay in activity memory. An enabled backend retains the pending final instruction and latest definitive reply in private backup-excluded preferences for recovery. They are not logged or saved as audio recordings. Uninstalling loses local state; do not uninstall to resolve a pending operation.
 
 ## Structure and extension points
 
-- `core/`: Android-free advertisement parsing, endpoint validation, WAV encoding/recovery, assistant command/turn state, and JVM tests.
+- `core/`: Android-free advertisement parsing, endpoint validation, WAV encoding/recovery, assistant command/turn and durable retry state, and JVM tests.
 - `app/.../assistant/`: default voice service/session, native recognition bridge, assistant activity/controller, offline TTS, and setup UI.
 - `app/.../recording/`: microphone service, private audio store, playback, sharing, and Compose capture/Inbox screens.
 - `app/.../device/`: Android BLE discovery. Add the eventual protocol transport here while keeping packet parsing in core.
