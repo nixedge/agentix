@@ -13,7 +13,10 @@ pub async fn prune_repo(pool: &Store, repo: &str, dry_run: bool) -> Result<()> {
     pool.delete("documents", &filter).await?;
     pool.delete(
         "metadata",
-        &format!("namespace = 'repo_index' AND key = {}", literal(repo)),
+        &format!(
+            "namespace IN ('repo_index', 'git_ingest') AND key = {}",
+            literal(repo)
+        ),
     )
     .await?;
     eprintln!("Pruned {repo}: {code} chunks, {docs} docs.");

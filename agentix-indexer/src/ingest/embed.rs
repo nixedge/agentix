@@ -20,6 +20,15 @@ pub async fn embed_batch(texts: &[&str]) -> Result<Vec<Vec<f32>>> {
     let model = std::env::var("EMBED_MODEL")
         .unwrap_or_else(|_| "hf.co/jinaai/jina-code-embeddings-1.5b-GGUF:Q8_0".into());
 
+    embed_batch_at(&host, &model, texts, INITIAL_BACKOFF).await
+}
+
+async fn embed_batch_at(
+    host: &str,
+    model: &str,
+    texts: &[&str],
+    initial_backoff: Duration,
+) -> Result<Vec<Vec<f32>>> {
     let body = serde_json::json!({
         "model": model,
         "input": texts,
@@ -30,7 +39,7 @@ pub async fn embed_batch(texts: &[&str]) -> Result<Vec<Vec<f32>>> {
 
     for attempt in 0..=MAX_RETRIES {
         if attempt > 0 {
-            let backoff = INITIAL_BACKOFF * 2u32.pow(attempt - 1);
+            let backoff = initial_backoff * 2u32.pow(attempt - 1);
             tracing::warn!(
                 attempt,
                 backoff_secs = backoff.as_secs(),
@@ -55,8 +64,19 @@ pub async fn embed_batch(texts: &[&str]) -> Result<Vec<Vec<f32>>> {
             Err(e) => return Err(anyhow!(e).context("Ollama request failed (is Ollama running?)")),
         };
 
-        if let Err(e) = resp.error_for_status_ref() {
-            return Err(anyhow!(e).context("Ollama returned error status"));
+        let status = resp.status();
+        if !status.is_success() {
+            let detail = resp.text().await.unwrap_or_default();
+            let detail = detail.chars().take(1000).collect::<String>();
+            let error = anyhow!("Embedding service returned HTTP {status}: {detail}");
+            if status.is_server_error() || status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                if attempt < MAX_RETRIES {
+                    eprintln!("{error}; retrying ({}/{MAX_RETRIES})", attempt + 1);
+                }
+                last_err = error;
+                continue;
+            }
+            return Err(error);
         }
 
         let data: serde_json::Value = resp.json().await?;
@@ -224,6 +244,7 @@ fn apply_vectors(
     }
     Ok(())
 }
+
 pub async fn flush_files(
     store: &agentix_store::Store,
     collection: &str,
@@ -253,4 +274,80 @@ pub async fn flush_files(
             .await?;
     }
     Ok(count)
+}
+
+#[cfg(test)]
+mod retry_tests {
+    use super::*;
+    use axum::{extract::State, http::StatusCode, routing::post, Router};
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+
+    #[derive(Clone)]
+    struct Responses {
+        statuses: Arc<Vec<(StatusCode, &'static str)>>,
+        calls: Arc<AtomicUsize>,
+    }
+
+    async fn exercise(
+        statuses: Vec<(StatusCode, &'static str)>,
+    ) -> Result<(Result<Vec<Vec<f32>>>, usize)> {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let state = Responses {
+            statuses: Arc::new(statuses),
+            calls: calls.clone(),
+        };
+        let router = Router::new()
+            .route(
+                "/api/embed",
+                post(|State(state): State<Responses>| async move {
+                    let attempt = state.calls.fetch_add(1, Ordering::Relaxed);
+                    state.statuses[attempt.min(state.statuses.len() - 1)]
+                }),
+            )
+            .with_state(state);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let host = format!("http://{}", listener.local_addr()?);
+        let task = tokio::spawn(async move { axum::serve(listener, router).await });
+        let result = embed_batch_at(&host, "fixture", &["sample"], Duration::from_millis(1)).await;
+        task.abort();
+        Ok((result, calls.load(Ordering::Relaxed)))
+    }
+
+    #[tokio::test]
+    async fn transient_embedding_statuses_retry_and_recover() -> Result<()> {
+        let (result, calls) = exercise(vec![
+            (StatusCode::BAD_GATEWAY, "upstream restarted"),
+            (StatusCode::TOO_MANY_REQUESTS, "busy"),
+            (StatusCode::OK, r#"{"embeddings":[[1.0,0.2,0.3,0.4]]}"#),
+        ])
+        .await?;
+        assert_eq!(result?, vec![vec![1.0, 0.2, 0.3, 0.4]]);
+        assert_eq!(calls, 3);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn transient_embedding_retries_are_bounded_and_keep_error_detail() -> Result<()> {
+        let (result, calls) = exercise(vec![(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "upstream unavailable",
+        )])
+        .await?;
+        let error = format!("{:#}", result.err().context("expected failure")?);
+        assert_eq!(calls, MAX_RETRIES as usize + 1);
+        assert!(error.contains("503") && error.contains("upstream unavailable"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn permanent_embedding_errors_are_not_retried() -> Result<()> {
+        let (result, calls) = exercise(vec![(StatusCode::BAD_REQUEST, "input too long")]).await?;
+        let error = format!("{:#}", result.err().context("expected failure")?);
+        assert_eq!(calls, 1);
+        assert!(error.contains("400") && error.contains("input too long"));
+        Ok(())
+    }
 }

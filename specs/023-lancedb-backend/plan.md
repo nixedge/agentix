@@ -51,3 +51,15 @@ The storage binary/check now use a dedicated Store dependency artifact built wit
 targets. Prior verification showed the indexer-root artifacts caused storage-only builds
 to recompile a different dependency feature graph; a separate cache avoids repeating that
 work for each storage source change without altering runtime behavior.
+
+## Large Git ingestion recovery
+
+Reuse embedding backoff for HTTP 429/5xx and retain bounded diagnostic text from
+failed responses. Exercise retry recovery, exhaustion and permanent errors with a
+local HTTP fixture. Persist a separate `git_ingest` metadata record: mark incomplete
+before writes and complete only after code, requested docs and repo registry succeed.
+Only completed revisions with the requested docs coverage may skip ingestion; older
+records without completion state safely walk/hash the checkout again. Prune both
+registry and completion state. Test partial-data recovery, code-only to docs upgrade,
+and completed-revision skipping with a disposable local Git repository, then rebuild
+the clients and rerun/timestamp the user's large remote ledger ingestion.

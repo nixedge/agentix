@@ -197,7 +197,12 @@ async fn get_watermark(pool: &Store, source: &str, scope: &str) -> Result<Option
         .await?
         .and_then(|r| r["watermark"].as_str().map(str::to_owned)))
 }
-async fn set_watermark(pool: &Store, source: &str, scope: &str, watermark: Option<&str>) -> Result<()> {
+async fn set_watermark(
+    pool: &Store,
+    source: &str,
+    scope: &str,
+    watermark: Option<&str>,
+) -> Result<()> {
     let key = format!("{source}:{scope}");
     let now = Utc::now().to_rfc3339();
     pool.update_metadata("sync_state",&key,|previous|{

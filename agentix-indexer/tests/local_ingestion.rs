@@ -42,6 +42,120 @@ async fn code_docs_retag_shorter_deleted_files_and_prune_survive_process_reopen(
 async fn remote_code_docs_ingestion_retag_and_prune_use_shared_store() -> Result<()> {
     exercise(true).await
 }
+
+#[tokio::test]
+async fn git_ingestion_resumes_partial_rows_and_requires_requested_docs_completion() -> Result<()> {
+    let tmp = tempfile::tempdir()?;
+    let repo = tmp.path().join("git-source");
+    std::fs::create_dir(&repo)?;
+    std::fs::write(
+        repo.join("lib.rs"),
+        "pub fn recoveredfirst() -> u8 { 1 }\npub fn recoveredsecond() -> u8 { 2 }\n",
+    )?;
+    std::fs::write(repo.join("README.md"), "# Recovery\n\nThis recoverymanualmarker documents both functions in this disposable Git fixture.\n")?;
+    for args in [
+        vec!["init", "--initial-branch=master"],
+        vec!["add", "."],
+        vec![
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-m",
+            "fixture",
+        ],
+    ] {
+        let output = Command::new("git").current_dir(&repo).args(args).output()?;
+        ensure!(
+            output.status.success(),
+            "fixture git failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let revision = Command::new("git")
+        .current_dir(&repo)
+        .args(["rev-parse", "HEAD"])
+        .output()?;
+    ensure!(revision.status.success(), "fixture rev-parse failed");
+    let revision = String::from_utf8(revision.stdout)?;
+    let url = repo.to_str().context("fixture path")?;
+    let key = format!("git::{url}@{}", &revision.trim()[..12]);
+    let index = tmp.path().join("index");
+    let store = Store::open(&index, "fixture", 4).await?;
+    // Reproduce an interrupted revision with data but no successful completion.
+    store.put("code_chunks", vec![agentix_store::Record {
+        row: serde_json::json!({"repo_path":key,"file_path":"lib.rs","chunk_index":0,"content":"partialoldmarker"}),
+        embedding: Some(vec![1.0, 0.2, 0.3, 0.4]),
+    }]).await?;
+    let server = Embeddings::start()?;
+    run(
+        &index,
+        &server,
+        None,
+        &["git", url, "--branch", "master", "--no-docs"],
+    )?;
+    assert_eq!(store.count("code_chunks", "true").await?, 2);
+    assert_eq!(store.count("documents", "true").await?, 0);
+    let state = store
+        .metadata("git_ingest", &key)
+        .await?
+        .context("completion state")?;
+    assert_eq!(state["complete"], true);
+    assert_eq!(state["docs_indexed"], false);
+    run(&index, &server, None, &["git", url, "--branch", "master"])?;
+    assert_eq!(store.count("documents", "true").await?, 1);
+    let state = store
+        .metadata("git_ingest", &key)
+        .await?
+        .context("completion state")?;
+    assert_eq!(state["docs_indexed"], true);
+    let requests = server.requests.load(Ordering::Relaxed);
+    run(
+        &index,
+        &server,
+        None,
+        &["git", url, "--branch", "master", "--project", "another"],
+    )?;
+    assert_eq!(
+        requests,
+        server.requests.load(Ordering::Relaxed),
+        "completed revision re-embedded"
+    );
+    assert_eq!(
+        store
+            .count("code_chunks", &project_filter(&["another".into()]))
+            .await?,
+        2
+    );
+    // A forced run must invalidate prior completion before even the model probe.
+    let failed = Command::new(env!("CARGO_BIN_EXE_ingest"))
+        .args(["git", url, "--branch", "master", "--force"])
+        .env("AGENTIX_LANCE_PATH", &index)
+        .env_remove("AGENTIX_STORE_URL")
+        .env_remove("AGENTIX_STORE_TOKEN")
+        .env_remove("AGENTIX_STORE_TOKEN_FILE")
+        .env_remove("PG_DSN")
+        .env("EMBED_MODEL", "fixture")
+        .env("EMBED_DIMENSIONS", "4")
+        .env("OLLAMA_HOST", "http://127.0.0.1:1")
+        .output()?;
+    assert!(!failed.status.success());
+    let incomplete = store
+        .metadata("git_ingest", &key)
+        .await?
+        .context("incomplete state")?;
+    assert_eq!(incomplete["complete"], false);
+    store
+        .replace_file("documents", &key, "README.md", vec![])
+        .await?;
+    run(&index, &server, None, &["git", url, "--branch", "master"])?;
+    assert_eq!(store.count("documents", "true").await?, 1);
+    run(&index, &server, None, &["prune", "repo", &key])?;
+    assert!(store.metadata("git_ingest", &key).await?.is_none());
+    assert!(store.metadata("repo_index", &key).await?.is_none());
+    Ok(())
+}
 async fn exercise(remote: bool) -> Result<()> {
     let tmp = tempfile::tempdir()?;
     let repo = tmp.path().join("repo");
