@@ -111,3 +111,36 @@ fresh-target build and then a package-only feature graph were stopped in favor o
 reusing the existing workspace artifacts; neither reported an assertion failure.
 Strict all-target indexer Clippy, workspace Rust formatting and diff whitespace checks
 passed. No storage-server source change or redeployment was needed for either fix.
+
+## Large ledger checkout — recovery implemented, inference blocked
+
+The user requested all packages from GitHub `IntersectMBO/cardano-ledger` master
+instead of individual CHaP packages. Revision `f4a3026c9bae` stored 2,486 code chunks
+from 177 files before the model endpoint returned HTTP 502, 51 seconds after starting
+the clone/ingestion command. This is an incomplete corpus, not a completed timing.
+
+The authorized client fixes add bounded embedding retries for HTTP 429/5xx with
+response diagnostics, and explicit Git completion/docs state. An incomplete revision
+resumes file hashing/ingestion instead of being mistaken for a complete index. Forced
+runs invalidate prior completion before work; pruning removes completion metadata.
+Three actual HTTP fixture tests verify recovery through 502/429, six-attempt exhaustion
+with error detail, and no retry on permanent 400. A disposable Git integration test
+verifies partial-row recovery, adding docs after a code-only run, avoiding redundant
+embedding on completed runs, invalidation on an actual forced failure, and cleanup.
+All four regressions, strict all-target indexer Clippy, Rust formatting and canonical
+Nix builds of both indexer and MCP pass. Initial fixture lints
+were corrected by moving the test module and naming its state type.
+
+The retry of the live ledger command exhausted its five retries after 76 seconds,
+still at 2,486 chunks/177 files. The first error was `backend request failed: connection
+closed before message completed`; subsequent errors were failure to reach the fallback
+at `http://localhost:11434/api/embed`. A later small model probe timed out. Storage
+remained healthy and persisted `git_ingest.complete=false`; a BM25 query for Coin
+returned actual Haskell results in 164 ms including MCP CLI startup. This does not
+establish hybrid latency for a completed ledger corpus. Operator inference-service
+status/journal output was requested; no server configuration or inference source was
+changed. Root cause is not yet established.
+
+Evidence: `data/lance-validation/ledger-*`, including first/retry timings, diagnostic
+responses, regression logs and canonical client-build outputs. T019 remains open until
+the model service is diagnosed and complete ingestion/search timing succeeds.

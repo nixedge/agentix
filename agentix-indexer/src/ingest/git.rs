@@ -68,12 +68,16 @@ pub async fn ingest_git(
     let short_rev = &resolved_rev[..12];
     let repo_path_str = format!("git::{url}@{short_rev}");
 
-    // Check if already indexed.
+    // Rows can remain after a failed run; only an explicit completion is skippable.
     if !force {
+        let completed = pool.metadata("git_ingest", &repo_path_str).await?;
+        let complete = completed.as_ref().is_some_and(|state| {
+            state["complete"] == true && (no_docs || state["docs_indexed"] == true)
+        });
         let count = pool
             .count("code_chunks", &agentix_store::repo_filter(&repo_path_str))
             .await?;
-        if count > 0 {
+        if complete && count > 0 {
             pool.tag_repository(&repo_path_str, project).await?;
             eprintln!(
                 "Git repo {url}@{short_rev} already indexed ({count} chunks). Use --force to re-index."
@@ -82,6 +86,12 @@ pub async fn ingest_git(
         }
     }
 
+    pool.set_metadata(
+        "git_ingest",
+        &repo_path_str,
+        serde_json::json!({"complete": false}),
+    )
+    .await?;
     ingest_code(pool, tmp.path(), force, &[], Some(&repo_path_str), project).await?;
     if !no_docs {
         ingest_docs(pool, tmp.path(), force, Some(&repo_path_str), project).await?;
@@ -98,6 +108,13 @@ pub async fn ingest_git(
             git_rev: Some(&resolved_rev),
             project,
         },
+    )
+    .await?;
+
+    pool.set_metadata(
+        "git_ingest",
+        &repo_path_str,
+        serde_json::json!({"complete": true, "docs_indexed": !no_docs}),
     )
     .await?;
 

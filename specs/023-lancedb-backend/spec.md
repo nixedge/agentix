@@ -2,7 +2,7 @@
 
 **Feature Branch**: `023-lancedb-backend`
 **Created**: 2026-10-28
-**Status**: Implemented and locally validated; not deployed
+**Status**: Implemented; user-deployed LAN store validated
 **Input**: Following benchmark 022, replace PostgreSQL outright for code, documentation and GitHub indexing/search. The user explicitly rejected keeping docs/GitHub PostgreSQL-only and chose full replacement over an optional backend.
 
 ## User Scenarios & Testing
@@ -66,3 +66,14 @@ LAN clients without Authorization; a configured token retains mandatory matching
 authentication. Unset client credential variables send no Authorization header. Invalid or
 ambiguous configured credentials still fail explicitly. The NixOS tokenFile option defaults
 to null, and no credential unit directives or token environment are emitted in that case.
+
+## Large Git ingestion recovery — 2026-10-29
+
+The live cardano-ledger master ingestion encountered HTTP 502 after 2,486 persisted
+chunks. Embedding generation must retry transient HTTP 429/5xx with bounded backoff,
+preserve the final response status/body in errors, and reject permanent HTTP errors
+without retrying. Storage mutations retain their existing no-automatic-retry behavior.
+A Git revision is skippable only after an explicit successful completion record,
+including whether documentation was indexed. Failed/partial runs remain resumable;
+an interrupted forced rerun must invalidate its prior completion record. Pruning a
+repository also removes its completion state.
