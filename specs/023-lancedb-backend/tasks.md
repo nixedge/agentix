@@ -22,3 +22,4 @@ Remote deployment amendment (supersedes local-only readiness):
 - [x] T016 Run formatting/clippy/tests, canonical Nix builds and module evaluation; update validation and indexed memory with remote deployment status.
 
 - [x] T017 Make authentication optional for trusted LAN deployments, update NixOS/docs and verify unauthenticated/authenticated HTTP, MCP and server startup plus canonical packages.
+- [x] T018 Exercise the user's deployed LAN store with real repo/package/GitHub ingestion, all MCP tools, concurrent clients, incremental replacement and maintenance; fix GitHub User-Agent and empty-success sync status, rebuild clients and record evidence/remaining relevance and file-reconstruction limits.

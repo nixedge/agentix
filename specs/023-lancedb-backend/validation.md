@@ -59,3 +59,55 @@ has a dedicated dependency artifact matching its own feature graph; after that i
 cache build, the final server and storage-check source builds took 30 and 46 seconds.
 Earlier redundant focused Rust builds were consolidated into the final full-workspace
 run, which includes the configured-token regression cases and passed all tests above.
+
+## Deployed LAN validation — 2026-10-29
+
+The user deployed the storage service; packaged clients in the laptop jail exercised
+`http://ai.lan.disasm.us:8091` without credentials. The live handshake reports protocol 1,
+schema 1 and the expected jina Q8_0 model with 1536 dimensions. No jail configuration
+or deployed service configuration was changed during validation.
+
+| Feature | Live result |
+| --- | --- |
+| Local checkout ingestion | 1,454 code chunks from 191 files and 511 documentation chunks from 84 files |
+| Incremental checkout ingestion | Zero new chunks; all 191 code files and 84 documentation files skipped |
+| MCP package fetch | crates.io `itoa-1.0.15`, Hackage `split-0.2.5`, PyPI `six-1.17.0`; repeat fetch detected existing package |
+| CHaP and Git sources | `cardano-binary-1.7.1.0` from CHaP; Git tag `dtolnay/itoa@1.0.15` including its README |
+| Search relevance | Known identifiers, semantic package queries, docs, language/symbol/repository filters and negative scope checks exercised |
+| Concurrent MCPs | Two independent stdio processes each passed the same 12 checks; concurrent package retags preserved both new project tags and the existing tag on all 16 rows |
+| Incremental replacement/deletion | A separate temporary repo proved changed code, stale code deletion, updated docs and dry-run/actual pruning; fixture removed afterwards |
+| Literate Haskell | A separate Bird-style `.lhs` fixture indexed and returned its expected Haskell symbol; fixture pruned afterwards |
+| GitHub ingestion | `nixedge/agentix` and `dtolnay/itoa`: 26 issues, 45 PRs, 80 issue comments, 23 review comments |
+| GitHub retrieval | MCP issue/PR searches with repo/state/entity filters; both comment collections queried through the storage API |
+| GitHub incremental sync | Stable collection counts; persisted watermarks and cleared errors verified |
+| Index maintenance | Explicit optimize completed; the 12 MCP parity checks passed afterwards |
+| Optional reranking | Actual BGE cross-encoder ran locally; integer-to-string query ranked itoa's formatting function first |
+
+Two GitHub client fixes were necessary and authorized during this exercise: supply
+the required User-Agent header (the original requests returned HTTP 403), and record
+successful empty streams so prior errors clear without advancing or regressing the
+watermark. The rebuilt indexer exercised all four real GitHub streams. These changes
+require the new ingest/MCP client builds, not a storage-server redeployment.
+
+Two limitations remain visible. With reranking disabled, an exact
+`ensure_embed_model` query returned the function first in BM25 and fifth in hybrid
+search; the original top-three hybrid assertion failed and is not counted as a pass.
+`get_file` successfully retrieves indexed symbols, but reconstruction omits unindexed
+imports/declarations and intervening blank lines. This symbol-extraction behavior
+also exists on master; it is not an exact source-file download. No ranking or
+file-reconstruction behavior was changed during this validation.
+
+Live corpus after reindexing the client fix and validation notes: 2,021 code chunks, 513 docs,
+26 issues, 45 PRs, 80 issue comments and 23 review comments. This is functional
+validation with real sources, not a sustained-load or comprehensive relevance benchmark.
+Raw evidence, one-off Rust MCP probe and query expectations are ignored under
+`data/lance-validation/deployed-*`; the probe uses the actual packaged stdio MCP binary.
+
+Both updated client packages built with Nix. Two instances of the rebuilt MCP each
+passed the same 12 live parity checks. The expanded sync-state regression passed
+under the cached workspace release feature graph (one selected test, others filtered).
+This was a focused regression run, not a repeat of the full 202-test suite. An initial
+fresh-target build and then a package-only feature graph were stopped in favor of
+reusing the existing workspace artifacts; neither reported an assertion failure.
+Strict all-target indexer Clippy, workspace Rust formatting and diff whitespace checks
+passed. No storage-server source change or redeployment was needed for either fix.
