@@ -36,6 +36,10 @@ your repos ──► ingest ──► local LanceDB
 
 That's it. LanceDB, Ollama, Rust, and all other tools are managed by Nix.
 
+The native assistant client lives in [agentix-android](agentix-android/README.md).
+Build its APK with `nix build .#agentix-android`; use `nix develop .#android` for
+the dedicated Kotlin/Android environment.
+
 **Enable flakes** if you haven't already — add to `~/.config/nix/nix.conf`:
 ```
 experimental-features = nix-command flakes

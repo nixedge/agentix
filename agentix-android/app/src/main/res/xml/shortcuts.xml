@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="record"
+        android:enabled="true"
+        android:icon="@drawable/ic_microphone"
+        android:shortcutShortLabel="@string/record_shortcut"
+        android:shortcutLongLabel="@string/record_shortcut_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="agentix://record"
+            android:targetPackage="us.disasm.agentix"
+            android:targetClass="us.disasm.agentix.MainActivity" />
+        <capability-binding android:key="actions.intent.OPEN_APP_FEATURE">
+            <parameter-binding android:key="feature" android:value="@array/record_feature_names" />
+        </capability-binding>
+    </shortcut>
+    <capability android:name="actions.intent.OPEN_APP_FEATURE">
+        <intent android:targetPackage="us.disasm.agentix" android:targetClass="us.disasm.agentix.MainActivity">
+            <parameter android:name="feature" android:key="feature" />
+        </intent>
+    </capability>
+</shortcuts>
