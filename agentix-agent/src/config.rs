@@ -19,15 +19,12 @@ pub struct AgentConfig {
 pub struct AssistantConfig {
     pub db_path: String,
     pub index_path: String,
-    #[serde(default = "default_token_env")]
-    pub token_env: String,
+    #[serde(default)]
+    pub token_env: Option<String>,
     #[serde(default = "default_inference_timeout")]
     pub inference_timeout_secs: u64,
 }
 
-fn default_token_env() -> String {
-    "AGENTIX_ASSISTANT_TOKEN".into()
-}
 fn default_inference_timeout() -> u64 {
     30
 }

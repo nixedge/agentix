@@ -9,6 +9,7 @@ import us.disasm.agentix.core.assistant.TellEnvelope
 import us.disasm.agentix.core.assistant.TellJournal
 import us.disasm.agentix.core.assistant.TellQueueState
 import us.disasm.agentix.core.assistant.TellResult
+import us.disasm.agentix.core.assistant.OwnerAuthentication
 
 class AssistantSettings(context: Context) : TellJournal {
     private val preferences = context.getSharedPreferences("assistant", Context.MODE_PRIVATE)
@@ -19,7 +20,7 @@ class AssistantSettings(context: Context) : TellJournal {
 
     fun configure(input: String, token: String, enabled: Boolean): Boolean = synchronized(lock) {
         val normalized = AssistantEndpoint.normalize(input) ?: return false
-        if (enabled && (token.length !in 32..512 || token.any { it.code !in 33..126 })) return false
+        if (runCatching { OwnerAuthentication.authorization(token) }.isFailure) return false
         val pending = load().pending
         if (pending != null && pending.endpoint != normalized) return false
         persist(preferences.edit().putString("endpoint", normalized)

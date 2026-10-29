@@ -82,7 +82,7 @@ async fn authenticated_http_grocery_save_retry_conflict_and_actual_history() -> 
         shared,
         Arc::new(LocalGateway::new(&gateway.uri(), "qwen-test")?),
     ));
-    let app = routes(service, TOKEN.into())?;
+    let app = routes(service, Some(TOKEN.into()))?;
     let original = request(Uuid::new_v4(), "Add pineapple to my grocery list.");
     assert_eq!(
         post(&app, &original, None).await?.0,
@@ -148,8 +148,8 @@ async fn invalid_auth_body_envelopes_and_unsafe_configuration_never_write() -> T
         shared,
         Arc::new(MustNotInfer),
     ));
-    assert!(routes(service.clone(), "short".into()).is_err());
-    let app = routes(service, TOKEN.into())?;
+    assert!(routes(service.clone(), Some("short".into())).is_err());
+    let app = routes(service, Some(TOKEN.into()))?;
     let mut invalid = request(Uuid::new_v4(), " ");
     assert_eq!(
         post(&app, &invalid, Some(TOKEN)).await?.0,
@@ -198,7 +198,7 @@ async fn malformed_or_truncated_model_output_cannot_claim_a_save() -> TestResult
             shared,
             Arc::new(LocalGateway::new(&gateway.uri(), "qwen-test")?),
         ));
-        let app = routes(service, TOKEN.into())?;
+        let app = routes(service, Some(TOKEN.into()))?;
         let (_, body) = post(
             &app,
             &request(Uuid::new_v4(), "Add pineapple."),
@@ -240,7 +240,7 @@ async fn installed_qwen_acceptance() -> TestResult {
         )
         .with_inference_timeout(std::time::Duration::from_secs(90))?,
     );
-    let app = routes(service, TOKEN.into())?;
+    let app = routes(service, Some(TOKEN.into()))?;
     let conversation = Uuid::new_v4();
     let cases = [
         (
@@ -381,7 +381,7 @@ async fn unsupported_http_answer_replays_without_effects_or_repeat_inference() -
             shared,
             Arc::new(LocalGateway::new(&gateway.uri(), "qwen-test")?),
         )),
-        TOKEN.into(),
+        Some(TOKEN.into()),
     )?;
     let input = request(Uuid::new_v4(), "Email my grocery list to Alex.");
     let (status, body) = post(&app, &input, Some(TOKEN)).await?;
@@ -452,7 +452,7 @@ async fn two_step_selection_and_filling_disagreements_never_write() -> TestResul
                 shared,
                 Arc::new(LocalGateway::new(&gateway.uri(), "qwen-test")?),
             )),
-            TOKEN.into(),
+            Some(TOKEN.into()),
         )?;
         let input = request(Uuid::new_v4(), "Save a note.");
         let (_, body) = post(&app, &input, Some(TOKEN)).await?;
@@ -475,5 +475,104 @@ async fn two_step_selection_and_filling_disagreements_never_write() -> TestResul
             )));
         }
     }
+    Ok(())
+}
+
+#[test]
+fn optional_owner_token_resolution_preserves_configured_auth_and_redacts_errors() -> TestResult {
+    let mut settings: crate::config::AssistantConfig =
+        toml::from_str("db_path = 'personal'\nindex_path = 'index'\n")?;
+    assert!(settings.token_env.is_none());
+    assert_eq!(
+        super::resolve_owner_token(&settings, |name| {
+            assert_eq!(name, "AGENTIX_ASSISTANT_TOKEN");
+            Err(std::env::VarError::NotPresent)
+        })?,
+        None
+    );
+    assert_eq!(
+        super::resolve_owner_token(&settings, |_| Ok(TOKEN.into()))?,
+        Some(TOKEN.into())
+    );
+    for value in ["", "short", "                                "] {
+        assert!(super::resolve_owner_token(&settings, |_| Ok(value.into())).is_err());
+    }
+    let error = super::resolve_owner_token(&settings, |_| {
+        Err(std::env::VarError::NotUnicode(
+            "sensitive-test-value".into(),
+        ))
+    })
+    .err()
+    .ok_or("invalid token accepted")?;
+    assert!(!format!("{error:#}").contains("sensitive-test-value"));
+    settings.token_env = Some("CUSTOM_OWNER_TOKEN".into());
+    assert!(
+        super::resolve_owner_token(&settings, |_| Err(std::env::VarError::NotPresent)).is_err()
+    );
+    assert_eq!(
+        super::resolve_owner_token(&settings, |name| {
+            assert_eq!(name, "CUSTOM_OWNER_TOKEN");
+            Ok(TOKEN.into())
+        })?,
+        Some(TOKEN.into())
+    );
+    settings.token_env = Some(String::new());
+    assert!(super::resolve_owner_token(&settings, |_| Ok(TOKEN.into())).is_err());
+    Ok(())
+}
+
+#[tokio::test]
+async fn tokenless_http_save_and_replay_use_actual_storage() -> TestResult {
+    let directory = tempfile::tempdir()?;
+    let store = SledRepository::open(directory.path()).await?;
+    let gateway = MockServer::start().await;
+    for (name, decision) in [
+        (
+            "personal_assistant_operation",
+            json!({"operation":"save_note"}),
+        ),
+        (
+            "personal_assistant_action",
+            json!({"action":"save_note","text":"synthetic tokenless note"}),
+        ),
+    ] {
+        Mock::given(method("POST"))
+            .and(body_partial_json(
+                json!({"response_format":{"json_schema":{"name":name}}}),
+            ))
+            .respond_with(ResponseTemplate::new(200).set_body_json(completion(decision)))
+            .expect(1)
+            .mount(&gateway)
+            .await;
+    }
+    let shared = Arc::new(store.clone());
+    let app = routes(
+        Arc::new(Assistant::new(
+            shared.clone(),
+            shared,
+            Arc::new(LocalGateway::new(&gateway.uri(), "qwen-test")?),
+        )),
+        None,
+    )?;
+    let input = request(Uuid::new_v4(), "Save a note.");
+    let (status, body) = post(&app, &input, None).await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["status"], "saved");
+    assert_eq!(post(&app, &input, None).await?.1, body);
+    let records = store.records().await?;
+    assert_eq!(records.len(), 1);
+    assert_eq!(
+        records[0].body,
+        RecordBody::Note {
+            text: "synthetic tokenless note".into()
+        }
+    );
+    assert_eq!(
+        store
+            .recent_messages(input.conversation_id, 100)
+            .await?
+            .len(),
+        2
+    );
     Ok(())
 }

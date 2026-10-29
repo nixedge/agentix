@@ -3,6 +3,8 @@
 {
   inputs,
   pkgs,
+  config,
+  lib,
   ...
 }: {
   imports = [inputs.agentix.nixosModules.agentix];
@@ -11,7 +13,8 @@
     enable = true;
     package = inputs.agentix.packages.${pkgs.stdenv.hostPlatform.system}.agentix-agent;
     configFile = "/etc/agentix-agent/agent.toml";
-    environmentFile = "/run/secrets/agentix-agent.env";
+    # Optional bearer auth: provide a runtime environmentFile containing
+    # AGENTIX_ASSISTANT_TOKEN, or explicitly configure assistant.token_env below.
   };
 
   environment.etc."agentix-agent/agent.toml".source = (pkgs.formats.toml {}).generate "agentix-agent.toml" {
@@ -20,12 +23,15 @@
     bind_addr = "127.0.0.1:8767";
     # Separate legacy store; preserve your current path if already using legacy todos.
     db_path = "/var/lib/agentix-agent/legacy";
-    assistant = {
-      db_path = "/var/lib/agentix-agent/personal";
-      index_path = "/var/lib/agentix-agent/personal-index";
-      token_env = "AGENTIX_ASSISTANT_TOKEN";
-      inference_timeout_secs = 30;
-    };
+    assistant =
+      {
+        db_path = "/var/lib/agentix-agent/personal";
+        index_path = "/var/lib/agentix-agent/personal-index";
+        inference_timeout_secs = 30;
+      }
+      // lib.optionalAttrs (config.services.agentix.agent.environmentFile != null) {
+        token_env = "AGENTIX_ASSISTANT_TOKEN";
+      };
     # Required legacy configuration; notification delivery is unconfigured.
     # Personal task storage does not deliver reminders.
     ntfy = {
@@ -36,7 +42,8 @@
   };
 
   services.nginx.enable = true;
-  # Merge into the existing HTTPS vhost; retain its TLS/certificate configuration.
+  # Merge into the existing WireGuard-only HTTPS vhost; retain its TLS setup.
+  # The existing listener/firewall must restrict ingress to authorized WG peers.
   services.nginx.virtualHosts."ai.lan.disasm.us".locations."/v1/assistant/" = {
     proxyPass = "http://127.0.0.1:8767";
     extraConfig = ''

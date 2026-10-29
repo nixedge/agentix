@@ -54,6 +54,7 @@ An explicit versioned export preserves authoritative records, receipts and pendi
 - FR-013: Tests cover actual Sled persistence, concurrency, replay, deletion/reference validation, schema guards and reopen recovery. Projection integration uses actual LanceDB; scripted adapters test only orchestration failure paths.
 - FR-014: Nix provides canonical packages/checks. Document completed tests separately from unperformed power-loss, live-model, phone, delivery and production-load acceptance.
 - FR-015: No transcripts, secrets or production databases in Git/build outputs/logs. Development fixtures are synthetic. Filesystem paths and errors must not falsely imply a successful action.
+- FR-016: Owner bearer authentication is optional for WireGuard-only deployments. A configured token is enforced before inference/effects, and invalid or missing explicitly configured secrets fail startup. Android omits Authorization when its optional token is empty. Authentication changes preserve pending-request identity and replay semantics; network-only mode relies on the deployment's existing ingress restrictions.
 
 ## Success criteria and increments
 

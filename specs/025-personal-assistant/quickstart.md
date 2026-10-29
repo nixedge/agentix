@@ -40,7 +40,7 @@ Full workspace Cargo tests/Clippy, live Qwen evaluation, personal semantic-profi
 
 ## Conversational backend work in progress
 
-Increment C adds the engine-free `agentix-assistant` application library, additive Sled turn/message journal and opt-in `POST /v1/assistant/tell` routes in agentix-agent. The new API requires an owner bearer token, request/conversation UUIDs and an IANA timezone. No service was deployed. Owner-approved focused item-text/task-completion tools replace generic model replacement; Rust validates target/revision and preserves other fields. The expanded two-step operation/replay gate now passes; Android has an opt-in HTTPS adapter. Service deployment and physical phone acceptance remain open. See the final increment below and research.md.
+Increment C adds the engine-free `agentix-assistant` application library, additive Sled turn/message journal and opt-in `POST /v1/assistant/tell` routes in agentix-agent. The new API requires request/conversation UUIDs and an IANA timezone, plus a bearer token when configured. No service was deployed. Owner-approved focused item-text/task-completion tools replace generic model replacement; Rust validates target/revision and preserves other fields. The expanded two-step operation/replay gate now passes; Android has an opt-in HTTPS adapter. Service deployment and physical phone acceptance remain open. See the final increment below and research.md.
 
 Backend checks:
 
@@ -56,11 +56,11 @@ After the model gate passes, enable the new routes by adding an explicit section
 [assistant]
 db_path = "/var/lib/agentix-agent/personal"
 index_path = "/var/lib/agentix-agent/personal-index"
-token_env = "AGENTIX_ASSISTANT_TOKEN"
+# Optional: token_env = "AGENTIX_ASSISTANT_TOKEN"
 inference_timeout_secs = 30
 ```
 
-Supply the owner token at runtime through `services.agentix.agent.environmentFile` or the process environment. It must be32–512 visible ASCII bytes and must not be embedded in Git/Nix configuration outputs. The application uses the configured existing local gateway/model; cloud model choices and redirects are rejected. The listener/bind address is unchanged. Route the protected `/v1/assistant/` path through the owner's HTTPS/WireGuard entry; legacy routes retain their existing access policy.
+For optional bearer authentication, supply the owner token at runtime through `services.agentix.agent.environmentFile` or the process environment. It must be32–512 visible ASCII bytes and must not be embedded in Git/Nix configuration outputs. The application uses the configured existing local gateway/model; cloud model choices and redirects are rejected. The listener/bind address is unchanged. Route the protected `/v1/assistant/` path through the owner's HTTPS/WireGuard entry; legacy routes retain their existing access policy.
 
 Opt-in synthetic live acceptance (temporary personal store, existing installed model):
 
@@ -79,7 +79,7 @@ The local adapter selects an operation first, then fills only that operation's f
 
 Backend validation:45 regression tests (26 core/Sled/application +19 agent) and strict targeted Clippy pass. Canonical assistant-core, assistant-lance (8 projection tests), assistant-api (5 HTTP fixture tests) and agentix-agent targets pass. Full workspace/GPU tests and runtime memory measurement remain open.
 
-Android now defaults to the owner-supplied configurable address `https://ai.lan.disasm.us`, with backend disabled until explicitly enabled and given the owner token in Settings. Settings are private and backup-excluded. The immutable instruction/request/conversation/timezone/endpoint envelope is committed locally before dispatch. Uncertain HTTP/auth/transport/parse/cancellation results keep it; retry reuses the same request. Other instructions and endpoint changes are blocked while unresolved. A validated definitive response is persisted atomically with clearing the pending envelope. Recovered replies/pending instructions are visible when the activity reopens. No auto-retry or default-assistant change.
+Android now defaults to the owner-supplied configurable address `https://ai.lan.disasm.us`, with backend disabled until explicitly enabled in Settings; the owner token is optional. Settings are private and backup-excluded. The immutable instruction/request/conversation/timezone/endpoint envelope is committed locally before dispatch. Uncertain HTTP/auth/transport/parse/cancellation results keep it; retry reuses the same request. Other instructions and endpoint changes are blocked while unresolved. A validated definitive response is persisted atomically with clearing the pending envelope. Recovered replies/pending instructions are visible when the activity reopens. No auto-retry or default-assistant change.
 
 ```bash
 nix build .#agentix-android --out-link result-assistant-android
@@ -87,7 +87,7 @@ nix build .#agentix-android --out-link result-assistant-android
 
 APK: `result-assistant-android/share/agentix-android/agentix-android-debug.apk`. Canonical build runs all core JVM tests (including4 new retry/identity/recreation/storage-failure tests) and Android lint. No new Gradle dependencies. HTTPS uses normal certificate validation, no redirects, bounded response size/read deadlines; bearer token is never in Git/Nix or request logs.
 
-Live handoff: the supplied HTTPS endpoint returned502 during a GET of `/v1/assistant/tell`; routing/deployment/readiness is not established. Configure the existing agentix-agent service with the opt-in `[assistant]` section above, provide its owner token privately through the runtime environment file, and route only the protected assistant path from HTTPS to that listener. Then enable matching settings on the phone and test grocery add/read/correction and an uncertain retry. API401 without a token, followed by a valid authenticated instruction and unchanged replay, are required live checks. No service was deployed or phone installed/toggled here. Keep current default assistant until real usefulness is verified; never uninstall an existing app with pending requests or recordings to work around debug-signature changes. Physical persistence, lifecycle/TLS/network behavior and microphone/TTS remain phone acceptance items, separate from JVM fixtures/lint.
+Live handoff: the supplied HTTPS endpoint returned502 during a GET of `/v1/assistant/tell`; routing/deployment/readiness is not established. Configure the existing agentix-agent service with the opt-in `[assistant]` section above, optionally provide its owner token privately through the runtime environment file, and route only the protected assistant path from HTTPS to that listener. Then enable matching settings on the phone and test grocery add/read/correction and an uncertain retry. Verify a tokenless command and unchanged replay in network-only mode. If bearer auth is configured, also verify401 for missing/incorrect credentials and success with the matching token. No service was deployed or phone installed/toggled here. Keep current default assistant until real usefulness is verified; never uninstall an existing app with pending requests or recordings to work around debug-signature changes. Physical persistence, lifecycle/TLS/network behavior and microphone/TTS remain phone acceptance items, separate from JVM fixtures/lint.
 
 For nginx on the same host as agentix-agent, whose example `bind_addr` is `127.0.0.1:8767`, the upstream is that agent listener:
 
@@ -99,6 +99,10 @@ location /v1/assistant/ {
 }
 ```
 
-Use the service's actual configured bind address if different. Preserve the full `/v1/assistant/tell` path; `proxy_pass` above has no URI suffix. The agent service performs bearer-token checks and talks separately to the configured inference gateway (`http://ai.lan.disasm.us:11434` in the development config). No nginx configuration was changed by this feature work.
+Use the service's actual configured bind address if different. Preserve the full `/v1/assistant/tell` path; `proxy_pass` above has no URI suffix. The agent service performs bearer-token checks when configured and talks separately to the configured inference gateway (`http://ai.lan.disasm.us:11434` in the development config). No nginx configuration was changed by this feature work.
 
 A complete NixOS import is provided at `agentix-agent/examples/nixos-personal-assistant.nix`, with secret-manager/import instructions in the adjacent README. It generates the non-secret TOML, enables the existing service module, and adds the same-host nginx route without replacing existing TLS configuration. Evaluation verified the service ExecStart, runtime environment path, persistent state directory, nginx upstream and parsed generated TOML. It has not been deployed.
+
+Owner authentication is optional for the owner's WireGuard-only deployment. With token_env omitted and AGENTIX_ASSISTANT_TOKEN absent, the server accepts requests without an Authorization header. Android may leave Owner token blank; it omits the header. If the default token is present it is validated/enforced. Explicit token_env always requires its named variable; missing/empty/malformed values fail startup. Keep the existing HTTPS ingress restricted to authorized WireGuard peers in tokenless mode. The NixOS example has no environmentFile by default; setting one also generates explicit token_env so a missing secret cannot silently disable auth. No tunnel, firewall, nginx deployment or device changes are performed by this revision.
+
+Optional-auth verification:21 agent tests pass (manual model gate ignored), including tokenless actual-Sled save/replay, configured missing/wrong-token rejection, missing explicit environment handling and redacted invalid-token errors. Strict production Clippy, rustfmt and Nix formatting pass. Canonical agentix-agent, assistant-api (7 fixture/unit checks) and agentix-android builds pass; Android JVM/lint includes2 optional-header tests plus existing retry tests. NixOS evaluation checks both no-secret/default mode and environmentFile-required-token mode. No model/storage orchestration changes required repeating live Qwen evaluation. Deployment/phone acceptance remains separate.

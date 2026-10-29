@@ -30,7 +30,7 @@
     <string name="settings_detail">Enter the HTTPS address reachable through your phone’s WireGuard tunnel. WireGuard remains managed by its own app.</string>
     <string name="endpoint_label">Server URL</string>
     <string name="endpoint_example">https://assistant.example</string>
-    <string name="endpoint_invalid">Use a valid HTTPS address and owner token. Resolve any pending instruction before changing the address.</string>
+    <string name="endpoint_invalid">Use a valid HTTPS address and leave the optional token blank or supply a valid token. Resolve any pending instruction before changing the address.</string>
     <string name="save">Save</string>
     <string name="clear">Clear</string>
     <string name="endpoint_saved">Address saved. Server connectivity has not been checked.</string>
@@ -105,7 +105,7 @@
     <string name="assistant_speaking">Speaking…</string>
     <string name="assistant_speech_done">Spoken reply finished.</string>
     <string name="assistant_tts_missing">Offline speech output is unavailable for your device language. The reply is shown above.</string>
-    <string name="backend_token">Owner token</string>
+    <string name="backend_token">Owner token (optional)</string>
     <string name="backend_enable">Enable assistant backend</string>
     <string name="assistant_pending">An instruction is unresolved. Retry it before sending another. Stopping the wait does not undo server changes.</string>
     <string name="assistant_pending_instruction">Pending instruction: %1$s</string>

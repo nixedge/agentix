@@ -14,7 +14,7 @@ use subtle::ConstantTimeEq;
 #[derive(Clone)]
 struct HttpState {
     service: Arc<Assistant>,
-    token: Arc<str>,
+    token: Option<Arc<str>>,
 }
 
 pub fn validate_token(token: &str) -> anyhow::Result<()> {
@@ -25,14 +25,16 @@ pub fn validate_token(token: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn routes(service: Arc<Assistant>, owner_token: String) -> anyhow::Result<Router> {
-    validate_token(&owner_token)?;
+pub fn routes(service: Arc<Assistant>, owner_token: Option<String>) -> anyhow::Result<Router> {
+    if let Some(token) = &owner_token {
+        validate_token(token)?;
+    }
     Ok(Router::new()
         .route("/v1/assistant/tell", post(tell))
         .layer(DefaultBodyLimit::max(16_384))
         .with_state(HttpState {
             service,
-            token: owner_token.into(),
+            token: owner_token.map(Arc::from),
         }))
 }
 
@@ -54,7 +56,11 @@ async fn tell(
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.strip_prefix("Bearer "))
         .unwrap_or("");
-    if !bool::from(supplied.as_bytes().ct_eq(state.token.as_bytes())) {
+    if state
+        .token
+        .as_ref()
+        .is_some_and(|token| !bool::from(supplied.as_bytes().ct_eq(token.as_bytes())))
+    {
         return Err(error(
             StatusCode::UNAUTHORIZED,
             "owner_auth_required",

@@ -7,14 +7,14 @@ use agentix_assistant::Assistant;
 use agentix_assistant_core::project_pending;
 use agentix_assistant_lance::LanceProjection;
 use agentix_assistant_sled::SledRepository;
-use anyhow::{ensure, Context};
+use anyhow::ensure;
 pub use routes::routes;
 use std::{sync::Arc, time::Duration};
 use tokio_util::sync::CancellationToken;
 
 pub struct HostedAssistant {
     pub service: Arc<Assistant>,
-    pub owner_token: String,
+    pub owner_token: Option<String>,
     repository: SledRepository,
     projection: LanceProjection,
 }
@@ -32,9 +32,7 @@ impl HostedAssistant {
             settings.db_path != config.db_path && settings.index_path != settings.db_path,
             "assistant requires separate personal and legacy/index paths"
         );
-        let token = std::env::var(&settings.token_env)
-            .context("assistant owner token environment variable is missing")?;
-        routes::validate_token(&token)?;
+        let token = resolve_owner_token(settings, |variable| std::env::var(variable))?;
         let gateway = gateway::LocalGateway::new(&config.gateway_url, &config.local_model)?;
         let repository = SledRepository::open(&settings.db_path).await?;
         let projection = LanceProjection::open(&settings.index_path).await?;
@@ -68,5 +66,27 @@ impl HostedAssistant {
                 }
             }
         });
+    }
+}
+
+fn resolve_owner_token(
+    settings: &crate::config::AssistantConfig,
+    read: impl FnOnce(&str) -> std::result::Result<String, std::env::VarError>,
+) -> anyhow::Result<Option<String>> {
+    let variable = settings
+        .token_env
+        .as_deref()
+        .unwrap_or("AGENTIX_ASSISTANT_TOKEN");
+    ensure!(
+        !variable.is_empty(),
+        "assistant token environment variable name must not be empty"
+    );
+    match read(variable) {
+        Ok(token) => {
+            routes::validate_token(&token)?;
+            Ok(Some(token))
+        }
+        Err(std::env::VarError::NotPresent) if settings.token_env.is_none() => Ok(None),
+        Err(_) => anyhow::bail!("configured assistant owner token is missing or not Unicode"),
     }
 }

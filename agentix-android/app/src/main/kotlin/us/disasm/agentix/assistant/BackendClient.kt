@@ -14,6 +14,7 @@ import us.disasm.agentix.core.assistant.TellCommand
 import us.disasm.agentix.core.assistant.TellEnvelope
 import us.disasm.agentix.core.assistant.TellQueue
 import us.disasm.agentix.core.assistant.TellResult
+import us.disasm.agentix.core.assistant.OwnerAuthentication
 import us.disasm.agentix.settings.AssistantSettings
 
 internal class BackendClient private constructor(context: Context) : AssistantClient {
@@ -27,8 +28,7 @@ internal class BackendClient private constructor(context: Context) : AssistantCl
         val (envelope, token) = synchronized(AssistantSettings.lock) {
             if (!settings.enabled()) return@withContext AssistantReply.NotConnected
             check(!inFlight) { "Assistant request is still running" }
-            val token = settings.token()
-            check(token.length in 32..512 && token.all { it.code in 33..126 })
+            val token = OwnerAuthentication.authorization(settings.token())
             val pending = queue.begin(command.text, settings.endpoint(), ZoneId.systemDefault().id)
             inFlight = true
             pending to token
@@ -42,7 +42,7 @@ internal class BackendClient private constructor(context: Context) : AssistantCl
         }
     }
 
-    private fun post(envelope: TellEnvelope, token: String): TellResult {
+    private fun post(envelope: TellEnvelope, token: String?): TellResult {
         val url = URL(envelope.endpoint.trimEnd('/') + "/v1/assistant/tell")
         check(url.protocol == "https")
         val connection = url.openConnection() as HttpURLConnection
@@ -54,7 +54,7 @@ internal class BackendClient private constructor(context: Context) : AssistantCl
             connection.requestMethod = "POST"
             connection.doOutput = true
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-            connection.setRequestProperty("Authorization", "Bearer $token")
+            token?.let { connection.setRequestProperty("Authorization", it) }
             val body = JSONObject().put("request_id", envelope.requestId.toString())
                 .put("conversation_id", envelope.conversationId.toString()).put("text", envelope.text)
                 .put("timezone", envelope.timezone).toString().toByteArray(Charsets.UTF_8)

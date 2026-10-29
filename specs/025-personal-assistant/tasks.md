@@ -42,3 +42,4 @@ T026 now covers13 operation/replay cases across three fresh stores using the app
 - [x] T029 Add typed unsupported capability answers and deterministic no-write replies; actual-store tests plus live follow-up/address/confirmation acceptance.
 - [x] T030 After T029 acceptance, implement Android immutable pending-envelope lifecycle, private opt-in configuration and bounded HTTPS client; test retry/recreation/identity/endpoint guards and build canonical APK.
 - [x] T031 Implement owner-approved two-step local inference: bounded operation selection, per-operation field schema, deterministic capability rejection, mismatch/no-repeat-replay tests and full live acceptance.
+- [x] T032 Make owner bearer auth optional across config/server/Android; preserve configured-secret failure/rejection, test tokenless actual storage/replay and credential selection, update WireGuard deployment docs and canonical builds.

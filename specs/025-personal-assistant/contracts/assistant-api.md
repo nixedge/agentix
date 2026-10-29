@@ -1,6 +1,6 @@
 # Assistant HTTP v1 and application contract
 
-`POST /v1/assistant/tell`, on the existing agentix-agent listener. Opt-in configuration and `Authorization: Bearer <owner token>` are required. Maximum JSON request body 16KiB; UTF-8 instruction 1..4096 bytes. No logging of instructions/tokens. No model/provider selection from a phone request.
+`POST /v1/assistant/tell`, on the existing agentix-agent listener. Opt-in configuration is required; `Authorization: Bearer <owner token>` is required only when a token is configured. Maximum JSON request body 16KiB; UTF-8 instruction 1..4096 bytes. No logging of instructions/tokens. No model/provider selection from a phone request.
 
 Request: `{request_id: UUID, conversation_id: UUID, text: string, timezone: IANA timezone}`. IDs must be nonnil. The immutable envelope binds the request ID globally. Server acceptance time is persisted, so retry cannot move relative-date context. A conversation has ordered append-only user/assistant messages and at most one unresolved turn.
 
@@ -10,7 +10,7 @@ Identical completed requests replay the original response. Reusing an ID for dif
 
 Application ports are engine-free Rust traits. Inference consumes bounded recent messages, current/retrieved originals, accepted_at and timezone, then proposes one typed intent: add/show list, save note/task, edit list-item text, set task completion, delete by ID+revision, or clarification. Tool resolution checks exact named-list ambiguity and domain rules before producing a durable execution plan. Prepared plans are immutable and saved before mutation. Existing request receipts make crash/retry safe across sequential commands. The host owns transport/timeouts, local-model adapter and retry scheduling.
 
-Phone integration follows server acceptance and reads its configured HTTPS base URL. Backend use is explicitly enabled and owner-token storage is private/excluded from backup. Android persists unresolved envelopes until a definitive response; cancellation cannot claim server rollback. WireGuard is external. No new public MCP listener, provider keys, VPN service or default-assistant change.
+Phone integration follows server acceptance and reads its configured HTTPS base URL. Backend use is explicitly enabled and optional owner-token storage is private/excluded from backup. Android persists unresolved envelopes until a definitive response; cancellation cannot claim server rollback. WireGuard is external. No new public MCP listener, provider keys, VPN service or default-assistant change.
 
 ## Correction tools — owner approved
 
@@ -27,3 +27,7 @@ Android stores pending envelopes and the last definitive response in private bac
 ## Two-step local inference
 
 The local adapter first selects a typed operation from a small enum. Unsupported operations map directly to Intent::Unsupported and deterministic replies with one model call. Supported operations make a second bounded call whose schema permits only the selected action or clarification. The second schema offers clarification first; mismatched operations or unknown fields are rejected before plan preparation. Original IDs/current revisions are still validated by Rust. Both calls share the application's turn timeout; prepared/completed replays do not repeat either call. No wire envelope or stored journal schema changes.
+
+## Optional authentication revision
+
+The owner requested optional application authentication for WireGuard-only access. If token_env is omitted, the server uses AGENTIX_ASSISTANT_TOKEN when present and otherwise applies no bearer check. An explicitly configured token_env must resolve to a valid32..512-byte visible-ASCII token; missing/empty/non-Unicode/invalid values fail startup. Invalid configured default tokens also fail. With a token present, absent/incorrect bearer headers return401 before inference or effects. Without one, requests/replays require no Authorization header. Network restrictions then determine access; this revision does not configure the WireGuard tunnel or firewall. Android leaves Authorization absent for an empty token and validates/sends any supplied token. No wire envelope or persisted-request change.
