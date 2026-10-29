@@ -1,6 +1,6 @@
 # agentix Development Guidelines
 
-Auto-generated from feature plans and updated manually. Last updated: 2026-08-22
+Auto-generated from feature plans and updated manually. Last updated: 2026-10-28
 
 ## Active Technologies
 - Rust edition 2021, Rust 1.80+ (via fenix stable toolchain in Nix)
@@ -8,8 +8,8 @@ Auto-generated from feature plans and updated manually. Last updated: 2026-08-22
 - whisper-rs / whisper.cpp (C++, isolated in `agentix-whisper`); audio decoding via symphonia + rubato
 - tree-sitter-* (C++, in `agentix-indexer`)
 - fastembed/onnxruntime (C++, in `agentix-search`)
-- tokio, axum, sqlx, rmcp, ratatui
-- PostgreSQL 17 + pg_search (BM25) + pgvector (HNSW)
+- tokio, axum, rmcp, ratatui
+- LanceDB 0.40.0 local storage with BM25 and cosine IVF_HNSW_FLAT vector search
 - Nix flakes (build + services)
 - sled 0.34 embedded key-value store (agentix-agent: todos, notifications, gmail cursor, sessions)
 - Rust 2021 (workspace standard, fenix stable toolchain) (016-voice-loop)
@@ -26,7 +26,8 @@ agentix-whisper/     # whisper.cpp speech-to-text backend (C++; isolated here)
 agentix-daemon/      # HTTP gateway (Axum); assembles api + router + infer + llama + whisper
 agentix-harness/     # Agent loop library (state machine, tool dispatch)
 agentix-ax/          # TUI agent binary (Ratatui, links harness)
-agentix-search/      # PostgreSQL search library (BM25 + vector + reranking)
+agentix-store/       # Shared local LanceDB storage, metadata and index maintenance
+agentix-search/      # LanceDB search adapters (BM25 + vector + reranking)
 agentix-indexer/     # Repo ingestion pipeline (tree-sitter + embed); bin: ingest
 agentix-mcp-server/  # MCP stdio server exposing search tools; bin: mcp-server
 agentix-agent/       # Home assistant daemon (todos, calendar, gmail, ntfy, chat UI); Port 8765
@@ -36,7 +37,8 @@ src/                 # Jail binaries (claude-jail, ax-jail, gh-jail-*)
 Dependency flow: `agentix-api` → `agentix-router` → `agentix-daemon`. C++ is isolated:
 `agentix-llama` (llama-cpp-2), `agentix-whisper` (whisper.cpp + symphonia), `agentix-indexer` (tree-sitter), `agentix-search` (fastembed).
 Neither `agentix-router` nor `agentix-infer` have C++ transitive deps. No circular deps.
-The daemon is the only crate that binds a port. The daemon's `build.rs` adds
+The daemon binds the inference API; `agentix-store-server` binds the storage API with optional bearer authentication
+for remote laptop MCP clients. Libraries never bind listeners. The daemon's `build.rs` adds
 `--allow-multiple-definition` because llama.cpp and whisper.cpp both bundle ggml.
 
 ## Commands
@@ -57,7 +59,7 @@ nix develop --command cargo fmt --all --check
 # Clippy (fails on warnings; unwrap_used + expect_used are enabled)
 nix develop --command cargo clippy -- -D warnings
 
-# Start dev services (PostgreSQL + Ollama)
+# Start dev model/gateway services (search uses AGENTIX_LANCE_PATH)
 nix run .#dev
 
 # Run gateway
@@ -89,6 +91,7 @@ Key constraints:
 <!-- MANUAL ADDITIONS END -->
 
 ## Recent Changes
+- 023-lancedb-backend: Replaced PostgreSQL search/index runtime for code, docs and GitHub with shared LanceDB storage; see specs/023-lancedb-backend/quickstart.md for import or fresh ingestion.
 - 016-voice-loop: Added Rust 2021 (workspace standard, fenix stable toolchain)
 - 014-home-agent: agentix-agent home assistant daemon — todos (sled), ntfy.sh push, Google Calendar/Gmail, mobile chat UI, Prometheus metrics, NixOS service module
 <<<<<<< HEAD

@@ -1,15 +1,9 @@
 use super::AppState;
-use axum::{
-    extract::State,
-    http::StatusCode,
-    response::IntoResponse,
-    Json,
-};
+use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use serde::Deserialize;
 use std::path::PathBuf;
 
-const PIPER_VOICES_BASE: &str =
-    "https://huggingface.co/rhasspy/piper-voices/resolve/main";
+const PIPER_VOICES_BASE: &str = "https://huggingface.co/rhasspy/piper-voices/resolve/main";
 
 #[derive(Deserialize)]
 pub struct PullRequest {
@@ -26,7 +20,7 @@ pub async fn list_handler(State(state): State<AppState>) -> impl IntoResponse {
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({"error": format!("reading voices dir: {e}")})),
             )
-            .into_response();
+                .into_response();
         }
     };
 
@@ -80,7 +74,7 @@ pub async fn pull_handler(
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({"error": format!("download failed: {e}")})),
         )
-        .into_response(),
+            .into_response(),
     }
 }
 
@@ -94,8 +88,8 @@ fn model_to_url_dir(model: &str) -> Option<String> {
         return None;
     }
     let lang_region = parts[0]; // e.g. "en_US"
-    let voice = parts[1];       // e.g. "lessac"
-    let quality = parts[2];     // e.g. "medium"
+    let voice = parts[1]; // e.g. "lessac"
+    let quality = parts[2]; // e.g. "medium"
 
     let lang = lang_region.split('_').next()?; // e.g. "en"
     Some(format!("{lang}/{lang_region}/{voice}/{quality}"))

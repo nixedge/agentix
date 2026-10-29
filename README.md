@@ -1,7 +1,7 @@
 # agentic-nix
 
 Hybrid code search for Claude. Index your codebases, documentation, and GitHub issues into
-PostgreSQL (ParadeDB BM25 + pgvector HNSW). A Rust MCP server exposes the index to Claude Code
+local LanceDB (BM25 + unquantized HNSW). A Rust MCP server exposes the index to Claude Code
 so it can answer questions about your code without reading every file from scratch.
 
 **What this replaces:** Claude reading 50 files one by one to find something. Instead, Claude
@@ -12,7 +12,7 @@ queries the index with a single tool call and gets the 10 most relevant chunks i
 ## How it works
 
 ```
-your repos ──► ingest ──► PostgreSQL (ParadeDB)
+your repos ──► ingest ──► local LanceDB
                                │
                           BM25 + vector          Ollama
                           hybrid search    ◄──  embeddings
@@ -21,7 +21,7 @@ your repos ──► ingest ──► PostgreSQL (ParadeDB)
 ```
 
 1. The `ingest` binary walks your repos, extracts named symbols via tree-sitter, embeds each
-   chunk via Ollama, and stores everything in PostgreSQL.
+   chunk via Ollama, and stores everything in LanceDB.
 2. The `mcp-server` binary sits between Claude and the database, exposing search tools over
    the MCP protocol (stdio).
 3. Claude Code connects to the MCP server automatically and calls the tools when it needs
@@ -34,7 +34,7 @@ your repos ──► ingest ──► PostgreSQL (ParadeDB)
 - [Nix](https://nixos.org/download/) with flakes enabled
 - Git
 
-That's it. PostgreSQL, Ollama, Rust, and all other tools are managed by Nix.
+That's it. LanceDB, Ollama, Rust, and all other tools are managed by Nix.
 
 **Enable flakes** if you haven't already — add to `~/.config/nix/nix.conf`:
 ```
@@ -49,59 +49,27 @@ experimental-features = nix-command flakes
 
 ## Non-NixOS / Ubuntu setup
 
-On Ubuntu, use system-managed PostgreSQL and Ollama. The Nix dev shell still provides the Rust
+On Ubuntu, use a persistent local LanceDB directory and system-managed Ollama. The Nix dev shell still provides the Rust
 toolchain, `just`, and all build tools — only the services differ.
 
-### 1. Install PostgreSQL 17 with ParadeDB and pgvector
+### 1. Configure index access
 
-Add the PostgreSQL apt repo if you haven't already:
-
-```bash
-sudo apt install -y postgresql-common
-sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh
-```
-
-Install [pg_search](https://docs.paradedb.com/documentation/getting-started/self-hosted) (ParadeDB BM25) and pgvector:
+Code, documentation, GitHub issues/PRs/comments, repository metadata and sync state live in
+LanceDB. PostgreSQL and its extensions are no longer required. For server storage with laptop
+MCPs, use the [shared-storage deployment guide](specs/023-lancedb-backend/quickstart.md#server-storage-with-laptop-mcp-clients)
+and configure `AGENTIX_STORE_URL` with an optional runtime credential. For same-host local use, both
+`ingest` and `mcp-server` use the same `AGENTIX_LANCE_PATH`:
 
 ```bash
-# ParadeDB repo
-curl -fsSL https://apt.fury.io/paradedb/gpg.key \
-  | sudo gpg --dearmor -o /usr/share/keyrings/paradedb.gpg
-echo "deb [signed-by=/usr/share/keyrings/paradedb.gpg] https://apt.fury.io/paradedb/ stable main" \
-  | sudo tee /etc/apt/sources.list.d/paradedb.list
-
-sudo apt update
-sudo apt install -y postgresql-17-pg-search postgresql-17-pgvector
+export AGENTIX_LANCE_PATH="$HOME/.local/share/agentix/index"
 ```
 
-Enable `pg_search` in PostgreSQL — add to `/etc/postgresql/17/main/postgresql.conf`:
-
-```
-shared_preload_libraries = 'pg_search'
-pg_search.enable_telemetry = off
-```
-
-Restart PostgreSQL:
-
-```bash
-sudo systemctl restart postgresql
-```
-
-Create the database and apply the schema:
-
-```bash
-sudo -u postgres createdb codebase
-sudo -u postgres psql codebase -c \
-  "CREATE EXTENSION IF NOT EXISTS pg_search; CREATE EXTENSION IF NOT EXISTS vector;"
-
-# Allow your user to connect (adjust if you use password auth instead)
-sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE codebase TO $USER;"
-sudo -u postgres psql codebase -c "GRANT ALL ON SCHEMA public TO $USER;"
-
-# Enter the Nix dev shell, then apply the schema
-nix develop
-just migrate
-```
+The default is `$XDG_DATA_HOME/agentix/index`, or `$HOME/.local/share/agentix/index` when
+XDG_DATA_HOME is unset. Keep this directory persistent and writable by the indexing user.
+For an existing PostgreSQL index, follow the [migration guide](specs/023-lancedb-backend/quickstart.md)
+before changing the installed MCP configuration. Old PostgreSQL data is not deleted or
+converted automatically. A leftover `PG_DSN` without an explicit Lance path returns an error
+so an existing installation cannot silently start searching a new empty index.
 
 ### 2. Install Ollama
 
@@ -138,7 +106,7 @@ cd ~/agentic-nix
 nix develop
 ```
 
-The first `nix develop` downloads Rust, PostgreSQL, Ollama, and all dependencies. This takes
+The first `nix develop` downloads Rust, LanceDB, Ollama, and all dependencies. This takes
 a few minutes once; subsequent shells are instant.
 
 ### 2. Build the Rust binaries
@@ -159,21 +127,15 @@ nix run .#dev
 ```
 
 This starts:
-- **PostgreSQL 17** on `localhost:5432` with `pg_search` (BM25) and `pgvector` (HNSW) loaded.
-  The `codebase` database is created automatically with the full schema.
 - **Ollama** on `localhost:11434` with the `jina-code-embeddings-1.5b` model pulled.
   First start pulls the model (~1.5 GB); subsequent starts are instant.
 
-Data is stored under `./data/` relative to where you run the command, so always run it from
-the repo root.
+Service data is stored under `./data/`. The search index uses AGENTIX_LANCE_PATH independently; configure the same path for ingestion and MCP.
 
 ### 4. Verify everything is running
 
 ```bash
-# Should return a connection
-just psql
-
-# Should return empty tables (schema applied automatically)
+# Shows zero counts for a new local index
 just stats
 ```
 
@@ -248,7 +210,7 @@ Run this from the `~/agentic-nix` directory:
 ```bash
 claude mcp add agentic-nix \
   --command "$(pwd)/target/release/mcp-server" \
-  --env PG_DSN=postgresql://127.0.0.1:5432/codebase \
+  --env AGENTIX_LANCE_PATH=/absolute/path/to/agentix-index \
   --env OLLAMA_HOST=http://127.0.0.1:11434
 ```
 
@@ -260,7 +222,7 @@ Or add it manually to your Claude Code config (`~/.claude.json` or project `.cla
     "agentic-nix": {
       "command": "/home/you/agentic-nix/target/release/mcp-server",
       "env": {
-        "PG_DSN": "postgresql://127.0.0.1:5432/codebase",
+        "AGENTIX_LANCE_PATH": "/absolute/path/to/agentix-index",
         "OLLAMA_HOST": "http://127.0.0.1:11434"
       }
     }
@@ -552,7 +514,10 @@ All variables have sensible defaults; override as needed.
 
 | Variable | Default | Description |
 |---|---|---|
-| `PG_DSN` | `postgresql://127.0.0.1:5432/codebase` | PostgreSQL connection string |
+| `AGENTIX_LANCE_PATH` | XDG data directory + `agentix/index` | Persistent local LanceDB directory |
+| `EMBED_DIMENSIONS` | `1536` | Stored/query vector dimensions; must match the model |
+| `LANCE_NPROBES` | `20` | IVF partitions searched (1..64) |
+| `LANCE_EF` | `100` | HNSW query effort (100..400) |
 | `OLLAMA_HOST` | `http://127.0.0.1:11434` | Ollama API base URL |
 | `EMBED_MODEL` | `hf.co/jinaai/jina-code-embeddings-1.5b-GGUF:Q8_0` | Embedding model |
 | `RERANK_MODEL` | *(empty — disabled)* | Set to a fastembed cross-encoder to enable reranking |
@@ -564,7 +529,7 @@ All variables have sensible defaults; override as needed.
 
 ```bash
 # Services
-nix run .#dev                          # start PostgreSQL + Ollama
+nix run .#dev                          # start Ollama + gateway
 
 # Binaries
 just build                             # build mcp-server + ingest
@@ -579,10 +544,9 @@ just reindex-github OWNER/REPO         # GitHub (ignore watermarks)
 # Inspection
 just stats                             # row counts
 just sync-status                       # GitHub watermarks
-just psql                              # open a psql session
 
-# Schema
-just migrate                           # apply schema.sql (safe to re-run)
+# Maintenance
+just optimize                          # rebuild local search indexes
 ```
 
 ---
@@ -593,9 +557,9 @@ just migrate                           # apply schema.sql (safe to re-run)
 The MCP server can't reach Ollama. Make sure `nix run .#dev` is running, or check that
 `OLLAMA_HOST` points to the right address.
 
-**"Database error: connection refused"**
-PostgreSQL isn't running. Start it with `nix run .#dev`. Data lives in `./data/pg/` —
-you must run from the repo root so the path resolves correctly.
+**"index is busy: another process is writing"**
+Wait for the other indexing/maintenance process to finish and retry. Readers can continue
+searching committed data. Ensure ingest and MCP use the same persistent AGENTIX_LANCE_PATH.
 
 **Claude doesn't call the search tools**
 Claude doesn't always reach for MCP tools unprompted. Be explicit: *"Search the indexed
@@ -612,3 +576,17 @@ authenticated is 5000/hour.
 Nix-packaged Ollama can't resolve CUDA libraries outside NixOS. Use the system Ollama installer
 instead — see [Non-NixOS / Ubuntu setup](#non-nixos--ubuntu-setup). Confirm GPU is active with
 `ollama ps` while a model is loaded.
+
+### Shared storage for laptop MCPs
+
+For separate storage and MCP hosts, deploy `agentix-store-server` on the index host and
+keep each MCP on its laptop. For LAN access, configure `AGENTIX_STORE_URL=http://index-host:8091`
+instead of `AGENTIX_LANCE_PATH`; no token is required by default. Set a server `tokenFile`
+and client `AGENTIX_STORE_TOKEN_FILE` only when enabling authentication.
+The storage API supports concurrent clients, serializes
+writes and checks model/dimension compatibility; it never silently opens a local fallback.
+Query embedding and reranking retain the existing MCP model-service configuration.
+
+The NixOS module now exposes `services.agentix.storage` for persistent storage, runtime
+credentials and listener configuration. See the [LAN server/laptop deployment guide](specs/023-lancedb-backend/quickstart.md#server-storage-with-laptop-mcp-clients)
+for the module and MCP configuration. No LanceDB directory mount is required on laptops.

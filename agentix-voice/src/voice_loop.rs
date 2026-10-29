@@ -144,11 +144,7 @@ impl VoiceLoop {
             .await?;
 
         let chat_body: serde_json::Value = chat_resp.json().await?;
-        let response_text = chat_body["reply"]
-            .as_str()
-            .unwrap_or("")
-            .trim()
-            .to_owned();
+        let response_text = chat_body["reply"].as_str().unwrap_or("").trim().to_owned();
 
         if response_text.is_empty() {
             tracing::warn!("empty agent response");
@@ -218,7 +214,9 @@ async fn ensure_voice(client: &reqwest::Client, daemon_url: &str, voice: &str) {
         Ok(resp) if resp.status().is_success() => {
             tracing::info!(voice, "TTS voice model ready");
         }
-        Ok(resp) => tracing::warn!(voice, status = %resp.status(), "failed to pull TTS voice model"),
+        Ok(resp) => {
+            tracing::warn!(voice, status = %resp.status(), "failed to pull TTS voice model")
+        }
         Err(e) => tracing::warn!(voice, error = %e, "failed to pull TTS voice model"),
     }
 }

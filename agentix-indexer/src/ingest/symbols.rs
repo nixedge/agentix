@@ -1602,7 +1602,7 @@ mod tests {
             "expected a class chunk; got {:?}",
             names(&syms)
         );
-        assert!(cls.unwrap().name.contains("MyClass"));
+        assert!(cls.is_some_and(|cls| cls.name.contains("MyClass")));
     }
 
     #[test]
@@ -1666,12 +1666,9 @@ mod tests {
     fn hs_haddock_comment_included_in_content() {
         let src = "module Foo where\n\n-- | Adds one.\nadd1 :: Int -> Int\nadd1 x = x + 1\n";
         let syms = hs(src);
-        let s = syms
-            .iter()
-            .find(|s| s.name == "add1")
-            .expect("expected 'add1'");
         assert!(
-            s.content.contains("-- | Adds one."),
+            syms.iter()
+                .any(|s| s.name == "add1" && s.content.contains("-- | Adds one.")),
             "haddock comment should be in content"
         );
     }
@@ -1680,12 +1677,9 @@ mod tests {
     fn hs_line_numbers_are_1_indexed() {
         let src = "module Foo where\n\nfoo :: Int\nfoo = 42\n";
         let syms = hs(src);
-        let foo = syms
+        assert!(syms
             .iter()
-            .find(|s| s.name == "foo")
-            .expect("expected 'foo'");
-        assert!(foo.start_line >= 1);
-        assert!(foo.end_line >= foo.start_line);
+            .any(|foo| foo.name == "foo" && foo.start_line >= 1 && foo.end_line >= foo.start_line));
     }
 
     #[test]
@@ -1850,11 +1844,9 @@ flagged = 2
     fn rs_doc_comment_included_in_content() {
         let src = "/// Computes something.\nfn compute() -> i32 { 42 }\n";
         let syms = rs(src);
-        let s = syms
+        assert!(syms
             .iter()
-            .find(|s| s.name == "compute")
-            .expect("expected 'compute'");
-        assert!(s.content.contains("/// Computes something."));
+            .any(|s| s.name == "compute" && s.content.contains("/// Computes something.")));
     }
 
     #[test]

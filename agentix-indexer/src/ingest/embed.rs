@@ -172,13 +172,85 @@ pub async fn ensure_embed_model() -> Result<()> {
     Ok(())
 }
 
-/// Format a float vector for PostgreSQL vector literal.
-pub fn vec_literal(v: &[f32]) -> String {
-    format!(
-        "[{}]",
-        v.iter()
-            .map(|x| x.to_string())
-            .collect::<Vec<_>>()
-            .join(",")
-    )
+/// Prepare bounded embedding batches before committing any file in the group.
+pub async fn embed_records(
+    mut records: Vec<agentix_store::Record>,
+) -> Result<Vec<agentix_store::Record>> {
+    let mut jobs = tokio::task::JoinSet::new();
+    for offset in (0..records.len()).step_by(16) {
+        let texts = records
+            .iter()
+            .skip(offset)
+            .take(16)
+            .map(|r| {
+                r.row["content"]
+                    .as_str()
+                    .map(str::to_owned)
+                    .context("missing content")
+            })
+            .collect::<Result<Vec<_>>>()?;
+        jobs.spawn(async move {
+            let refs = texts.iter().map(String::as_str).collect::<Vec<_>>();
+            let vectors = embed_batch(&refs).await?;
+            anyhow::ensure!(
+                vectors.len() == texts.len(),
+                "embedding service returned an incorrect batch length"
+            );
+            Ok::<_, anyhow::Error>((offset, vectors))
+        });
+        if jobs.len() >= 4 {
+            let result = jobs
+                .join_next()
+                .await
+                .context("missing embedding worker")?
+                .context("embedding worker failed")??;
+            apply_vectors(&mut records, result)?;
+        }
+    }
+    while let Some(result) = jobs.join_next().await {
+        apply_vectors(&mut records, result.context("embedding worker failed")??)?;
+    }
+    Ok(records)
+}
+fn apply_vectors(
+    records: &mut [agentix_store::Record],
+    (offset, vectors): (usize, Vec<Vec<f32>>),
+) -> Result<()> {
+    let target = records
+        .get_mut(offset..offset + vectors.len())
+        .context("embedding batch offset mismatch")?;
+    for (record, vector) in target.iter_mut().zip(vectors) {
+        record.embedding = Some(vector);
+    }
+    Ok(())
+}
+pub async fn flush_files(
+    store: &agentix_store::Store,
+    collection: &str,
+    repo: &str,
+    pending: &mut Vec<(String, Vec<agentix_store::Record>)>,
+) -> Result<usize> {
+    let mut files = Vec::new();
+    let mut records = Vec::new();
+    for (file, mut batch) in std::mem::take(pending) {
+        files.push((file, batch.len()));
+        records.append(&mut batch);
+    }
+    let records = embed_records(records).await?;
+    for record in &records {
+        store.validate_record(collection, record)?;
+    }
+    let count = records.len();
+    let mut records = records.into_iter();
+    for (file, size) in files {
+        store
+            .replace_file(
+                collection,
+                repo,
+                &file,
+                records.by_ref().take(size).collect(),
+            )
+            .await?;
+    }
+    Ok(count)
 }

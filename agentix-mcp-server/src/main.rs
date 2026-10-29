@@ -50,8 +50,7 @@ enum Command {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    let dsn =
-        std::env::var("PG_DSN").unwrap_or_else(|_| "postgresql://127.0.0.1:5432/codebase".into());
+    let projects = agentix_store::configured_projects();
 
     match cli.command {
         None => {
@@ -61,7 +60,7 @@ async fn main() -> Result<()> {
                 .with_ansi(false)
                 .init();
 
-            let pool = sqlx::PgPool::connect(&dsn).await?;
+            let pool = agentix_store::Store::from_env().await?;
             let service = tools::CodeSearchServer::new(pool)
                 .serve(stdio())
                 .await
@@ -70,8 +69,8 @@ async fn main() -> Result<()> {
         }
 
         Some(Command::Repos) => {
-            let pool = sqlx::PgPool::connect(&dsn).await?;
-            let repos = db::list_repos(&pool, &[]).await?;
+            let pool = agentix_store::Store::from_env().await?;
+            let repos = db::list_repos(&pool, &projects).await?;
             if repos.is_empty() {
                 println!("No repositories indexed yet.\nRun: just index /path/to/repo");
             } else {
@@ -91,7 +90,7 @@ async fn main() -> Result<()> {
             kind,
             repo,
         }) => {
-            let pool = sqlx::PgPool::connect(&dsn).await?;
+            let pool = agentix_store::Store::from_env().await?;
             let query_vec = embed::embed(&query)
                 .await
                 .map_err(|e| anyhow::anyhow!("Embedding failed (is Ollama running?): {e}"))?;
@@ -103,7 +102,7 @@ async fn main() -> Result<()> {
                 language.as_deref(),
                 kind.as_deref(),
                 repo.as_deref(),
-                &[],
+                &projects,
             )
             .await?;
             println!("{}", fmt::fmt_chunks(&rows, None, "rrf"));
@@ -116,7 +115,7 @@ async fn main() -> Result<()> {
             kind,
             repo,
         }) => {
-            let pool = sqlx::PgPool::connect(&dsn).await?;
+            let pool = agentix_store::Store::from_env().await?;
             let rows = db::bm25_search(
                 &pool,
                 &query,
@@ -124,7 +123,7 @@ async fn main() -> Result<()> {
                 language.as_deref(),
                 kind.as_deref(),
                 repo.as_deref(),
-                &[],
+                &projects,
             )
             .await?;
             println!("{}", fmt::fmt_chunks(&rows, None, "bm25"));

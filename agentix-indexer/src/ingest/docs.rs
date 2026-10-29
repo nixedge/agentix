@@ -1,14 +1,11 @@
+use agentix_store::Store;
 use anyhow::Result;
-use indicatif::{ProgressBar, ProgressStyle};
 use sha2::{Digest, Sha256};
-use sqlx::PgPool;
 use std::collections::HashMap;
 use std::path::Path;
 
-use super::embed::{embed_batch, vec_literal};
 use super::lhs;
 
-const EMBED_BATCH: usize = 8;
 const MAX_CHUNK_CHARS: usize = 4_000;
 const MIN_CHUNK_CHARS: usize = 50;
 
@@ -37,263 +34,135 @@ const SKIP_DIRS: &[&str] = &[
 ];
 
 pub async fn ingest_docs(
-    pool: &PgPool,
+    pool: &Store,
     repo_path: &Path,
     force: bool,
     repo_path_override: Option<&str>,
     project: Option<&str>,
 ) -> Result<()> {
     let repo_str = match repo_path_override {
-        Some(s) => s.to_string(),
+        Some(s) => s.to_owned(),
         None => repo_path.canonicalize()?.to_string_lossy().into_owned(),
     };
-
-    // Discover markdown files matching doc patterns
-    let candidates = collect_docs(repo_path);
-    if candidates.is_empty() {
-        eprintln!("No documentation files found.");
-        return Ok(());
+    let files = collect_docs(repo_path);
+    let mut existing: HashMap<String, serde_json::Value> = HashMap::new();
+    for row in pool
+        .rows("documents", &agentix_store::repo_filter(&repo_str))
+        .await?
+    {
+        if let Some(file) = row["source_path"].as_str() {
+            existing.entry(file.into()).or_insert(row);
+        }
     }
-    eprintln!(
-        "Found {} documentation files in {}",
-        candidates.len(),
-        repo_str
-    );
-
-    if force {
-        let n: i64 = sqlx::query_scalar(
-            "WITH d AS (DELETE FROM documents WHERE repo_path = $1 RETURNING 1)
-             SELECT COUNT(*) FROM d",
-        )
-        .bind(&repo_str)
-        .fetch_one(pool)
-        .await
-        .unwrap_or(0);
-        eprintln!("Cleared {} existing document chunks.", n);
-    }
-
-    // Load existing (source_path → (mtime_nanos, content_hash)) for incremental skip.
-    struct FileInfo {
-        mtime_nanos: Option<i64>,
-        content_hash: String,
-    }
-    let existing: HashMap<String, FileInfo> = if force {
-        HashMap::new()
-    } else {
-        let rows = sqlx::query(
-            "SELECT DISTINCT ON (source_path) source_path, file_mtime, content_hash
-             FROM documents
-             WHERE repo_path = $1 AND content_hash IS NOT NULL
-             ORDER BY source_path, chunk_index",
-        )
-        .bind(&repo_str)
-        .fetch_all(pool)
-        .await
-        .unwrap_or_default();
-        rows.iter()
-            .map(|r| {
-                use sqlx::Row as _;
-                let sp: String = r.get("source_path");
-                let mt: Option<i64> = r.get("file_mtime");
-                let hash: String = r.get("content_hash");
-                (
-                    sp,
-                    FileInfo {
-                        mtime_nanos: mt,
-                        content_hash: hash,
-                    },
-                )
-            })
-            .collect()
-    };
-
-    let bar = ProgressBar::new(candidates.len() as u64);
-    bar.set_style(
-        ProgressStyle::default_bar()
-            .template("{spinner:.green} [{bar:40.cyan/blue}] {pos}/{len} {msg}")
-            .unwrap()
-            .progress_chars("=>-"),
-    );
-
-    let mut pending: Vec<DocRecord> = vec![];
-    let mut total_chunks = 0usize;
-    let mut skipped = 0usize;
-    let mut incremental_skips = 0usize;
-
-    for (abs_path, rel_path, doc_kind) in &candidates {
-        bar.set_message(
-            abs_path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("")
-                .to_string(),
-        );
-
-        // Cheap mtime stat — avoids reading the file at all when unchanged.
-        let file_mtime: Option<i64> = std::fs::metadata(abs_path)
+    let mut seen = std::collections::HashSet::new();
+    let mut total = 0;
+    let mut pending = Vec::new();
+    let mut pending_chunks = 0;
+    let mut unchanged = 0;
+    for (file, relative, kind) in files {
+        seen.insert(relative.clone());
+        let mtime = std::fs::metadata(&file)
             .and_then(|m| m.modified())
             .ok()
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map(|d| d.as_nanos() as i64);
-
-        if !force {
-            if let Some(info) = existing.get(rel_path) {
-                if let (Some(db_mt), Some(fs_mt)) = (info.mtime_nanos, file_mtime) {
-                    if db_mt == fs_mt {
-                        incremental_skips += 1;
-                        bar.inc(1);
-                        continue;
-                    }
-                }
+        let previous = existing.get(&relative);
+        let same_mtime =
+            mtime.is_some() && previous.is_some_and(|p| p["file_mtime"].as_i64() == mtime);
+        let needs_tag = project.is_some_and(|p| {
+            !previous.is_some_and(|r| {
+                r["project"]
+                    .as_array()
+                    .is_some_and(|tags| tags.iter().any(|t| t == p))
+            })
+        });
+        if !force && same_mtime {
+            if needs_tag {
+                pool.retag_file("documents", &repo_str, &relative, project, mtime)
+                    .await?;
             }
+            unchanged += 1;
+            continue;
         }
-
-        let source = match std::fs::read_to_string(abs_path) {
+        let source = match std::fs::read_to_string(&file) {
             Ok(s) => s,
-            Err(_) => {
-                skipped += 1;
-                bar.inc(1);
+            Err(e) => {
+                eprintln!("Skipping {}: {e}", file.display());
                 continue;
             }
         };
-
-        let file_hash = sha256_hex(&source);
-
-        if !force {
-            if let Some(info) = existing.get(rel_path) {
-                if info.content_hash == file_hash {
-                    // Mtime drifted but content unchanged — update mtime for future fast path.
-                    let _ = sqlx::query(
-                        "UPDATE documents SET file_mtime = $1
-                         WHERE repo_path = $2 AND source_path = $3",
-                    )
-                    .bind(file_mtime)
-                    .bind(&repo_str)
-                    .bind(rel_path)
-                    .execute(pool)
-                    .await;
-                    incremental_skips += 1;
-                    bar.inc(1);
-                    continue;
-                }
-            }
+        let hash = sha256_hex(&source);
+        if !force && previous.is_some_and(|p| p["content_hash"].as_str() == Some(hash.as_str())) {
+            pool.retag_file("documents", &repo_str, &relative, project, mtime)
+                .await?;
+            unchanged += 1;
+            continue;
         }
-
-        let file_stem = abs_path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-
-        if doc_kind == "lhs_prose" {
-            // Extract prose blocks from the .lhs file and emit each paragraph
-            // as a separate DocRecord with an optional adjacent-code header.
+        let stem = file
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or_default();
+        let title = if kind == "changelog" || kind == "lhs_prose" {
+            stem.to_owned()
+        } else {
+            extract_title(&source, stem)
+        };
+        let mut chunks = Vec::new();
+        if kind == "lhs_prose" {
             let parsed = lhs::parse_lhs(&source);
-            let blocks = &parsed.blocks;
-            let mut chunk_idx = 0i32;
-
-            for (block_idx, block) in blocks.iter().enumerate() {
+            for (i, block) in parsed.blocks.iter().enumerate() {
                 if block.kind != lhs::BlockKind::Prose {
                     continue;
                 }
-                // Find the nearest Code block that follows this Prose block.
-                let next_code = blocks[block_idx + 1..]
+                let next = parsed.blocks[i + 1..]
                     .iter()
                     .find(|b| b.kind == lhs::BlockKind::Code);
-
-                for para in chunk_by_paragraph(&block.content) {
-                    if para.content.trim().len() < MIN_CHUNK_CHARS {
+                for paragraph in chunk_by_paragraph(&block.content) {
+                    if paragraph.content.trim().len() < MIN_CHUNK_CHARS {
                         continue;
                     }
-                    let content = match next_code {
-                        Some(code) => format!(
+                    let content = if let Some(code) = next {
+                        format!(
                             "[Adjacent code: lines {}-{}]\n\n{}",
-                            code.start_line, code.end_line, para.content
-                        ),
-                        None => para.content.clone(),
+                            code.start_line, code.end_line, paragraph.content
+                        )
+                    } else {
+                        paragraph.content
                     };
-                    let preview: String = content.split_whitespace().collect::<Vec<_>>().join(" ");
-                    let preview = truncate_to_char_boundary(&preview, 280);
-                    pending.push(DocRecord {
-                        repo_path: repo_str.clone(),
-                        source_path: rel_path.clone(),
-                        chunk_index: chunk_idx,
-                        doc_kind: doc_kind.clone(),
-                        title: file_stem.to_string(),
+                    chunks.push(MarkdownChunk {
+                        index: chunks.len() as i32,
                         content,
-                        preview: preview.to_string(),
-                        content_hash: file_hash.clone(),
-                        file_mtime,
-                        project: project.map(|s| s.to_string()),
                     });
-                    chunk_idx += 1;
-                    if pending.len() >= EMBED_BATCH {
-                        flush_docs(&mut pending, pool, &mut total_chunks).await?;
-                    }
                 }
             }
-            bar.inc(1);
-            continue;
-        }
-
-        let title = if doc_kind == "changelog" {
-            file_stem.to_string()
+        } else if kind == "changelog" {
+            chunks = chunk_by_paragraph(&source);
         } else {
-            extract_title(&source, file_stem)
-        };
-        let chunks = if doc_kind == "changelog" {
-            chunk_by_paragraph(&source)
-        } else {
-            chunk_markdown(&source)
-        };
-
-        for chunk in chunks {
-            if chunk.content.trim().len() < MIN_CHUNK_CHARS {
-                continue;
-            }
-            let preview: String = chunk
-                .content
-                .split_whitespace()
-                .collect::<Vec<_>>()
-                .join(" ");
-            let preview = truncate_to_char_boundary(&preview, 280);
-            pending.push(DocRecord {
-                repo_path: repo_str.clone(),
-                source_path: rel_path.clone(),
-                chunk_index: chunk.index,
-                doc_kind: doc_kind.clone(),
-                title: title.clone(),
-                content: chunk.content,
-                preview: preview.to_string(),
-                content_hash: file_hash.clone(),
-                file_mtime,
-                project: project.map(|s| s.to_string()),
-            });
-            if pending.len() >= EMBED_BATCH {
-                flush_docs(&mut pending, pool, &mut total_chunks).await?;
-            }
+            chunks = chunk_markdown(&source);
         }
-        bar.inc(1);
+        let records=chunks.into_iter().filter(|c|c.content.trim().len()>=MIN_CHUNK_CHARS).map(|chunk|{
+            let preview=chunk.content.split_whitespace().collect::<Vec<_>>().join(" ");
+            agentix_store::Record{row:serde_json::json!({"repo_path":repo_str,"source_path":relative,"chunk_index":chunk.index,
+                "doc_kind":kind,"title":title,"content":chunk.content,"preview":truncate_to_char_boundary(&preview,280),
+                "content_hash":hash,"file_mtime":mtime,"project":project.into_iter().collect::<Vec<_>>(),"indexed_at":chrono::Utc::now().to_rfc3339()}),embedding:None}
+        }).collect::<Vec<_>>();
+        pending_chunks += records.len();
+        pending.push((relative, records));
+        if pending_chunks >= 16 {
+            total += super::embed::flush_files(pool, "documents", &repo_str, &mut pending).await?;
+            pending_chunks = 0;
+        }
     }
-    flush_docs(&mut pending, pool, &mut total_chunks).await?;
-    bar.finish_and_clear();
-
-    eprintln!(
-        "Done. Indexed {} doc chunks ({} files unchanged, {} skipped).",
-        total_chunks, incremental_skips, skipped
-    );
+    total += super::embed::flush_files(pool, "documents", &repo_str, &mut pending).await?;
+    for file in existing.keys() {
+        if !seen.contains(file) && (force || !repo_path.join(file).exists()) {
+            pool.replace_file("documents", &repo_str, file, vec![])
+                .await?;
+        }
+    }
+    pool.maintain_if_needed("documents").await?;
+    eprintln!("Done. Indexed {total} doc chunks ({unchanged} files unchanged).");
     Ok(())
-}
-
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-struct DocRecord {
-    repo_path: String,
-    source_path: String,
-    chunk_index: i32,
-    doc_kind: String,
-    title: String,
-    content: String,
-    preview: String,
-    content_hash: String,
-    file_mtime: Option<i64>,
-    project: Option<String>,
 }
 
 struct MarkdownChunk {
@@ -496,53 +365,6 @@ fn split_on_heading(text: &str, prefix: &str) -> Vec<String> {
 
 // ── Flush to DB ───────────────────────────────────────────────────────────────
 
-async fn flush_docs(pending: &mut Vec<DocRecord>, pool: &PgPool, total: &mut usize) -> Result<()> {
-    if pending.is_empty() {
-        return Ok(());
-    }
-    let texts: Vec<&str> = pending.iter().map(|d| d.content.as_str()).collect();
-    let embeddings = embed_batch(&texts).await?;
-
-    for (rec, emb) in pending.iter().zip(embeddings.iter()) {
-        let project_arr: Option<Vec<String>> = rec.project.as_ref().map(|p| vec![p.clone()]);
-        sqlx::query(
-            "INSERT INTO documents
-                 (repo_path, source_path, chunk_index, doc_kind, title,
-                  content, preview, content_hash, file_mtime, embedding, project)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::vector, $11::text[])
-             ON CONFLICT (repo_path, source_path, chunk_index) DO UPDATE
-                 SET doc_kind     = EXCLUDED.doc_kind,
-                     title        = EXCLUDED.title,
-                     content      = EXCLUDED.content,
-                     preview      = EXCLUDED.preview,
-                     content_hash = EXCLUDED.content_hash,
-                     file_mtime   = EXCLUDED.file_mtime,
-                     embedding    = EXCLUDED.embedding,
-                     project      = (SELECT array_agg(DISTINCT p)
-                                     FROM unnest(coalesce(documents.project, '{}'::text[])
-                                              || coalesce(EXCLUDED.project, '{}'::text[])) p),
-                     indexed_at   = NOW()",
-        )
-        .bind(&rec.repo_path)
-        .bind(&rec.source_path)
-        .bind(rec.chunk_index)
-        .bind(&rec.doc_kind)
-        .bind(&rec.title)
-        .bind(&rec.content)
-        .bind(&rec.preview)
-        .bind(&rec.content_hash)
-        .bind(rec.file_mtime)
-        .bind(vec_literal(emb))
-        .bind(project_arr)
-        .execute(pool)
-        .await?;
-    }
-
-    *total += pending.len();
-    pending.clear();
-    Ok(())
-}
-
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
 fn sha256_hex(s: &str) -> String {
@@ -649,14 +471,11 @@ mod tests {
         let records = extract_prose_records(src);
 
         // The first prose record (before the code block) should carry the header.
-        let first = records
-            .iter()
-            .find(|(_, c)| c.starts_with("[Adjacent code:"))
-            .expect("expected at least one record with [Adjacent code:] header");
         assert!(
-            first.1.contains("[Adjacent code: lines"),
-            "header not found: {:?}",
-            first.1
+            records
+                .iter()
+                .any(|(_, content)| content.starts_with("[Adjacent code: lines")),
+            "expected a prose record with an adjacent-code line header"
         );
     }
 
@@ -672,11 +491,11 @@ mod tests {
             "It should be emitted without an [Adjacent code:] header.\n",
         );
         let records = extract_prose_records(src);
-        let trailing = records.last().expect("expected at least one record");
         assert!(
-            !trailing.1.starts_with("[Adjacent code:"),
-            "trailing prose should not have adjacent-code header: {:?}",
-            trailing.1
+            records
+                .last()
+                .is_some_and(|(_, content)| !content.starts_with("[Adjacent code:")),
+            "expected trailing prose without an adjacent-code header"
         );
     }
 

@@ -40,8 +40,7 @@
         # ALSA development libs for cpal (agentix-voice, agentix-whisper)
         alsa-lib
         alsa-lib.dev
-        # PostgreSQL client (matches server version)
-        postgresql_17
+        protobuf
         # Ollama
         ollama
         # Python + uv for ingest and MCP server scripts
@@ -88,13 +87,12 @@
         echo "Agentic RAG Stack"
         echo ""
         echo "Services:"
-        echo "  nix run .#dev              # Start PostgreSQL (ParadeDB) + Ollama"
+        echo "  nix run .#dev              # Start Ollama + gateway"
         echo ""
         echo "Indexing:"
         echo "  just index /path/to/repo   # Index a codebase"
         echo ""
-        echo "Database:"
-        echo "  psql postgres://127.0.0.1:5432/codebase"
+        echo "Local search index: AGENTIX_LANCE_PATH (default: XDG data directory)"
         echo ""
         echo "MCP server:"
         echo "  just build                 # Build the Rust binary"

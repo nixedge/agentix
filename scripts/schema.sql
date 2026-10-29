@@ -1,3 +1,4 @@
+-- Legacy PostgreSQL source schema: retained for migration fixtures/history. New installations use agentix-store/LanceDB.
 -- Agentic RAG schema
 -- Safe to run on an existing database: all statements use IF NOT EXISTS / IF NOT EXISTS guards.
 

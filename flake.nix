@@ -1,5 +1,5 @@
 {
-  description = "Agentic RAG: hybrid code search via ParadeDB (pg_search + pgvector) + Ollama + MCP";
+  description = "Agentic RAG: hybrid code search via local LanceDB (BM25 + HNSW) + Ollama + MCP";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";

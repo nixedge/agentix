@@ -24,7 +24,9 @@ pub async fn handler(
     Json(req): Json<SpeechRequest>,
 ) -> impl IntoResponse {
     let model_path = state.piper_voices_dir.join(format!("{}.onnx", req.model));
-    let json_path = state.piper_voices_dir.join(format!("{}.onnx.json", req.model));
+    let json_path = state
+        .piper_voices_dir
+        .join(format!("{}.onnx.json", req.model));
 
     if !model_path.exists() {
         return (
@@ -33,7 +35,7 @@ pub async fn handler(
                 "error": format!("voice model not found: {}", model_path.display())
             })),
         )
-        .into_response();
+            .into_response();
     }
 
     let sample_rate = read_sample_rate(&json_path).unwrap_or(22050);
@@ -51,7 +53,7 @@ pub async fn handler(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({"error": format!("piper spawn failed: {e}")})),
             )
-            .into_response();
+                .into_response();
         }
     };
 
@@ -67,7 +69,7 @@ pub async fn handler(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({"error": format!("piper wait failed: {e}")})),
             )
-            .into_response();
+                .into_response();
         }
     };
 
@@ -76,7 +78,7 @@ pub async fn handler(
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({"error": "piper synthesis failed"})),
         )
-        .into_response();
+            .into_response();
     }
 
     match encode_wav_i16(&output.stdout, sample_rate) {
@@ -89,7 +91,7 @@ pub async fn handler(
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({"error": format!("WAV encoding failed: {e}")})),
         )
-        .into_response(),
+            .into_response(),
     }
 }
 

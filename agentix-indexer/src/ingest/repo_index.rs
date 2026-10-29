@@ -1,6 +1,6 @@
+use agentix_store::Store;
 use anyhow::Result;
-use sqlx::PgPool;
-
+use serde_json::json;
 pub struct RepoMeta<'a> {
     pub source_kind: &'a str,
     pub package_name: Option<&'a str>,
@@ -9,34 +9,11 @@ pub struct RepoMeta<'a> {
     pub git_rev: Option<&'a str>,
     pub project: Option<&'a str>,
 }
-
-pub async fn upsert_repo(pool: &PgPool, repo_path: &str, meta: &RepoMeta<'_>) -> Result<()> {
-    let project_arr: Option<Vec<String>> = meta.project.map(|p| vec![p.to_string()]);
-    sqlx::query(
-        r#"
-        INSERT INTO repo_index
-            (repo_path, source_kind, package_name, version, git_url, git_rev, project, indexed_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7::text[], NOW())
-        ON CONFLICT (repo_path) DO UPDATE SET
-            source_kind  = EXCLUDED.source_kind,
-            package_name = EXCLUDED.package_name,
-            version      = EXCLUDED.version,
-            git_url      = EXCLUDED.git_url,
-            git_rev      = EXCLUDED.git_rev,
-            project      = (SELECT array_agg(DISTINCT p)
-                            FROM unnest(coalesce(repo_index.project, '{}'::text[])
-                                     || coalesce(EXCLUDED.project, '{}'::text[])) p),
-            indexed_at   = NOW()
-        "#,
-    )
-    .bind(repo_path)
-    .bind(meta.source_kind)
-    .bind(meta.package_name)
-    .bind(meta.version)
-    .bind(meta.git_url)
-    .bind(meta.git_rev)
-    .bind(project_arr)
-    .execute(pool)
-    .await?;
-    Ok(())
+pub async fn upsert_repo(pool: &Store, repo_path: &str, meta: &RepoMeta<'_>) -> Result<()> {
+    pool.update_metadata("repo_index",repo_path,|previous|{
+        let mut projects=previous.as_ref().and_then(|v|v["project"].as_array()).cloned().unwrap_or_default();
+        if let Some(project)=meta.project{if !projects.iter().any(|p|p==project){projects.push(json!(project));}}
+        Ok(json!({"repo_path":repo_path,"source_kind":meta.source_kind,"package_name":meta.package_name,"version":meta.version,
+            "git_url":meta.git_url,"git_rev":meta.git_rev,"project":projects,"indexed_at":chrono::Utc::now().to_rfc3339()}))
+    }).await
 }

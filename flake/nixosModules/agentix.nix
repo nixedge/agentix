@@ -1,4 +1,4 @@
-{ ... }: {
+{...}: {
   flake.nixosModules.agentix = {
     config,
     lib,
@@ -13,6 +13,48 @@
     anyEnabled = cfg.daemon.enable || cfg.llama.enable || cfg.whisper.enable || cfg.agent.enable;
   in {
     options.services.agentix = {
+      storage = {
+        enable = lib.mkEnableOption "Agentix shared LanceDB storage API";
+        package = lib.mkOption {
+          type = lib.types.package;
+          description = "The agentix-store-server package to use.";
+        };
+        dataDir = lib.mkOption {
+          type = lib.types.str;
+          default = "/var/lib/agentix-store/index";
+          description = "Absolute persistent directory owned by the storage service.";
+        };
+        host = lib.mkOption {
+          type = lib.types.str;
+          default = "127.0.0.1";
+          description = "Listen address. Use a private address or a TLS reverse proxy for remote access.";
+        };
+        port = lib.mkOption {
+          type = lib.types.port;
+          default = 8091;
+          description = "Storage HTTP API port.";
+        };
+        tokenFile = lib.mkOption {
+          type = lib.types.nullOr lib.types.path;
+          default = null;
+          description = "Optional runtime bearer-token file. Null allows LAN access without authentication. When set, use a /run secrets path, never a Nix store secret.";
+        };
+        embedModel = lib.mkOption {
+          type = lib.types.str;
+          default = "hf.co/jinaai/jina-code-embeddings-1.5b-GGUF:Q8_0";
+          description = "Embedding identity checked against the index and every client.";
+        };
+        embedDimensions = lib.mkOption {
+          type = lib.types.ints.positive;
+          default = 1536;
+          description = "Stored embedding dimensions; must match all clients.";
+        };
+        openFirewall = lib.mkOption {
+          type = lib.types.bool;
+          default = false;
+          description = "Open the API TCP port. Prefer interface-scoped firewall rules for a private network.";
+        };
+      };
       socketDir = lib.mkOption {
         type = lib.types.str;
         default = "/run/agentix";
@@ -91,7 +133,7 @@
         preloadedModels = lib.mkOption {
           type = lib.types.listOf lib.types.str;
           default = [];
-          example = [ "registry.ollama.ai/library/deepseek-r1/7b" ];
+          example = ["registry.ollama.ai/library/deepseek-r1/7b"];
           description = ''
             Models to pull (if not already present) and load into VRAM at startup.
             The API can load and unload models freely after startup.
@@ -205,7 +247,7 @@
         preloadedModels = lib.mkOption {
           type = lib.types.listOf lib.types.str;
           default = [];
-          example = [ "ggml-base.en.bin" ];
+          example = ["ggml-base.en.bin"];
           description = ''
             Models to pull (if not already present) and load at startup.
             The API can load and unload models freely after startup.
@@ -227,6 +269,59 @@
     };
 
     config = lib.mkMerge [
+      (lib.mkIf cfg.storage.enable {
+        assertions = [
+          {
+            assertion = lib.hasPrefix "/" cfg.storage.dataDir;
+            message = "services.agentix.storage.dataDir must be absolute.";
+          }
+          {
+            assertion = cfg.storage.tokenFile == null || !(lib.hasPrefix "/nix/store/" (toString cfg.storage.tokenFile));
+            message = "services.agentix.storage.tokenFile must refer to a runtime secret outside the Nix store.";
+          }
+        ];
+        users.groups.agentix-store = {};
+        users.users.agentix-store = {
+          isSystemUser = true;
+          group = "agentix-store";
+          home = "/var/lib/agentix-store";
+        };
+        systemd.tmpfiles.rules = ["d ${cfg.storage.dataDir} 0750 agentix-store agentix-store -"];
+        networking.firewall.allowedTCPPorts = lib.optionals cfg.storage.openFirewall [cfg.storage.port];
+        systemd.services.agentix-store = {
+          description = "Agentix shared LanceDB storage API";
+          wantedBy = ["multi-user.target"];
+          after = ["network.target"];
+          environment =
+            {
+              AGENTIX_LANCE_PATH = cfg.storage.dataDir;
+              AGENTIX_STORE_HOST = cfg.storage.host;
+              AGENTIX_STORE_PORT = toString cfg.storage.port;
+              EMBED_MODEL = cfg.storage.embedModel;
+              EMBED_DIMENSIONS = toString cfg.storage.embedDimensions;
+            }
+            // lib.optionalAttrs (cfg.storage.tokenFile != null) {
+              AGENTIX_STORE_TOKEN_FILE = "%d/store-token";
+            };
+          serviceConfig = {
+            ExecStart = "${cfg.storage.package}/bin/agentix-store-server";
+            User = "agentix-store";
+            Group = "agentix-store";
+            StateDirectory = "agentix-store";
+            StateDirectoryMode = "0750";
+            LoadCredential = lib.mkIf (cfg.storage.tokenFile != null) "store-token:${cfg.storage.tokenFile}";
+            Restart = "on-failure";
+            RestartSec = "5s";
+            TimeoutStopSec = "300s";
+            UMask = "0027";
+            NoNewPrivileges = true;
+            PrivateTmp = true;
+            ProtectHome = true;
+            ProtectSystem = "strict";
+            ReadWritePaths = [cfg.storage.dataDir];
+          };
+        };
+      })
       # ── Shared: user, group, socket dir, model store ─────────────────────────
       (lib.mkIf anyEnabled {
         users.users.agentix = {

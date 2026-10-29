@@ -1,9 +1,9 @@
+use agentix_store::Store;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use sha2::{Digest, Sha256};
-use sqlx::PgPool;
 
-use super::embed::{embed_batch, vec_literal};
+use super::embed::embed_batch;
 
 const GITHUB_API: &str = "https://api.github.com";
 const PAGE_SIZE: usize = 100;
@@ -13,7 +13,7 @@ const MIN_BODY_LEN: usize = 20;
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 pub async fn ingest_github(
-    pool: &PgPool,
+    pool: &Store,
     repo: &str,
     force: bool,
     streams: &[String],
@@ -31,6 +31,14 @@ pub async fn ingest_github(
         .timeout(std::time::Duration::from_secs(30))
         .build()?;
 
+    let mut failures = Vec::new();
+    anyhow::ensure!(
+        streams.iter().all(|s| matches!(
+            s.as_str(),
+            "all" | "issues" | "prs" | "issue_comments" | "pr_comments"
+        )),
+        "unknown GitHub stream"
+    );
     let do_all = streams.is_empty() || streams.iter().any(|s| s == "all");
 
     if do_all || streams.iter().any(|s| s == "issues") {
@@ -38,7 +46,8 @@ pub async fn ingest_github(
         match ingest_issues(pool, &http, &token, repo, force).await {
             Ok((n, s)) => eprintln!("  ✓ {} upserted, {} skipped", n, s),
             Err(e) => {
-                record_error(pool, "github", &format!("{repo}:issues"), &e.to_string()).await;
+                record_error(pool, "github", &format!("{repo}:issues"), &e.to_string()).await?;
+                failures.push(e.to_string());
                 eprintln!("  ✗ issues failed: {e}");
             }
         }
@@ -49,7 +58,8 @@ pub async fn ingest_github(
         match ingest_prs(pool, &http, &token, repo, force).await {
             Ok((n, s)) => eprintln!("  ✓ {} upserted, {} skipped", n, s),
             Err(e) => {
-                record_error(pool, "github", &format!("{repo}:prs"), &e.to_string()).await;
+                record_error(pool, "github", &format!("{repo}:prs"), &e.to_string()).await?;
+                failures.push(e.to_string());
                 eprintln!("  ✗ PRs failed: {e}");
             }
         }
@@ -66,7 +76,8 @@ pub async fn ingest_github(
                     &format!("{repo}:issue_comments"),
                     &e.to_string(),
                 )
-                .await;
+                .await?;
+                failures.push(e.to_string());
                 eprintln!("  ✗ issue comments failed: {e}");
             }
         }
@@ -83,12 +94,18 @@ pub async fn ingest_github(
                     &format!("{repo}:pr_comments"),
                     &e.to_string(),
                 )
-                .await;
+                .await?;
+                failures.push(e.to_string());
                 eprintln!("  ✗ PR review comments failed: {e}");
             }
         }
     }
 
+    anyhow::ensure!(
+        failures.is_empty(),
+        "GitHub sync failed: {}",
+        failures.join("; ")
+    );
     Ok(())
 }
 
@@ -173,55 +190,33 @@ fn extract_next_link(link_header: &str) -> Option<String> {
 
 // ── Sync state helpers ────────────────────────────────────────────────────────
 
-async fn get_watermark(pool: &PgPool, source: &str, scope: &str) -> Option<String> {
-    sqlx::query_scalar::<_, String>(
-        "SELECT watermark FROM sync_state WHERE source_name = $1 AND scope_key = $2",
-    )
-    .bind(source)
-    .bind(scope)
-    .fetch_optional(pool)
+async fn get_watermark(pool: &Store, source: &str, scope: &str) -> Result<Option<String>> {
+    Ok(pool
+        .metadata("sync_state", &format!("{source}:{scope}"))
+        .await?
+        .and_then(|r| r["watermark"].as_str().map(str::to_owned)))
+}
+async fn set_watermark(pool: &Store, source: &str, scope: &str, watermark: &str) -> Result<()> {
+    let key = format!("{source}:{scope}");
+    let now = Utc::now().to_rfc3339();
+    pool.update_metadata("sync_state",&key,|previous|{
+        let watermark=latest_ts(previous.as_ref().and_then(|r|r["watermark"].as_str()),Some(watermark));
+        Ok(serde_json::json!({"id":key,"source_name":source,"scope_key":scope,"watermark":watermark,
+            "last_synced_at":now,"updated_at":now,"error_count":0,"last_error":null}))
+    }).await
+}
+async fn record_error(pool: &Store, source: &str, scope: &str, error: &str) -> Result<()> {
+    let key = format!("{source}:{scope}");
+    pool.update_metadata("sync_state", &key, |previous| {
+        let mut row = previous.unwrap_or_else(
+            || serde_json::json!({"id":key,"source_name":source,"scope_key":scope}),
+        );
+        row["error_count"] = serde_json::json!(row["error_count"].as_u64().unwrap_or(0) + 1);
+        row["last_error"] = serde_json::json!(error.chars().take(1000).collect::<String>());
+        row["updated_at"] = serde_json::json!(Utc::now().to_rfc3339());
+        Ok(row)
+    })
     .await
-    .ok()
-    .flatten()
-}
-
-async fn set_watermark(pool: &PgPool, source: &str, scope: &str, watermark: &str) {
-    let id = format!("{source}:{scope}");
-    let _ = sqlx::query(
-        "INSERT INTO sync_state (id, source_name, scope_key, watermark, last_synced_at, updated_at)
-         VALUES ($1, $2, $3, $4, NOW(), NOW())
-         ON CONFLICT (source_name, scope_key) DO UPDATE
-             SET watermark      = EXCLUDED.watermark,
-                 last_synced_at = NOW(),
-                 updated_at     = NOW(),
-                 error_count    = 0,
-                 last_error     = NULL",
-    )
-    .bind(&id)
-    .bind(source)
-    .bind(scope)
-    .bind(watermark)
-    .execute(pool)
-    .await;
-}
-
-async fn record_error(pool: &PgPool, source: &str, scope: &str, error: &str) {
-    let id = format!("{source}:{scope}");
-    let truncated = &error[..error.len().min(1000)];
-    let _ = sqlx::query(
-        "INSERT INTO sync_state (id, source_name, scope_key, error_count, last_error, updated_at)
-         VALUES ($1, $2, $3, 1, $4, NOW())
-         ON CONFLICT (source_name, scope_key) DO UPDATE
-             SET error_count = sync_state.error_count + 1,
-                 last_error  = EXCLUDED.last_error,
-                 updated_at  = NOW()",
-    )
-    .bind(&id)
-    .bind(source)
-    .bind(scope)
-    .bind(truncated)
-    .execute(pool)
-    .await;
 }
 
 // ── Content helpers ───────────────────────────────────────────────────────────
@@ -275,7 +270,7 @@ fn labels_str(labels: &serde_json::Value) -> String {
 // ── Issues ────────────────────────────────────────────────────────────────────
 
 async fn ingest_issues(
-    pool: &PgPool,
+    pool: &Store,
     http: &reqwest::Client,
     token: &str,
     repo: &str,
@@ -285,7 +280,7 @@ async fn ingest_issues(
     let watermark = if force {
         None
     } else {
-        get_watermark(pool, "github", &scope).await
+        get_watermark(pool, "github", &scope).await?
     };
 
     let mut params = vec![("state", "all"), ("sort", "updated"), ("direction", "asc")];
@@ -327,14 +322,14 @@ async fn ingest_issues(
     flush_issues(&mut pending, pool, repo, &mut upserted, &mut skipped).await?;
 
     if let Some(wm) = &new_watermark {
-        set_watermark(pool, "github", &scope, wm).await;
+        set_watermark(pool, "github", &scope, wm).await?;
     }
     Ok((upserted, skipped))
 }
 
 async fn flush_issues(
     pending: &mut Vec<serde_json::Value>,
-    pool: &PgPool,
+    pool: &Store,
     repo: &str,
     upserted: &mut usize,
     _skipped: &mut usize,
@@ -360,40 +355,12 @@ async fn flush_issues(
             issue["body"].as_str(),
         );
         let hash = content_hash(&content);
-        sqlx::query(
-            "INSERT INTO github_issues
-                 (repo, number, state, title, body, author, labels, content,
-                  created_at, updated_at, closed_at, content_hash, embedding)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::vector)
-             ON CONFLICT (repo, number) DO UPDATE
-                 SET state        = EXCLUDED.state,
-                     title        = EXCLUDED.title,
-                     body         = EXCLUDED.body,
-                     author       = EXCLUDED.author,
-                     labels       = EXCLUDED.labels,
-                     content      = EXCLUDED.content,
-                     updated_at   = EXCLUDED.updated_at,
-                     closed_at    = EXCLUDED.closed_at,
-                     content_hash = EXCLUDED.content_hash,
-                     embedding    = EXCLUDED.embedding,
-                     indexed_at   = NOW()
-                 WHERE github_issues.content_hash IS DISTINCT FROM EXCLUDED.content_hash",
-        )
-        .bind(repo)
-        .bind(issue["number"].as_i64().unwrap_or(0) as i32)
-        .bind(issue["state"].as_str())
-        .bind(issue["title"].as_str().unwrap_or(""))
-        .bind(issue["body"].as_str().unwrap_or(""))
-        .bind(issue["user"]["login"].as_str())
-        .bind(labels_str(&issue["labels"]))
-        .bind(&content)
-        .bind(parse_ts(issue["created_at"].as_str()))
-        .bind(parse_ts(issue["updated_at"].as_str()))
-        .bind(parse_ts(issue["closed_at"].as_str()))
-        .bind(&hash)
-        .bind(vec_literal(emb))
-        .execute(pool)
-        .await?;
+        pool.put("github_issues",vec![agentix_store::Record{row:serde_json::json!({
+            "repo":repo,"number":issue["number"],"state":issue["state"],"title":issue["title"],"body":issue["body"],
+            "author":issue["user"]["login"],"labels":labels_str(&issue["labels"]),"content":content,
+            "created_at":issue["created_at"],"updated_at":issue["updated_at"],"closed_at":issue["closed_at"],
+            "content_hash":hash,"indexed_at":Utc::now().to_rfc3339()}),embedding:Some(emb.clone())}]).await?;
+
         *upserted += 1;
     }
     pending.clear();
@@ -403,7 +370,7 @@ async fn flush_issues(
 // ── Pull Requests ─────────────────────────────────────────────────────────────
 
 async fn ingest_prs(
-    pool: &PgPool,
+    pool: &Store,
     http: &reqwest::Client,
     token: &str,
     repo: &str,
@@ -413,7 +380,7 @@ async fn ingest_prs(
     let watermark = if force {
         None
     } else {
-        get_watermark(pool, "github", &scope).await
+        get_watermark(pool, "github", &scope).await?
     };
 
     let params = [("state", "all"), ("sort", "updated"), ("direction", "asc")];
@@ -463,14 +430,14 @@ async fn ingest_prs(
     flush_prs(&mut pending, pool, repo, &mut upserted).await?;
 
     if let Some(wm) = &new_watermark {
-        set_watermark(pool, "github", &scope, wm).await;
+        set_watermark(pool, "github", &scope, wm).await?;
     }
     Ok((upserted, skipped))
 }
 
 async fn flush_prs(
     pending: &mut Vec<serde_json::Value>,
-    pool: &PgPool,
+    pool: &Store,
     repo: &str,
     upserted: &mut usize,
 ) -> Result<()> {
@@ -492,43 +459,20 @@ async fn flush_prs(
         } else {
             pr["state"].as_str().unwrap_or("open")
         };
-        sqlx::query(
-            "INSERT INTO github_prs
-                 (repo, number, state, title, body, author, labels,
-                  base_branch, head_branch, content,
-                  created_at, updated_at, merged_at, content_hash, embedding)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::vector)
-             ON CONFLICT (repo, number) DO UPDATE
-                 SET state        = EXCLUDED.state,
-                     title        = EXCLUDED.title,
-                     body         = EXCLUDED.body,
-                     author       = EXCLUDED.author,
-                     labels       = EXCLUDED.labels,
-                     content      = EXCLUDED.content,
-                     updated_at   = EXCLUDED.updated_at,
-                     merged_at    = EXCLUDED.merged_at,
-                     content_hash = EXCLUDED.content_hash,
-                     embedding    = EXCLUDED.embedding,
-                     indexed_at   = NOW()
-                 WHERE github_prs.content_hash IS DISTINCT FROM EXCLUDED.content_hash",
+        pool.put(
+            "github_prs",
+            vec![agentix_store::Record {
+                row: serde_json::json!({
+            "repo":repo,"number":pr["number"],"state":state,"title":pr["title"],"body":pr["body"],
+            "author":pr["user"]["login"],"labels":labels_str(&pr["labels"]),"content":content,
+            "base_branch":pr["base"]["ref"],"head_branch":pr["head"]["ref"],
+            "created_at":pr["created_at"],"updated_at":pr["updated_at"],"merged_at":pr["merged_at"],
+            "content_hash":hash,"indexed_at":Utc::now().to_rfc3339()}),
+                embedding: Some(emb.clone()),
+            }],
         )
-        .bind(repo)
-        .bind(pr["number"].as_i64().unwrap_or(0) as i32)
-        .bind(state)
-        .bind(pr["title"].as_str().unwrap_or(""))
-        .bind(pr["body"].as_str().unwrap_or(""))
-        .bind(pr["user"]["login"].as_str())
-        .bind(labels_str(&pr["labels"]))
-        .bind(pr["base"]["ref"].as_str())
-        .bind(pr["head"]["ref"].as_str())
-        .bind(&content)
-        .bind(parse_ts(pr["created_at"].as_str()))
-        .bind(parse_ts(pr["updated_at"].as_str()))
-        .bind(parse_ts(pr["merged_at"].as_str()))
-        .bind(&hash)
-        .bind(vec_literal(emb))
-        .execute(pool)
         .await?;
+
         *upserted += 1;
     }
     pending.clear();
@@ -538,7 +482,7 @@ async fn flush_prs(
 // ── Issue comments ────────────────────────────────────────────────────────────
 
 async fn ingest_issue_comments(
-    pool: &PgPool,
+    pool: &Store,
     http: &reqwest::Client,
     token: &str,
     repo: &str,
@@ -548,7 +492,7 @@ async fn ingest_issue_comments(
     let watermark = if force {
         None
     } else {
-        get_watermark(pool, "github", &scope).await
+        get_watermark(pool, "github", &scope).await?
     };
 
     let mut params = vec![("sort", "updated"), ("direction", "asc")];
@@ -597,14 +541,14 @@ async fn ingest_issue_comments(
     flush_issue_comments(&mut pending, pool, repo, &mut upserted).await?;
 
     if let Some(wm) = &new_watermark {
-        set_watermark(pool, "github", &scope, wm).await;
+        set_watermark(pool, "github", &scope, wm).await?;
     }
     Ok(upserted)
 }
 
 async fn flush_issue_comments(
     pending: &mut Vec<serde_json::Value>,
-    pool: &PgPool,
+    pool: &Store,
     repo: &str,
     upserted: &mut usize,
 ) -> Result<()> {
@@ -626,31 +570,11 @@ async fn flush_issue_comments(
             .unwrap_or(0);
         let hash = content_hash(body);
 
-        sqlx::query(
-            "INSERT INTO github_issue_comments
-                 (repo, issue_number, comment_id, author, content,
-                  created_at, updated_at, content_hash, embedding)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::vector)
-             ON CONFLICT (repo, comment_id) DO UPDATE
-                 SET author       = EXCLUDED.author,
-                     content      = EXCLUDED.content,
-                     updated_at   = EXCLUDED.updated_at,
-                     content_hash = EXCLUDED.content_hash,
-                     embedding    = EXCLUDED.embedding,
-                     indexed_at   = NOW()
-                 WHERE github_issue_comments.content_hash IS DISTINCT FROM EXCLUDED.content_hash",
-        )
-        .bind(repo)
-        .bind(issue_number)
-        .bind(comment["id"].as_i64().unwrap_or(0))
-        .bind(comment["user"]["login"].as_str())
-        .bind(body)
-        .bind(parse_ts(comment["created_at"].as_str()))
-        .bind(parse_ts(comment["updated_at"].as_str()))
-        .bind(&hash)
-        .bind(vec_literal(emb))
-        .execute(pool)
-        .await?;
+        pool.put("github_issue_comments",vec![agentix_store::Record{row:serde_json::json!({
+            "repo":repo,"issue_number":issue_number,"comment_id":comment["id"],"author":comment["user"]["login"],"content":body,
+            "created_at":comment["created_at"],"updated_at":comment["updated_at"],"content_hash":hash,
+            "indexed_at":Utc::now().to_rfc3339()}),embedding:Some(emb.clone())}]).await?;
+
         *upserted += 1;
     }
     pending.clear();
@@ -660,7 +584,7 @@ async fn flush_issue_comments(
 // ── PR review comments ────────────────────────────────────────────────────────
 
 async fn ingest_pr_comments(
-    pool: &PgPool,
+    pool: &Store,
     http: &reqwest::Client,
     token: &str,
     repo: &str,
@@ -670,7 +594,7 @@ async fn ingest_pr_comments(
     let watermark = if force {
         None
     } else {
-        get_watermark(pool, "github", &scope).await
+        get_watermark(pool, "github", &scope).await?
     };
 
     let mut params = vec![("sort", "updated"), ("direction", "asc")];
@@ -718,14 +642,14 @@ async fn ingest_pr_comments(
     flush_pr_comments(&mut pending, pool, repo, &mut upserted).await?;
 
     if let Some(wm) = &new_watermark {
-        set_watermark(pool, "github", &scope, wm).await;
+        set_watermark(pool, "github", &scope, wm).await?;
     }
     Ok(upserted)
 }
 
 async fn flush_pr_comments(
     pending: &mut Vec<serde_json::Value>,
-    pool: &PgPool,
+    pool: &Store,
     repo: &str,
     upserted: &mut usize,
 ) -> Result<()> {
@@ -761,39 +685,58 @@ async fn flush_pr_comments(
         };
         let diff_hunk = comment["diff_hunk"]
             .as_str()
-            .map(|s| &s[..s.len().min(2000)]);
+            .map(|s| s.chars().take(2000).collect::<String>());
         let hash = content_hash(&content);
 
-        sqlx::query(
-            "INSERT INTO github_pr_comments
-                 (repo, pr_number, comment_id, comment_type, author, content,
-                  file_path, diff_hunk, created_at, updated_at, content_hash, embedding)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::vector)
-             ON CONFLICT (repo, comment_type, comment_id) DO UPDATE
-                 SET author       = EXCLUDED.author,
-                     content      = EXCLUDED.content,
-                     updated_at   = EXCLUDED.updated_at,
-                     content_hash = EXCLUDED.content_hash,
-                     embedding    = EXCLUDED.embedding,
-                     indexed_at   = NOW()
-                 WHERE github_pr_comments.content_hash IS DISTINCT FROM EXCLUDED.content_hash",
-        )
-        .bind(repo)
-        .bind(pr_number)
-        .bind(comment["id"].as_i64().unwrap_or(0))
-        .bind("review_comment")
-        .bind(comment["user"]["login"].as_str())
-        .bind(&content)
-        .bind(file_path)
-        .bind(diff_hunk)
-        .bind(parse_ts(comment["created_at"].as_str()))
-        .bind(parse_ts(comment["updated_at"].as_str()))
-        .bind(&hash)
-        .bind(vec_literal(emb))
-        .execute(pool)
-        .await?;
+        pool.put("github_pr_comments",vec![agentix_store::Record{row:serde_json::json!({
+            "repo":repo,"pr_number":pr_number,"comment_id":comment["id"],"comment_type":"review_comment","author":comment["user"]["login"],
+            "content":content,"file_path":file_path,"diff_hunk":diff_hunk,"created_at":comment["created_at"],"updated_at":comment["updated_at"],
+            "content_hash":hash,"indexed_at":Utc::now().to_rfc3339()}),embedding:Some(emb.clone())}]).await?;
+
         *upserted += 1;
     }
     pending.clear();
     Ok(())
+}
+
+#[cfg(test)]
+mod storage_tests {
+    use super::*;
+    #[tokio::test]
+    async fn sync_errors_preserve_watermarks_and_success_never_regresses_them() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let store = Store::open(tmp.path(), "fixture", 4).await?;
+        let scope = "owner/repo:issues";
+        set_watermark(&store, "github", scope, "2026-10-28T00:00:00Z").await?;
+        record_error(&store, "github", scope, &"é".repeat(1100)).await?;
+        assert_eq!(
+            get_watermark(&store, "github", scope).await?.as_deref(),
+            Some("2026-10-28T00:00:00Z")
+        );
+        let row = store
+            .metadata("sync_state", &format!("github:{scope}"))
+            .await?
+            .context("missing sync state")?;
+        assert_eq!(row["error_count"], 1);
+        assert_eq!(
+            row["last_error"]
+                .as_str()
+                .context("missing error")?
+                .chars()
+                .count(),
+            1000
+        );
+        set_watermark(&store, "github", scope, "2026-10-27T00:00:00Z").await?;
+        assert_eq!(
+            get_watermark(&store, "github", scope).await?.as_deref(),
+            Some("2026-10-28T00:00:00Z")
+        );
+        let row = store
+            .metadata("sync_state", &format!("github:{scope}"))
+            .await?
+            .context("missing sync state")?;
+        assert_eq!(row["error_count"], 0);
+        assert!(row["last_error"].is_null());
+        Ok(())
+    }
 }

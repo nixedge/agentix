@@ -5,7 +5,9 @@
 ### I. Library-First Architecture
 Inference logic, agent-loop mechanics, routing policy, and API types MUST live in standalone
 Rust library crates with no network surface of their own. The daemon assembles these libraries
-and is the sole crate that binds a port. Libraries MUST be independently testable with
+and binds the inference API port. The dedicated `agentix-store-server` binary may bind
+the shared-index API with optional bearer authentication for remote MCP clients; its library never binds a listener.
+Libraries MUST be independently testable with
 `cargo test` and carry no compile-time dependency on daemon internals. New crates require a
 clear, non-overlapping purpose before being added to the workspace.
 
@@ -19,7 +21,7 @@ type MUST NOT compile. Lazy offloading to cloud is a defect, not a feature.
 
 ### III. Reproducible Environments
 Nix flakes are the single source of truth for the build environment, service orchestration,
-and toolchain versions. All services (PostgreSQL/ParadeDB, Ollama) MUST be launchable via
+and toolchain versions. All model services (Ollama) MUST be launchable via
 `nix run .#dev` or the NixOS module. `just` recipes MUST assume the Nix dev shell. No
 dependency on host-installed tools beyond Nix itself. On non-NixOS hosts, system-service
 alternatives MUST be documented in `README.md`. Dependencies in `Cargo.toml` are pinned via
@@ -47,7 +49,7 @@ being jailed makes it structurally impossible.
 The API contract (OpenAI-compatible types, request/response schemas) MUST live in a dedicated
 library crate, separate from the HTTP server. Backend-selection policy (local inference,
 OpenRouter, Anthropic, other frontier providers) MUST live in a dedicated routing library
-crate — not inside the daemon. The daemon is solely responsible for HTTP serving; it wires
+crate — not inside the daemon. The daemon is responsible for inference HTTP serving; it wires
 the API and routing libraries together and binds the port. The TUI MUST communicate via API
 contract types only and MUST NOT depend on the daemon or routing library directly. Breaking
 changes to the API contract types require a documented version bump. The MCP server MUST
@@ -55,7 +57,7 @@ expose tools using MCP spec-compliant transports only — no custom protocols.
 
 ### VI. Comprehensive Testing
 - **Unit tests** cover each crate's logic independently (`cargo test -p <crate>`)
-- **Integration tests** run against a real PostgreSQL instance — no mock databases for
+- **Integration tests** run against actual local LanceDB storage — no mock databases for
   integration coverage. Inference integration tests MUST use a small, quantized fixture
   model pinned in the Nix flake; they MUST NOT depend on whatever model happens to be on
   disk, and MUST NOT require a multi-gigabyte download to run the test suite.
@@ -99,8 +101,7 @@ assembles the full stack.
 For the current crate inventory and dependency graph, see `ARCHITECTURE.md`.
 
 ### Storage Conventions
-- **Search index**: PostgreSQL 17 with `pg_search` (BM25) and `pgvector` (HNSW); schema
-  migrations live in `scripts/schema.sql` and MUST be idempotent (`just migrate`)
+- **Search index**: LanceDB with FTS and unquantized cosine HNSW, owned by the shared agentix-store library. A storage server owns its local directory and exposes an API with optional bearer authentication to laptop MCP clients; local administrative use remains supported. Schema/model/dimension metadata MUST be validated on reuse and remote connection; migration from legacy PostgreSQL is explicit and read-only at source.
 - **Model blobs**: content-addressed storage under `$AGENTIX_MODELS_DIR` in Ollama-compatible
   layout; existing Ollama model directories are usable without re-download
 
@@ -144,4 +145,4 @@ before merge.
 - **MINOR**: a new principle is added, or existing guidance materially expanded
 - **PATCH**: wording clarified, typos fixed, non-semantic refinements
 
-**Version**: 1.0.0 | **Ratified**: 2026-08-10 | **Last Amended**: 2026-08-10
+**Version**: 1.1.0 | **Ratified**: 2026-08-10 | **Last Amended**: 2026-10-28

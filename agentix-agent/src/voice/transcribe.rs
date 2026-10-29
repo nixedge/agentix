@@ -71,10 +71,7 @@ pub async fn handler(
             match resp.text().await {
                 Ok(body) => match serde_json::from_str::<serde_json::Value>(&body) {
                     Ok(json) => (status_code, Json(json)).into_response(),
-                    Err(_) => (
-                        status_code,
-                        Json(serde_json::json!({"error": body.trim()})),
-                    )
+                    Err(_) => (status_code, Json(serde_json::json!({"error": body.trim()})))
                         .into_response(),
                 },
                 Err(e) => (
