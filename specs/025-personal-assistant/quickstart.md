@@ -89,11 +89,11 @@ APK: `result-assistant-android/share/agentix-android/agentix-android-debug.apk`.
 
 Live handoff: the supplied HTTPS endpoint returned502 during a GET of `/v1/assistant/tell`; routing/deployment/readiness is not established. Configure the existing agentix-agent service with the opt-in `[assistant]` section above, provide its owner token privately through the runtime environment file, and route only the protected assistant path from HTTPS to that listener. Then enable matching settings on the phone and test grocery add/read/correction and an uncertain retry. API401 without a token, followed by a valid authenticated instruction and unchanged replay, are required live checks. No service was deployed or phone installed/toggled here. Keep current default assistant until real usefulness is verified; never uninstall an existing app with pending requests or recordings to work around debug-signature changes. Physical persistence, lifecycle/TLS/network behavior and microphone/TTS remain phone acceptance items, separate from JVM fixtures/lint.
 
-For nginx on the same host as agentix-agent, whose example `bind_addr` is `127.0.0.1:8765`, the upstream is that agent listener:
+For nginx on the same host as agentix-agent, whose example `bind_addr` is `127.0.0.1:8767`, the upstream is that agent listener:
 
 ```nginx
 location /v1/assistant/ {
-    proxy_pass http://127.0.0.1:8765;
+    proxy_pass http://127.0.0.1:8767;
     proxy_set_header Authorization $http_authorization;
     proxy_read_timeout 150s;
 }

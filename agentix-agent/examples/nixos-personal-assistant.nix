@@ -17,7 +17,7 @@
   environment.etc."agentix-agent/agent.toml".source = (pkgs.formats.toml {}).generate "agentix-agent.toml" {
     gateway_url = "http://ai.lan.disasm.us:11434";
     local_model = "hf.co/bartowski/Qwen2.5-7B-Instruct-GGUF:Qwen2.5-7B-Instruct-Q8_0.gguf";
-    bind_addr = "127.0.0.1:8765";
+    bind_addr = "127.0.0.1:8767";
     # Separate legacy store; preserve your current path if already using legacy todos.
     db_path = "/var/lib/agentix-agent/legacy";
     assistant = {
@@ -38,7 +38,7 @@
   services.nginx.enable = true;
   # Merge into the existing HTTPS vhost; retain its TLS/certificate configuration.
   services.nginx.virtualHosts."ai.lan.disasm.us".locations."/v1/assistant/" = {
-    proxyPass = "http://127.0.0.1:8765";
+    proxyPass = "http://127.0.0.1:8767";
     extraConfig = ''
       proxy_set_header Authorization $http_authorization;
       proxy_read_timeout 150s;

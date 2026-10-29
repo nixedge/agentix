@@ -1,7 +1,7 @@
 gateway_url = "http://ai.lan.disasm.us:11434"
 local_model = "hf.co/bartowski/Qwen2.5-7B-Instruct-GGUF:Qwen2.5-7B-Instruct-Q8_0.gguf"
 db_path = "/tmp/agentix-agent-dev"
-bind_addr = "127.0.0.1:8765"
+bind_addr = "127.0.0.1:8767"
 
 [ntfy]
 url = "https://ntfy.sh"

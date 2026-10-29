@@ -20,7 +20,7 @@ Use the actual randomly generated token as the Android app's owner token. Keep i
 
 The generated `/etc/agentix-agent/agent.toml` contains only non-secret settings. Systemd creates the service account and `/var/lib/agentix-agent`. Personal Sled and LanceDB data use separate persistent subdirectories. The required legacy ntfy block is unconfigured; this personal-only example does not provide notification delivery or Google integration. Merge existing legacy database/notification/Google settings if already using those features; do not replace a working legacy configuration blindly.
 
-The example assumes the existing `ai.lan.disasm.us` nginx virtual host already has HTTPS/certificates configured. It adds only `/v1/assistant/`, preserves the full request path and bearer header, and proxies to the loopback agent listener. Keep port8765 private; the inference gateway remains a separate HTTP service at `ai.lan.disasm.us:11434`.
+The example assumes the existing `ai.lan.disasm.us` nginx virtual host already has HTTPS/certificates configured. It adds only `/v1/assistant/`, preserves the full request path and bearer header, and proxies to the loopback agent listener. Keep port8767 private; the inference gateway remains a separate HTTP service at `ai.lan.disasm.us:11434`.
 
 After applying the host configuration, inspect `systemctl status agentix-agent` and `journalctl -u agentix-agent`. An unauthenticated POST to `https://ai.lan.disasm.us/v1/assistant/tell` must return401, rather than502. Then configure the same HTTPS base URL and owner token in the Android app, explicitly enable the backend and save. Test grocery add/read/correction and a retry after a network interruption before changing the default assistant.
 
