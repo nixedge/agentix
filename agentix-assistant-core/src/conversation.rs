@@ -43,6 +43,21 @@ pub fn bounded_text(text: &str, maximum: usize) -> Result<()> {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Intent {
+    ShowGroceries,
+    AddGroceryItem {
+        text: String,
+    },
+    RenameGroceryItem {
+        item_id: String,
+        text: String,
+    },
+    SetGroceryItemCompleted {
+        item_id: String,
+        completed: bool,
+    },
+    DeleteGroceryItem {
+        item_id: String,
+    },
     AddListItem {
         list_name: String,
         list_id: Option<Uuid>,
@@ -195,8 +210,23 @@ impl PreparedPlan {
 #[serde(tag = "phase", rename_all = "snake_case", deny_unknown_fields)]
 pub enum TurnState {
     Received,
-    Prepared { plan: PreparedPlan },
-    Completed { response: TellResponse },
+    Prepared {
+        plan: PreparedPlan,
+    },
+    Completed {
+        response: TellResponse,
+    },
+    GroceryPrepared {
+        plan: crate::GroceryPlan,
+    },
+    GroceryDispatched {
+        plan: crate::GroceryPlan,
+    },
+    GroceryCompleted {
+        plan: crate::GroceryPlan,
+        outcome: crate::GroceryOutcome,
+        response: TellResponse,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -218,6 +248,23 @@ impl Turn {
             TurnState::Received => Ok(()),
             TurnState::Prepared { plan } => plan.validate(),
             TurnState::Completed { response } => response.validate(&self.request),
+            TurnState::GroceryPrepared { plan } | TurnState::GroceryDispatched { plan } => {
+                plan.validate()
+            }
+            TurnState::GroceryCompleted {
+                plan,
+                outcome,
+                response,
+            } => {
+                plan.validate()?;
+                response.validate(&self.request)?;
+                if *response != plan.response(&self.request, *outcome) {
+                    return Err(Error::Storage(
+                        "grocery response disagrees with durable outcome".into(),
+                    ));
+                }
+                Ok(())
+            }
         }
     }
 }
@@ -258,6 +305,8 @@ pub struct InferenceContext {
     pub messages: Vec<Message>,
     pub records: Vec<Record>,
     pub context_incomplete: bool,
+    pub groceries_configured: bool,
+    pub groceries: Option<crate::GroceryList>,
 }
 
 #[async_trait]
@@ -271,4 +320,17 @@ pub trait Conversations: Send + Sync {
     async fn prepare(&self, request_id: Uuid, plan: PreparedPlan) -> Result<Turn>;
     async fn complete(&self, request_id: Uuid, response: TellResponse) -> Result<TellResponse>;
     async fn recent_messages(&self, conversation_id: Uuid, limit: usize) -> Result<Vec<Message>>;
+    async fn prepare_grocery(&self, _request_id: Uuid, _plan: crate::GroceryPlan) -> Result<Turn> {
+        Err(Error::Invalid("grocery journal is not supported".into()))
+    }
+    async fn claim_grocery_dispatch(&self, _request_id: Uuid) -> Result<bool> {
+        Err(Error::Invalid("grocery journal is not supported".into()))
+    }
+    async fn complete_grocery(
+        &self,
+        _request_id: Uuid,
+        _outcome: crate::GroceryOutcome,
+    ) -> Result<TellResponse> {
+        Err(Error::Invalid("grocery journal is not supported".into()))
+    }
 }

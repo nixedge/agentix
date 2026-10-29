@@ -118,6 +118,11 @@ async fn authenticated_http_grocery_save_retry_conflict_and_actual_history() -> 
         .await
         .ok_or("missing gateway requests")?;
     assert_eq!(captured.len(), 2);
+    for captured in &captured {
+        let body = std::str::from_utf8(&captured.body)?;
+        assert!(!body.contains("rename_grocery_item"));
+        assert!(!body.contains("current_groceries"));
+    }
     let sent: Value = serde_json::from_slice(&captured[1].body)?;
     assert_eq!(sent["response_format"]["type"], "json_schema");
     assert_eq!(sent["temperature"], 0.0);
@@ -574,5 +579,199 @@ async fn tokenless_http_save_and_replay_use_actual_storage() -> TestResult {
             .len(),
         2
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn grocery_gateway_tools_use_remote_ids_and_selected_action_schemas() -> TestResult {
+    for action in [
+        json!({"action":"show_groceries"}),
+        json!({"action":"add_grocery_item","text":"milk"}),
+        json!({"action":"rename_grocery_item","item_id":"remote-item-1","text":"shallots"}),
+        json!({"action":"set_grocery_item_completed","item_id":"remote-item-1","completed":true}),
+        json!({"action":"delete_grocery_item","item_id":"remote-item-1"}),
+    ] {
+        let gateway = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(body_partial_json(
+                json!({"response_format":{"json_schema":{"name":"personal_assistant_operation"}}}),
+            ))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(completion(json!({"operation":action["action"]}))),
+            )
+            .expect(1)
+            .mount(&gateway)
+            .await;
+        Mock::given(method("POST"))
+            .and(body_partial_json(
+                json!({"response_format":{"json_schema":{"name":"personal_assistant_action"}}}),
+            ))
+            .respond_with(ResponseTemplate::new(200).set_body_json(completion(action.clone())))
+            .expect(1)
+            .mount(&gateway)
+            .await;
+        let context = InferenceContext {
+            request: request(Uuid::new_v4(), "synthetic grocery instruction"),
+            accepted_at: chrono::Utc::now(),
+            messages: vec![],
+            records: vec![],
+            context_incomplete: false,
+            groceries_configured: true,
+            groceries: Some(agentix_assistant_core::GroceryList {
+                team_id: "household-1".into(),
+                id: "list-1".into(),
+                name: "Kitchen".into(),
+                items: vec![agentix_assistant_core::GroceryItem {
+                    id: "remote-item-1".into(),
+                    text: "onions".into(),
+                    completed: false,
+                    category_id: None,
+                    note: None,
+                }],
+            }),
+        };
+        assert_eq!(
+            LocalGateway::new(&gateway.uri(), "qwen-test")?
+                .propose(context)
+                .await?,
+            serde_json::from_value::<Intent>(action.clone())?
+        );
+        let requests = gateway
+            .received_requests()
+            .await
+            .ok_or("missing model requests")?;
+        let selected: Value = serde_json::from_slice(&requests[0].body)?;
+        assert!(selected["messages"][0]["content"]
+            .as_str()
+            .is_some_and(
+                |text| text.contains("remote-item-1") && text.contains("groceries_configured")
+            ));
+        let filled: Value = serde_json::from_slice(&requests[1].body)?;
+        let variants = filled["response_format"]["json_schema"]["schema"]["oneOf"]
+            .as_array()
+            .ok_or("missing action variants")?;
+        assert_eq!(variants.len(), 2);
+        assert!(variants
+            .iter()
+            .all(
+                |variant| variant["properties"]["action"]["const"] == "clarify"
+                    || variant["properties"]["action"]["const"] == action["action"]
+            ));
+    }
+    Ok(())
+}
+
+#[test]
+fn grocery_config_is_opt_in_and_runtime_credentials_are_redacted() -> TestResult {
+    let disabled: crate::config::AssistantConfig =
+        toml::from_str("db_path='personal'\nindex_path='index'\n")?;
+    assert!(disabled.ourgroceries.is_none());
+    let configured: crate::config::AssistantConfig = toml::from_str(
+        "db_path='personal'\nindex_path='index'\n[ourgroceries]\nlist_id='list-1'\n",
+    )?;
+    let settings = configured.ourgroceries.ok_or("missing grocery settings")?;
+    assert_eq!(settings.email_env, "OURGROCERIES_EMAIL");
+    assert_eq!(settings.password_env, "OURGROCERIES_PASSWORD");
+    let missing =
+        super::resolve_grocery_credentials(&settings, |_| Err(std::env::VarError::NotPresent));
+    assert!(missing.is_err());
+    let invalid = super::resolve_grocery_credentials(&settings, |_| {
+        Err(std::env::VarError::NotUnicode(std::ffi::OsString::from(
+            "synthetic-secret",
+        )))
+    });
+    assert!(invalid.is_err());
+    assert!(!format!("{invalid:?}").contains("synthetic-secret"));
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "explicit synthetic grocery selection against the installed local Qwen model; no OurGroceries account access"]
+async fn installed_qwen_grocery_selection() -> TestResult {
+    let gateway = LocalGateway::new(
+        &std::env::var("AGENTIX_ACCEPTANCE_GATEWAY")?,
+        &std::env::var("AGENTIX_ACCEPTANCE_MODEL")?,
+    )?;
+    let cases = [
+        (
+            "Add milk to OurGroceries.",
+            Intent::AddGroceryItem {
+                text: "milk".into(),
+            },
+        ),
+        ("What's on our grocery list?", Intent::ShowGroceries),
+        (
+            "Change the onions on OurGroceries to shallots.",
+            Intent::RenameGroceryItem {
+                item_id: "remote-item-1".into(),
+                text: "shallots".into(),
+            },
+        ),
+        (
+            "I bought the onions on OurGroceries.",
+            Intent::SetGroceryItemCompleted {
+                item_id: "remote-item-1".into(),
+                completed: true,
+            },
+        ),
+        (
+            "We need onions again; reopen that item on OurGroceries.",
+            Intent::SetGroceryItemCompleted {
+                item_id: "remote-item-1".into(),
+                completed: false,
+            },
+        ),
+        (
+            "Delete the onions item from OurGroceries.",
+            Intent::DeleteGroceryItem {
+                item_id: "remote-item-1".into(),
+            },
+        ),
+    ];
+    for (text, expected) in cases {
+        let request = request(Uuid::new_v4(), text);
+        let accepted_at = chrono::Utc::now();
+        let context = InferenceContext {
+            messages: vec![agentix_assistant_core::Message {
+                conversation_id: request.conversation_id,
+                sequence: 1,
+                request_id: request.request_id,
+                role: agentix_assistant_core::MessageRole::User,
+                text: text.into(),
+                created_at: accepted_at,
+            }],
+            request,
+            accepted_at,
+            records: vec![],
+            context_incomplete: false,
+            groceries_configured: true,
+            groceries: Some(agentix_assistant_core::GroceryList {
+                team_id: "household-1".into(),
+                id: "list-1".into(),
+                name: "Kitchen".into(),
+                items: vec![agentix_assistant_core::GroceryItem {
+                    id: "remote-item-1".into(),
+                    text: "onions".into(),
+                    completed: matches!(
+                        expected,
+                        Intent::SetGroceryItemCompleted {
+                            completed: false,
+                            ..
+                        }
+                    ),
+                    category_id: None,
+                    note: None,
+                }],
+            }),
+        };
+        let started = std::time::Instant::now();
+        let actual = gateway.propose(context).await?;
+        println!(
+            "{}",
+            json!({"synthetic_instruction":text,"decision":actual,"elapsed_ms":started.elapsed().as_millis()})
+        );
+        assert_eq!(actual, expected);
+    }
     Ok(())
 }

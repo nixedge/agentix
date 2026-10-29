@@ -1,3 +1,4 @@
+mod groceries;
 mod planner;
 mod schema;
 
@@ -18,6 +19,7 @@ pub struct Assistant {
     projection: Option<Arc<dyn Projection>>,
     gate: Arc<Mutex<()>>,
     inference_timeout: Duration,
+    groceries: Option<Arc<dyn agentix_assistant_core::Groceries>>,
 }
 
 impl Assistant {
@@ -33,12 +35,43 @@ impl Assistant {
             projection: None,
             gate: Arc::new(Mutex::new(())),
             inference_timeout: Duration::from_secs(30),
+            groceries: None,
         }
     }
 
     pub fn with_projection(mut self, projection: Arc<dyn Projection>) -> Self {
         self.projection = Some(projection);
         self
+    }
+
+    pub fn with_groceries(mut self, groceries: Arc<dyn agentix_assistant_core::Groceries>) -> Self {
+        self.groceries = Some(groceries);
+        self
+    }
+
+    async fn execute_grocery(
+        &self,
+        request_id: uuid::Uuid,
+        plan: agentix_assistant_core::GroceryPlan,
+    ) -> Result<TellResponse> {
+        let outcome = if self
+            .conversations
+            .claim_grocery_dispatch(request_id)
+            .await?
+        {
+            if let Some(provider) = &self.groceries {
+                tokio::time::timeout(Duration::from_secs(60), provider.execute(&plan))
+                    .await
+                    .unwrap_or(agentix_assistant_core::GroceryOutcome::Uncertain)
+            } else {
+                agentix_assistant_core::GroceryOutcome::Rejected
+            }
+        } else {
+            agentix_assistant_core::GroceryOutcome::Uncertain
+        };
+        self.conversations
+            .complete_grocery(request_id, outcome)
+            .await
     }
 
     pub fn with_inference_timeout(mut self, timeout: Duration) -> Result<Self> {
@@ -69,16 +102,55 @@ impl Assistant {
     async fn run(&self, request: TellRequest) -> Result<TellResponse> {
         let turn = self.conversations.begin(request.clone()).await?;
         let plan = match turn.state {
-            TurnState::Completed { response } => return Ok(response),
+            TurnState::Completed { response } | TurnState::GroceryCompleted { response, .. } => {
+                return Ok(response)
+            }
+            TurnState::GroceryPrepared { plan } => {
+                return self.execute_grocery(request.request_id, plan).await
+            }
+            TurnState::GroceryDispatched { .. } => {
+                return self
+                    .conversations
+                    .complete_grocery(
+                        request.request_id,
+                        agentix_assistant_core::GroceryOutcome::Uncertain,
+                    )
+                    .await
+            }
             TurnState::Prepared { plan } => plan,
             TurnState::Received => {
                 let originals = self.repository.records().await?;
-                let context = self.context(&request, turn.accepted_at, &originals).await?;
+                let remote = if let Some(provider) = &self.groceries {
+                    tokio::time::timeout(Duration::from_secs(25), provider.snapshot())
+                        .await
+                        .ok()
+                        .and_then(|result| result.ok())
+                } else {
+                    None
+                };
+                let mut context = self.context(&request, turn.accepted_at, &originals).await?;
+                context.groceries_configured = self.groceries.is_some();
+                context.groceries = remote.as_ref().map(groceries::context);
+                context.context_incomplete |= self.groceries.is_some()
+                    && remote.as_ref().is_none_or(|list| {
+                        context
+                            .groceries
+                            .as_ref()
+                            .is_none_or(|shown| list.items.len() != shown.items.len())
+                    });
                 let proposed =
                     tokio::time::timeout(self.inference_timeout, self.inference.propose(context))
                         .await;
                 let plan = match proposed {
-                    Ok(Ok(intent)) => planner::prepare(intent, &originals).unwrap_or_else(|_| failure_plan("I could not safely apply that instruction. Nothing was changed.")),
+                    Ok(Ok(intent)) => match groceries::prepare(&intent, &originals, remote.as_ref(), self.groceries.is_some(), &request.text) {
+                        Ok(Some(groceries::Decision::Change(plan))) => {
+                            self.conversations.prepare_grocery(request.request_id, plan.clone()).await?;
+                            return self.execute_grocery(request.request_id, plan).await;
+                        }
+                        Ok(Some(groceries::Decision::Read(plan))) => plan,
+                        Ok(None) => planner::prepare(intent, &originals).unwrap_or_else(|_| failure_plan("I could not safely apply that instruction. Nothing was changed.")),
+                        Err(_) => failure_plan("I could not safely identify that OurGroceries item. Nothing was changed. Read the list and identify the item again."),
+                    },
                     _ => failure_plan("The local model could not interpret that instruction. Nothing was changed. Please try again."),
                 };
                 self.conversations
@@ -148,7 +220,10 @@ impl Assistant {
         }
         let mut candidates = originals
             .iter()
-            .filter(|record| !record.deleted)
+            .filter(|record| {
+                !record.deleted
+                    && (self.groceries.is_none() || !groceries::local_grocery(record, originals))
+            })
             .collect::<Vec<_>>();
         candidates.sort_by_key(|record| {
             (
@@ -196,6 +271,8 @@ impl Assistant {
             messages,
             records,
             context_incomplete: incomplete,
+            groceries_configured: false,
+            groceries: None,
         })
     }
 }

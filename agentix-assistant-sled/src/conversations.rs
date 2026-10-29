@@ -148,6 +148,7 @@ impl Conversations for SledRepository {
                         "completed turn cannot be prepared again".into(),
                     ))
                 }
+                _ => return Err(Error::RequestConflict),
             }
             if conversation(db, turn.request.conversation_id)?.active != Some(request_id) {
                 return Err(Error::Storage(
@@ -177,6 +178,7 @@ impl Conversations for SledRepository {
                 TurnState::Received => {
                     return Err(Error::Invalid("turn has no durable plan".into()))
                 }
+                _ => return Err(Error::RequestConflict),
             };
             if response.outcomes.len() > plan.commands.len() {
                 return Err(Error::Invalid("too many command outcomes".into()));
@@ -252,6 +254,118 @@ impl Conversations for SledRepository {
             turn.state = TurnState::Completed {
                 response: response.clone(),
             };
+            batch.insert(turn_key(request_id), encode(&turn)?);
+            batch.insert(
+                conversation_key(turn.request.conversation_id),
+                encode(&meta)?,
+            );
+            db.apply_batch(batch).map_err(storage)?;
+            db.flush().map_err(storage)?;
+            Ok(response)
+        })
+        .await
+    }
+
+    async fn prepare_grocery(
+        &self,
+        request_id: Uuid,
+        plan: agentix_assistant_core::GroceryPlan,
+    ) -> Result<Turn> {
+        plan.validate()?;
+        self.blocking(move |db| {
+            let mut turn = load_turn(db, request_id)?;
+            match &turn.state {
+                TurnState::Received => {}
+                TurnState::GroceryPrepared { plan: original }
+                | TurnState::GroceryDispatched { plan: original }
+                    if *original == plan =>
+                {
+                    db.flush().map_err(storage)?;
+                    return Ok(turn);
+                }
+                _ => return Err(Error::RequestConflict),
+            }
+            if conversation(db, turn.request.conversation_id)?.active != Some(request_id) {
+                return Err(Error::Storage("grocery turn is not active".into()));
+            }
+            turn.state = TurnState::GroceryPrepared { plan };
+            db.insert(turn_key(request_id), encode(&turn)?)
+                .map_err(storage)?;
+            db.flush().map_err(storage)?;
+            Ok(turn)
+        })
+        .await
+    }
+
+    async fn claim_grocery_dispatch(&self, request_id: Uuid) -> Result<bool> {
+        self.blocking(move |db| {
+            let mut turn = load_turn(db, request_id)?;
+            let plan = match &turn.state {
+                TurnState::GroceryPrepared { plan } => plan.clone(),
+                TurnState::GroceryDispatched { .. } | TurnState::GroceryCompleted { .. } => {
+                    db.flush().map_err(storage)?;
+                    return Ok(false);
+                }
+                _ => return Err(Error::Invalid("turn has no prepared grocery change".into())),
+            };
+            if conversation(db, turn.request.conversation_id)?.active != Some(request_id) {
+                return Err(Error::Storage("grocery turn is not active".into()));
+            }
+            turn.state = TurnState::GroceryDispatched { plan };
+            db.insert(turn_key(request_id), encode(&turn)?)
+                .map_err(storage)?;
+            db.flush().map_err(storage)?;
+            Ok(true)
+        })
+        .await
+    }
+
+    async fn complete_grocery(
+        &self,
+        request_id: Uuid,
+        outcome: agentix_assistant_core::GroceryOutcome,
+    ) -> Result<TellResponse> {
+        self.blocking(move |db| {
+            let mut turn = load_turn(db, request_id)?;
+            let plan = match &turn.state {
+                TurnState::GroceryDispatched { plan } => plan.clone(),
+                TurnState::GroceryCompleted {
+                    outcome: original,
+                    response,
+                    ..
+                } if *original == outcome => {
+                    db.flush().map_err(storage)?;
+                    return Ok(response.clone());
+                }
+                _ => return Err(Error::RequestConflict),
+            };
+            let response = plan.response(&turn.request, outcome);
+            response.validate(&turn.request)?;
+            let mut meta = conversation(db, turn.request.conversation_id)?;
+            if meta.active != Some(request_id) {
+                return Err(Error::Storage("grocery active turn mismatch".into()));
+            }
+            meta.active = None;
+            let mut batch = sled::Batch::default();
+            append(
+                db,
+                &mut batch,
+                &mut meta,
+                Message {
+                    conversation_id: turn.request.conversation_id,
+                    sequence: 0,
+                    request_id,
+                    role: MessageRole::Assistant,
+                    text: response.reply.clone(),
+                    created_at: Utc::now().max(turn.accepted_at),
+                },
+            )?;
+            turn.state = TurnState::GroceryCompleted {
+                plan,
+                outcome,
+                response: response.clone(),
+            };
+            turn.validate()?;
             batch.insert(turn_key(request_id), encode(&turn)?);
             batch.insert(
                 conversation_key(turn.request.conversation_id),

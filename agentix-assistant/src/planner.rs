@@ -64,6 +64,15 @@ pub(crate) fn prepare(intent: Intent, records: &[Record]) -> Result<PreparedPlan
         records: vec![],
     };
     match intent {
+        Intent::ShowGroceries
+        | Intent::AddGroceryItem { .. }
+        | Intent::RenameGroceryItem { .. }
+        | Intent::SetGroceryItemCompleted { .. }
+        | Intent::DeleteGroceryItem { .. } => {
+            return Err(Error::Invalid(
+                "grocery operation requires a configured provider".into(),
+            ));
+        }
         Intent::AddListItem {
             list_name,
             list_id,

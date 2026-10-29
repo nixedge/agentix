@@ -16,6 +16,8 @@ tokio = { version = "1", features = ["rt", "sync", "time"] }
 uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
+agentix-ourgroceries = { path = "../agentix-ourgroceries", features = ["test-support"] }
+wiremock = "0.6"
 agentix-assistant-sled = { path = "../agentix-assistant-sled" }
 async-trait = "0.1"
 tempfile = "3"

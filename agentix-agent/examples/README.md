@@ -1,5 +1,7 @@
 # Personal assistant on NixOS
 
+For an existing OurGroceries list, use the standalone `nixos-ourgroceries.nix` alternative and follow [the Rust adapter setup](../../agentix-ourgroceries/README.md). It keeps grocery runtime credentials separate from the explicit choice to require an owner bearer token. Import only one example.
+
 Import `nixos-personal-assistant.nix` on the host running nginx and agentix-agent. It imports the existing Agentix service module itself. The host's flake must provide `inputs` through `specialArgs`, and `inputs.agentix` must include feature025's optional-auth changes and this example.
 
 For example, in the host's module list:

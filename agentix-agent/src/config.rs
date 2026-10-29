@@ -23,6 +23,22 @@ pub struct AssistantConfig {
     pub token_env: Option<String>,
     #[serde(default = "default_inference_timeout")]
     pub inference_timeout_secs: u64,
+    pub ourgroceries: Option<OurGroceriesConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct OurGroceriesConfig {
+    pub list_id: String,
+    #[serde(default = "default_grocery_email_env")]
+    pub email_env: String,
+    #[serde(default = "default_grocery_password_env")]
+    pub password_env: String,
+}
+fn default_grocery_email_env() -> String {
+    "OURGROCERIES_EMAIL".into()
+}
+fn default_grocery_password_env() -> String {
+    "OURGROCERIES_PASSWORD".into()
 }
 
 fn default_inference_timeout() -> u64 {

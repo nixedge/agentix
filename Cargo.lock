@@ -24,6 +24,7 @@ dependencies = [
  "agentix-assistant-lance",
  "agentix-assistant-sled",
  "agentix-harness",
+ "agentix-ourgroceries",
  "agentix-router",
  "anyhow",
  "async-trait",
@@ -65,12 +66,14 @@ version = "0.1.0"
 dependencies = [
  "agentix-assistant-core",
  "agentix-assistant-sled",
+ "agentix-ourgroceries",
  "async-trait",
  "chrono",
  "serde_json",
  "tempfile",
  "tokio",
  "uuid",
+ "wiremock",
 ]
 
 [[package]]
@@ -276,6 +279,19 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "agentix-ourgroceries"
+version = "0.1.0"
+dependencies = [
+ "agentix-assistant-core",
+ "async-trait",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "wiremock",
 ]
 
 [[package]]

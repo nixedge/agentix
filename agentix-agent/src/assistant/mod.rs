@@ -37,11 +37,19 @@ impl HostedAssistant {
         let repository = SledRepository::open(&settings.db_path).await?;
         let projection = LanceProjection::open(&settings.index_path).await?;
         let shared = Arc::new(repository.clone());
-        let service = Arc::new(
-            Assistant::new(shared.clone(), shared, Arc::new(gateway))
-                .with_projection(Arc::new(projection.clone()))
-                .with_inference_timeout(Duration::from_secs(settings.inference_timeout_secs))?,
-        );
+        let mut service = Assistant::new(shared.clone(), shared, Arc::new(gateway))
+            .with_projection(Arc::new(projection.clone()))
+            .with_inference_timeout(Duration::from_secs(settings.inference_timeout_secs))?;
+        if let Some(groceries) = &settings.ourgroceries {
+            let (email, password) =
+                resolve_grocery_credentials(groceries, |name| std::env::var(name))?;
+            service = service.with_groceries(Arc::new(agentix_ourgroceries::Client::new(
+                email,
+                password,
+                Some(groceries.list_id.clone()),
+            )?));
+        }
+        let service = Arc::new(service);
         Ok(Some(Self {
             service,
             owner_token: token,
@@ -67,6 +75,28 @@ impl HostedAssistant {
             }
         });
     }
+}
+
+fn resolve_grocery_credentials(
+    settings: &crate::config::OurGroceriesConfig,
+    read: impl Fn(&str) -> std::result::Result<String, std::env::VarError>,
+) -> anyhow::Result<(String, String)> {
+    for name in [&settings.email_env, &settings.password_env] {
+        ensure!(
+            !name.is_empty()
+                && name
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_'),
+            "OurGroceries runtime environment variable name is invalid"
+        );
+    }
+    let email = read(&settings.email_env).map_err(|_| {
+        anyhow::anyhow!("OurGroceries email environment variable is missing or invalid")
+    })?;
+    let password = read(&settings.password_env).map_err(|_| {
+        anyhow::anyhow!("OurGroceries password environment variable is missing or invalid")
+    })?;
+    Ok((email, password))
 }
 
 fn resolve_owner_token(

@@ -17,6 +17,11 @@ pub fn decision_schema() -> Value {
     let nullable_id = json!({"anyOf":[id,{"type":"null"}]});
     let due = json!({"anyOf":[{"type":"string","format":"date-time"},{"type":"null"}]});
     json!({"oneOf":[
+        object("show_groceries", json!({}), &[]),
+        object("add_grocery_item", json!({"text":text}), &["text"]),
+        object("rename_grocery_item", json!({"item_id":text,"text":text}), &["item_id","text"]),
+        object("set_grocery_item_completed", json!({"item_id":text,"completed":{"type":"boolean"}}), &["item_id","completed"]),
+        object("delete_grocery_item", json!({"item_id":text}), &["item_id"]),
         object("add_list_item", json!({"list_name":text,"list_id":nullable_id,"text":text}), &["list_name","list_id","text"]),
         object("show_list", json!({"list_name":text,"list_id":nullable_id}), &["list_name","list_id"]),
         object("save_note", json!({"text":text}), &["text"]),

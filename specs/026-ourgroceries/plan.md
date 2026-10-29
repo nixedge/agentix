@@ -1,0 +1,19 @@
+# Implementation plan: OurGroceries
+
+Worktree026 allocated and host path verified before027 existed. Rebased onto owner-merged master ecea4ae on2026-10-29, including downstream Android signing30caa06 and the027 build-isolation checkpoint. Existing026 spec/plan/tasks were preserved. The merged027 checkpoint still documents remaining cache-invalidation/CUDA regression work; do not conflate that with this feature.
+
+## Architecture and protocol
+
+`agentix-ourgroceries` owns HTTPS login/session and typed list RPCs, with no listener. `agentix-assistant-core` owns engine-free grocery snapshots/plans/outcomes and ports. Existing Sled conversation journal adds explicit GroceryPrepared/GroceryDispatched states and durable final replies. Application coordinator executes through the port; agentix-agent configures credentials and adapter, keeps routing/inference policy in the existing adapter and exposes no new write endpoint. No local grocery mirror.
+
+Reference: ljmerza/py-our-groceries1.6.0 (indexed via agentic-nix), primary upstream __init__.py. POST /sign-in form emailAddress/password/action=sign-in; cookie ourgroceries-auth. GET /your-lists/ extracts JSON string g_teamId. POST /your-lists/ JSON command/teamId/listId. getOverview returns shoppingLists; getList returns list/items. insertItem uses value/categoryId/note; changeItemValue uses itemId/newValue/categoryId; setItemCrossedOff uses explicit crossedOff; deleteItem removes one item. Preserve upstream MIT attribution for adapted protocol implementation. Use bounded JSON/HTML and strict same-origin session handling. No upstream secret debug logging is copied.
+
+## State and compatibility
+
+Normal local turns retain Received→Prepared→Completed. Remote mutation turns use Received→GroceryPrepared→GroceryDispatched→Completed. Flush prepared payload and dispatch claim before I/O. Dispatched replay finalizes an uncertain answer without another send. Exact payload/list identity binds retries, including across config changes. Successful RPC plus verified readback yields a typed confirmed outcome; failed/late/ambiguous dispatch yields uncertain. Atomic journal completion validates deterministic outcome-derived v1 response and appends the assistant message. No fabricated local receipt or schema downgrade. Older binaries cannot read newly introduced remote journal states; document rollback limits without rewriting existing local records.
+
+Use dedicated grocery actions and bounded remote context. Generic local-list actions naming configured grocery aliases must route remotely or clarify rather than write a second list. Hide old local grocery aliases from remote context while retaining their stored data. Notes/tasks and non-grocery lists remain local. Mutations validate selected IDs and current preflight fields; rename sends original category and leaves note/completion unchanged. Uncertainty is a durable definitive Answer (zero local outcomes/records) so deployed Android clears its immutable envelope and can issue a fresh read. The reply explicitly says the action was not confirmed and must not be blindly repeated. Confirmed response also uses Answer and explicitly names OurGroceries.
+
+## Constitution and checks
+
+Pure core/application ports, separate HTTP adapter, existing daemon listener and local model/router preserved. Native remote service access is explicit owner-authorized application integration, not cloud inference. Blocking Sled operations stay on blocking workers; bounded async network calls never enter a storage batch. Extend state machine exhaustively with real persistence tests. Nix packages/checks and targeted Clippy/fmt required; fullworkspace/GPU/live account acceptance separately reported. Config credentials runtime only; no account deployment or local list migration without explicit scope.
