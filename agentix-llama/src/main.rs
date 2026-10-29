@@ -368,14 +368,7 @@ async fn embeddings_handler(State(state): State<AppState>, body: axum::body::Byt
             Json(serde_json::json!({"object": "list", "model": model, "data": data, "usage": {"prompt_tokens": 0, "total_tokens": 0}}))
                 .into_response()
         }
-        Err(agentix_infer::InferError::ModelNotFound(_)) => {
-            (StatusCode::NOT_FOUND, "model not in local store").into_response()
-        }
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("inference error: {e}"),
-        )
-            .into_response(),
+        Err(e) => embedding_error(e),
     }
 }
 
@@ -397,12 +390,32 @@ async fn ollama_embed_handler(State(state): State<AppState>, body: axum::body::B
     let input_refs: Vec<&str> = inputs.iter().map(String::as_str).collect();
     match state.engine.embed_batch(&model, &input_refs).await {
         Ok(embeddings) => Json(serde_json::json!({ "embeddings": embeddings })).into_response(),
-        Err(agentix_infer::InferError::ModelNotFound(_)) => {
+        Err(e) => embedding_error(e),
+    }
+}
+
+fn embedding_error(error: agentix_infer::InferError) -> Response {
+    match error {
+        agentix_infer::InferError::ModelNotFound(_) => {
             (StatusCode::NOT_FOUND, "model not in local store").into_response()
         }
-        Err(e) => (
+        agentix_infer::InferError::ContextExceeded {
+            prompt_tokens,
+            context_window,
+            ..
+        } => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": "embedding input exceeds token limit",
+                "code": "context_length_exceeded",
+                "prompt_tokens": prompt_tokens,
+                "context_window": context_window
+            })),
+        )
+            .into_response(),
+        error => (
             StatusCode::INTERNAL_SERVER_ERROR,
-            format!("inference error: {e}"),
+            format!("inference error: {error}"),
         )
             .into_response(),
     }
@@ -690,6 +703,54 @@ mod tests {
     use super::*;
     use agentix_api::{JsonSchemaSpec, ResponseFormat, ResponseInputItem, ResponseInputPart};
 
+    #[tokio::test]
+    async fn embedding_routes_reject_oversized_inputs_and_remain_usable() -> anyhow::Result<()> {
+        let Ok(model_path) = std::env::var("AGENTIX_TEST_MODEL_PATH") else {
+            eprintln!("AGENTIX_TEST_MODEL_PATH not set — skipping real model route test");
+            return Ok(());
+        };
+        let dir = tempfile::tempdir()?;
+        let engine = InferEngine::new(InferConfig::new(dir.path().into(), None, 1, 512)).await?;
+        engine.register_backend(Arc::new(LlamaCppBackend::new()?));
+        let model = engine.pull(&model_path).await?;
+        let state = AppState {
+            engine,
+            shutdown_tx: Arc::new(Mutex::new(None)),
+        };
+        let oversized = axum::body::Bytes::from(
+            serde_json::json!({
+                "model": model.name, "input": ["hello ".repeat(9000)]
+            })
+            .to_string(),
+        );
+        for openai in [false, true] {
+            let response = if openai {
+                embeddings_handler(State(state.clone()), oversized.clone()).await
+            } else {
+                ollama_embed_handler(State(state.clone()), oversized.clone()).await
+            };
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            let body = axum::body::to_bytes(response.into_body(), 4096).await?;
+            let detail: serde_json::Value = serde_json::from_slice(&body)?;
+            assert_eq!(detail["code"], "context_length_exceeded");
+            assert!(detail["prompt_tokens"].as_u64() > detail["context_window"].as_u64());
+        }
+        let valid = axum::body::Bytes::from(
+            serde_json::json!({
+                "model": model.name, "input": ["hello after oversized request"]
+            })
+            .to_string(),
+        );
+        let response = ollama_embed_handler(State(state), valid).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), 65536).await?;
+        let result: serde_json::Value = serde_json::from_slice(&body)?;
+        assert!(result["embeddings"][0]
+            .as_array()
+            .is_some_and(|v| !v.is_empty()));
+        Ok(())
+    }
+
     // T009 — grammar conversion unit tests
 
     #[test]
@@ -702,8 +763,9 @@ mod tests {
             ResponseFormatType::JsonObject => Some(GrammarConstraint::Gbnf(JSON_GBNF.to_string())),
             _ => None,
         };
-        let GrammarConstraint::Gbnf(gbnf) = grammar.unwrap();
-        assert!(gbnf.contains("root") && gbnf.contains("::= object"));
+        assert!(
+            matches!(grammar, Some(GrammarConstraint::Gbnf(gbnf)) if gbnf.contains("root") && gbnf.contains("::= object"))
+        );
     }
 
     #[test]
@@ -715,7 +777,7 @@ mod tests {
         });
         let result = validate_and_convert_schema(&schema);
         assert!(result.is_ok(), "expected Ok, got: {result:?}");
-        assert!(result.unwrap().contains("root ::="));
+        assert!(result.is_ok_and(|grammar| grammar.contains("root ::=")));
     }
 
     #[test]
@@ -723,7 +785,7 @@ mod tests {
         let schema = serde_json::json!({ "$ref": "https://example.com/schema.json" });
         let result = validate_and_convert_schema(&schema);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("external $ref URI"));
+        assert!(result.is_err_and(|error| error.contains("external $ref URI")));
     }
 
     #[test]

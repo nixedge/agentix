@@ -77,3 +77,10 @@ A Git revision is skippable only after an explicit successful completion record,
 including whether documentation was indexed. Failed/partial runs remain resumable;
 an interrupted forced rerun must invalidate its prior completion record. Pruning a
 repository also removes its completion state.
+
+The supplied llama.log confirms the ledger failures abort inside llama.cpp when
+one input exceeds n_batch. The active inference backend must check actual token
+counts before native decode/encode and return ContextExceeded/HTTP 400 without
+aborting or truncating. Its embedding context cap increases from 4,096 to 8,192
+tokens, bounded by the model context, to accommodate the indexer's existing
+8,000-byte code chunks intact. The storage model identity/dimensions do not change.

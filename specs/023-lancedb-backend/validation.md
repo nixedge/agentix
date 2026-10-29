@@ -144,3 +144,35 @@ changed. Root cause is not yet established.
 Evidence: `data/lance-validation/ledger-*`, including first/retry timings, diagnostic
 responses, regression logs and canonical client-build outputs. T019 remains open until
 the model service is diagnosed and complete ingestion/search timing succeeds.
+
+## Confirmed native assertion fixed — same worktree
+
+The operator supplied `llama.log`. Both ledger failures align with
+`GGML_ASSERT(n_tokens_all <= cparams.n_batch)` and SIGABRT/core dumps in
+agentix-llama. The active backend capped embedding context/decode batch at 4,096
+tokens and passed arbitrarily tokenized inputs directly to native decode. The
+indexer's 8,000-byte bound did not guarantee that smaller token budget. This is a
+confirmed input-bound failure, not evidence of GPU out-of-memory.
+
+The backend now checks actual token counts against context and the configured batch
+limit before encode/decode. Oversized inputs return ContextExceeded and structured
+HTTP 400 on both embedding routes; a later valid request still succeeds. The
+embedding cap is now 8,192 tokens, bounded by model context, accommodating intact
+8,000-byte code chunks without truncation or averaging partial embeddings. Ingest
+embedding errors also identify the repository/collection/files for diagnosis. No
+storage schema, model identity, vector dimensions or NixOS option changed.
+
+Final serial workspace suite: **207 passed, 0 failed, 3 ignored**, across 46 suites,
+with the pinned all-MiniLM GGUF actually supplied. This includes a real-model backend
+overflow/recovery test and both HTTP embedding handlers rejecting oversized inputs
+then accepting a normal request. The fixture tests ran on CPU; live CUDA/Jina
+validation and complete ledger ingestion require updating the remote inference
+service. Existing completion-loop counter and three test unwrap lint findings were
+cleaned up without changing their assertions. Strict all-target Clippy for inference
+and indexer, Rust formatting and diff checks passed. Canonical Nix builds of the CUDA
+inference package, indexer and MCP passed on the final source.
+
+Evidence: `ledger-inference-workspace-tests.log`, `ledger-native-{embed,route}-test.log`
+and `ledger-inference-*-build.{json,log}` in the ignored validation directory. The
+deployment/resume commands are in quickstart.md. The user's raw llama.log remains
+untracked and is not part of this change.

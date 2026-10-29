@@ -257,7 +257,16 @@ pub async fn flush_files(
         files.push((file, batch.len()));
         records.append(&mut batch);
     }
-    let records = embed_records(records).await?;
+    let records = embed_records(records).await.with_context(|| {
+        let paths = files
+            .iter()
+            .map(|(file, _)| file.as_str())
+            .collect::<Vec<_>>();
+        format!(
+            "Embedding {collection} for {repo}, files: {}",
+            paths.join(", ")
+        )
+    })?;
     for record in &records {
         store.validate_record(collection, record)?;
     }

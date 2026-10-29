@@ -63,3 +63,13 @@ records without completion state safely walk/hash the checkout again. Prune both
 registry and completion state. Test partial-data recovery, code-only to docs upgrade,
 and completed-revision skipping with a disposable local Git repository, then rebuild
 the clients and rerun/timestamp the user's large remote ledger ingestion.
+
+## Inference input bound correction
+
+Modify the active agentix-llama backend in this worktree. Set the embedding context
+cap to 8,192, validate token length against both context and configured decode-batch
+limit before touching native state, and map ContextExceeded to HTTP 400 on both
+embedding endpoints. Keep source chunks intact; do not silently truncate or average
+partial embeddings. Extend the real GGUF regression to reject a too-long input and
+then successfully embed another request. Build the inference package and clients;
+the operator must update agentix-llama before resuming the live ledger workload.
