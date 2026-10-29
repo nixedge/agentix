@@ -28,6 +28,7 @@ pub async fn ingest_github(
     }
 
     let http = reqwest::Client::builder()
+        .user_agent("agentix-indexer (https://github.com/nixedge/agentix)")
         .timeout(std::time::Duration::from_secs(30))
         .build()?;
 
@@ -196,11 +197,11 @@ async fn get_watermark(pool: &Store, source: &str, scope: &str) -> Result<Option
         .await?
         .and_then(|r| r["watermark"].as_str().map(str::to_owned)))
 }
-async fn set_watermark(pool: &Store, source: &str, scope: &str, watermark: &str) -> Result<()> {
+async fn set_watermark(pool: &Store, source: &str, scope: &str, watermark: Option<&str>) -> Result<()> {
     let key = format!("{source}:{scope}");
     let now = Utc::now().to_rfc3339();
     pool.update_metadata("sync_state",&key,|previous|{
-        let watermark=latest_ts(previous.as_ref().and_then(|r|r["watermark"].as_str()),Some(watermark));
+        let watermark=latest_ts(previous.as_ref().and_then(|r|r["watermark"].as_str()),watermark);
         Ok(serde_json::json!({"id":key,"source_name":source,"scope_key":scope,"watermark":watermark,
             "last_synced_at":now,"updated_at":now,"error_count":0,"last_error":null}))
     }).await
@@ -321,9 +322,7 @@ async fn ingest_issues(
     }
     flush_issues(&mut pending, pool, repo, &mut upserted, &mut skipped).await?;
 
-    if let Some(wm) = &new_watermark {
-        set_watermark(pool, "github", &scope, wm).await?;
-    }
+    set_watermark(pool, "github", &scope, new_watermark.as_deref()).await?;
     Ok((upserted, skipped))
 }
 
@@ -429,9 +428,7 @@ async fn ingest_prs(
     }
     flush_prs(&mut pending, pool, repo, &mut upserted).await?;
 
-    if let Some(wm) = &new_watermark {
-        set_watermark(pool, "github", &scope, wm).await?;
-    }
+    set_watermark(pool, "github", &scope, new_watermark.as_deref()).await?;
     Ok((upserted, skipped))
 }
 
@@ -540,9 +537,7 @@ async fn ingest_issue_comments(
     }
     flush_issue_comments(&mut pending, pool, repo, &mut upserted).await?;
 
-    if let Some(wm) = &new_watermark {
-        set_watermark(pool, "github", &scope, wm).await?;
-    }
+    set_watermark(pool, "github", &scope, new_watermark.as_deref()).await?;
     Ok(upserted)
 }
 
@@ -641,9 +636,7 @@ async fn ingest_pr_comments(
     }
     flush_pr_comments(&mut pending, pool, repo, &mut upserted).await?;
 
-    if let Some(wm) = &new_watermark {
-        set_watermark(pool, "github", &scope, wm).await?;
-    }
+    set_watermark(pool, "github", &scope, new_watermark.as_deref()).await?;
     Ok(upserted)
 }
 
@@ -707,7 +700,7 @@ mod storage_tests {
         let tmp = tempfile::tempdir()?;
         let store = Store::open(tmp.path(), "fixture", 4).await?;
         let scope = "owner/repo:issues";
-        set_watermark(&store, "github", scope, "2026-10-28T00:00:00Z").await?;
+        set_watermark(&store, "github", scope, Some("2026-10-28T00:00:00Z")).await?;
         record_error(&store, "github", scope, &"é".repeat(1100)).await?;
         assert_eq!(
             get_watermark(&store, "github", scope).await?.as_deref(),
@@ -726,7 +719,7 @@ mod storage_tests {
                 .count(),
             1000
         );
-        set_watermark(&store, "github", scope, "2026-10-27T00:00:00Z").await?;
+        set_watermark(&store, "github", scope, Some("2026-10-27T00:00:00Z")).await?;
         assert_eq!(
             get_watermark(&store, "github", scope).await?.as_deref(),
             Some("2026-10-28T00:00:00Z")
@@ -737,6 +730,23 @@ mod storage_tests {
             .context("missing sync state")?;
         assert_eq!(row["error_count"], 0);
         assert!(row["last_error"].is_null());
+        record_error(&store, "github", scope, "temporary error").await?;
+        set_watermark(&store, "github", scope, None).await?;
+        assert_eq!(
+            get_watermark(&store, "github", scope).await?.as_deref(),
+            Some("2026-10-28T00:00:00Z")
+        );
+        let empty_scope = "owner/empty:issues";
+        record_error(&store, "github", empty_scope, "temporary error").await?;
+        set_watermark(&store, "github", empty_scope, None).await?;
+        let empty = store
+            .metadata("sync_state", &format!("github:{empty_scope}"))
+            .await?
+            .context("missing empty stream state")?;
+        assert!(empty["watermark"].is_null());
+        assert_eq!(empty["error_count"], 0);
+        assert!(empty["last_error"].is_null());
+        assert!(empty["last_synced_at"].is_string());
         Ok(())
     }
 }
