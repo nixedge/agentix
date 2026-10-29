@@ -18,6 +18,9 @@ pub struct Embeddings {
 }
 impl Embeddings {
     pub fn start() -> Result<Self> {
+        Self::start_with_delay(Duration::ZERO)
+    }
+    pub fn start_with_delay(delay: Duration) -> Result<Self> {
         let listener = TcpListener::bind("127.0.0.1:0")?;
         let address = listener.local_addr()?;
         listener.set_nonblocking(true)?;
@@ -29,6 +32,7 @@ impl Embeddings {
             while !stopped.load(Ordering::Relaxed) {
                 match listener.accept() {
                     Ok((mut stream, _)) => {
+                        thread::sleep(delay);
                         let _ = respond(&mut stream, &count);
                     }
                     Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {

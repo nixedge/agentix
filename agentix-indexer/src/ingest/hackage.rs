@@ -33,20 +33,27 @@ pub async fn ingest_hackage(
             )
             .await?;
 
-        if count > 0 {
-            for source in ["chap", "hackage"] {
-                pool.tag_repository(&format!("{source}::{pkg_ver}"), project)
-                    .await?;
+        for source in ["chap", "hackage"] {
+            let key = format!("{source}::{pkg_ver}");
+            if super::completion::package_complete(pool, &key).await? {
+                pool.tag_repository(&key, project).await?;
+                eprintln!(
+                    "Package {pkg_ver} already indexed ({count} chunks). Use --force to re-index."
+                );
+                return Ok(());
             }
-            eprintln!(
-                "Package {pkg_ver} already indexed ({count} chunks). Use --force to re-index."
-            );
-            return Ok(());
         }
     }
 
+    for source in ["chap", "hackage"] {
+        let key = format!("{source}::{pkg_ver}");
+        if pool.metadata("package_ingest", &key).await?.is_some() {
+            super::completion::mark_package(pool, &key, false).await?;
+        }
+    }
     let (tarball_bytes, source) = download_tarball(package, version).await?;
     let repo_path_str = format!("{source}::{pkg_ver}");
+    super::completion::mark_package(pool, &repo_path_str, false).await?;
     eprintln!("Fetched {pkg_ver} from {source}. Extracting...");
 
     let tmp = TempDir::new().context("Failed to create temp directory")?;
@@ -83,6 +90,7 @@ pub async fn ingest_hackage(
     )
     .await?;
 
+    super::completion::mark_package(pool, &repo_path_str, true).await?;
     // tmp is dropped here, cleaning up the extracted files.
     Ok(())
 }

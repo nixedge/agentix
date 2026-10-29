@@ -10,6 +10,7 @@ use super::repo_index::{upsert_repo, RepoMeta};
 
 async fn run_git(args: &[&str], cwd: Option<&Path>) -> Result<String> {
     let mut cmd = Command::new("git");
+    cmd.kill_on_drop(true);
     if let Some(dir) = cwd {
         cmd.current_dir(dir);
     }
@@ -89,7 +90,7 @@ pub async fn ingest_git(
     pool.set_metadata(
         "git_ingest",
         &repo_path_str,
-        serde_json::json!({"complete": false}),
+        serde_json::json!({"repo_path":repo_path_str,"complete": false}),
     )
     .await?;
     ingest_code(pool, tmp.path(), force, &[], Some(&repo_path_str), project).await?;
@@ -114,7 +115,7 @@ pub async fn ingest_git(
     pool.set_metadata(
         "git_ingest",
         &repo_path_str,
-        serde_json::json!({"complete": true, "docs_indexed": !no_docs}),
+        serde_json::json!({"repo_path":repo_path_str,"complete": true, "docs_indexed": !no_docs}),
     )
     .await?;
 

@@ -1,3 +1,4 @@
+use crate::operations::{self, Ingestion, Jobs};
 use agentix_store::Store;
 use rmcp::{
     model::{CallToolResult, Content, ServerCapabilities, ServerInfo},
@@ -5,9 +6,7 @@ use rmcp::{
 };
 use serde::Deserialize;
 
-use agentix_indexer::ingest::{
-    crates::ingest_crate, embed::ensure_embed_model, hackage::ingest_hackage, pypi::ingest_pypi,
-};
+use agentix_indexer::ingest::completion::package_complete;
 
 /// Returns a warning string if the Ollama embed model is loaded on CPU (size_vram == 0).
 /// Empty string if GPU is in use or the check fails.
@@ -122,6 +121,38 @@ pub struct FetchPackageParams {
     )]
     #[serde(default = "default_ecosystem")]
     pub ecosystem: String,
+    #[serde(default)]
+    pub force: bool,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct StartIngestionParams {
+    pub request: Ingestion,
+}
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct JobParams {
+    pub job_id: String,
+}
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct JobStatusParams {
+    pub job_id: Option<String>,
+}
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct OptimizeParams {
+    #[serde(default)]
+    pub collections: Vec<String>,
+}
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct PruneParams {
+    pub selection: operations::PruneTarget,
+    #[serde(default = "operations::default_dry_run")]
+    pub dry_run: bool,
+}
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ListSourcesParams {
+    pub source_kind: Option<String>,
+    #[serde(default)]
+    pub local: bool,
 }
 
 fn default_ecosystem() -> String {
@@ -134,18 +165,165 @@ fn default_ecosystem() -> String {
 pub struct CodeSearchServer {
     pool: Store,
     projects: Vec<String>,
+    jobs: Jobs,
 }
 
 #[tool(tool_box)]
 impl CodeSearchServer {
     pub fn new(pool: Store) -> Self {
-        let projects = std::env::var("PROJECTS")
+        let projects: Vec<String> = std::env::var("PROJECTS")
             .unwrap_or_default()
             .split(',')
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
             .collect();
-        Self { pool, projects }
+        let jobs = Jobs::new(pool.clone(), projects.clone());
+        Self {
+            pool,
+            projects,
+            jobs,
+        }
+    }
+
+    #[tool(
+        description = "Start background ingestion: local code/docs, an entire Git checkout, Hackage/CHaP/crates/PyPI, GitHub streams, or offline import into a fresh LOCAL directory on the MCP host. Returns a job ID immediately; poll ingestion_status. Ingestion automatically schedules shared index maintenance."
+    )]
+    async fn start_ingestion(
+        &self,
+        #[tool(aggr)] params: StartIngestionParams,
+    ) -> Result<CallToolResult, McpError> {
+        admin_result(self.jobs.start(params.request).await)
+    }
+
+    #[tool(
+        description = "Poll a background ingestion/optimization/prune job, including result, errors and maintenance. With no job_id, list the latest 20 jobs. Jobs are shared between MCP clients; a missing worker heartbeat becomes interrupted."
+    )]
+    async fn ingestion_status(
+        &self,
+        #[tool(aggr)] params: JobStatusParams,
+    ) -> Result<CallToolResult, McpError> {
+        admin_result(self.jobs.status(params.job_id.as_deref()).await)
+    }
+
+    #[tool(
+        description = "Request cancellation of a shared background job. Committed files remain; the worker stops further work at its next heartbeat. Poll ingestion_status until terminal."
+    )]
+    async fn cancel_ingestion(
+        &self,
+        #[tool(aggr)] params: JobParams,
+    ) -> Result<CallToolResult, McpError> {
+        admin_result(self.jobs.cancel(&params.job_id).await)
+    }
+
+    #[tool(
+        description = "Retry a finished/failed/cancelled/interrupted job using its original request. Returns a NEW job ID. Partial Git/package ingests resume safely; cannot retry a still-active job."
+    )]
+    async fn retry_ingestion(
+        &self,
+        #[tool(aggr)] params: JobParams,
+    ) -> Result<CallToolResult, McpError> {
+        admin_result(self.jobs.retry(&params.job_id).await)
+    }
+
+    #[tool(
+        description = "Start explicit shared index optimization as a background job. Empty collections means all six searchable collections. Automatic ingestion maintenance normally batches small changes. Poll ingestion_status for completion or a competing optimization lease."
+    )]
+    async fn optimize_index(
+        &self,
+        #[tool(aggr)] params: OptimizeParams,
+    ) -> Result<CallToolResult, McpError> {
+        admin_result(
+            self.jobs
+                .start(Ingestion::Optimize {
+                    collections: params.collections,
+                })
+                .await,
+        )
+    }
+
+    #[tool(
+        description = "Global index administration: start repository/local-clone/old-package-version pruning. Defaults to dry_run=true and returns affected repositories/counts. Set dry_run=false to delete from the SHARED index, including other project tags. Poll ingestion_status."
+    )]
+    async fn prune_index(
+        &self,
+        #[tool(aggr)] params: PruneParams,
+    ) -> Result<CallToolResult, McpError> {
+        admin_result(
+            self.jobs
+                .start(Ingestion::Prune {
+                    selection: params.selection,
+                    dry_run: params.dry_run,
+                })
+                .await,
+        )
+    }
+
+    #[tool(
+        description = "Global index health: collection counts, shared maintenance generations/leases/errors, GitHub sync state and latest background jobs. Use this to discover incomplete ingestion or pending optimization."
+    )]
+    async fn index_status(&self) -> Result<CallToolResult, McpError> {
+        admin_result(
+            async {
+                let mut counts = serde_json::Map::new();
+                let mut maintenance = Vec::new();
+                for name in agentix_store::COLLECTIONS {
+                    counts.insert(
+                        (*name).into(),
+                        serde_json::json!(self.pool.count(name, "true").await?),
+                    );
+                    if let Some(mut state) = self.pool.metadata("maintenance", name).await? {
+                        state["collection"] = serde_json::json!(name);
+                        maintenance.push(state);
+                    }
+                }
+                let mut git = self.pool.metadata_rows("git_ingest").await?;
+                // Older Git completion payloads did not include their metadata key.
+                git.retain(|row| row["repo_path"].is_string());
+                for source in self.pool.metadata_rows("repo_index").await? {
+                    if source["source_kind"] == "git" {
+                        if let Some(repo) = source["repo_path"].as_str() {
+                            if let Some(mut row) = self.pool.metadata("git_ingest", repo).await? {
+                                if !row["repo_path"].is_string() {
+                                    row["repo_path"] = serde_json::json!(repo);
+                                    git.push(row);
+                                }
+                            }
+                        }
+                    }
+                }
+                anyhow::Ok(
+                    serde_json::json!({"counts":counts,"maintenance":maintenance,
+                "sync_state":self.pool.metadata_rows("sync_state").await?,
+                "git_ingest":git,
+                "package_ingest":self.pool.metadata_rows("package_ingest").await?,
+                "jobs":self.jobs.status(None).await?}),
+                )
+            }
+            .await,
+        )
+    }
+
+    #[tool(
+        description = "List the global source registry with package versions, Git revisions and project tags. Filter source_kind (local, git, chap, hackage, crates.io, pypi) or local=true. For project-scoped searchable file/chunk summaries use list_repos."
+    )]
+    async fn list_sources(
+        &self,
+        #[tool(aggr)] params: ListSourcesParams,
+    ) -> Result<CallToolResult, McpError> {
+        admin_result(
+            async {
+                let rows = self.pool.metadata_rows("repo_index").await?;
+                anyhow::Ok(serde_json::json!(rows
+                    .into_iter()
+                    .filter(|r| (!params.local || r["source_kind"] == "local")
+                        && params
+                            .source_kind
+                            .as_deref()
+                            .is_none_or(|kind| r["source_kind"] == kind))
+                    .collect::<Vec<_>>()))
+            }
+            .await,
+        )
     }
 
     // ── search_code ───────────────────────────────────────────────────────────
@@ -419,16 +597,23 @@ impl CodeSearchServer {
             package,
             version,
             ecosystem,
+            force,
         } = params;
         let pkg_ver = format!("{package}-{version}");
 
         let (subcommand, repo_path_keys): (&str, Vec<String>) = match ecosystem.as_str() {
             "rust" => ("crate", vec![format!("crates.io::{pkg_ver}")]),
             "python" => ("pypi", vec![format!("pypi::{pkg_ver}")]),
-            _ => (
+            "haskell" => (
                 "hackage",
                 vec![format!("chap::{pkg_ver}"), format!("hackage::{pkg_ver}")],
             ),
+            _ => {
+                return Err(McpError::invalid_params(
+                    "ecosystem must be haskell, rust or python",
+                    None,
+                ))
+            }
         };
 
         let language = match ecosystem.as_str() {
@@ -447,7 +632,21 @@ impl CodeSearchServer {
             .await
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
 
-        if visible > 0 {
+        let mut complete = false;
+        for key in &repo_path_keys {
+            complete |= package_complete(&self.pool, key)
+                .await
+                .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        }
+        if !force && visible > 0 && complete {
+            agentix_indexer::maintenance::maintain(&self.pool, "code_chunks", false, false)
+                .await
+                .map_err(|e| {
+                    McpError::internal_error(
+                        format!("package complete; maintenance failed: {e:#}"),
+                        None,
+                    )
+                })?;
             return Ok(CallToolResult::success(vec![Content::text(format!(
                 "Already indexed: {pkg_ver} ({visible} chunks).\n\
                  Use search_code with language={language} to query it."
@@ -469,23 +668,25 @@ impl CodeSearchServer {
         } else {
             eprintln!("[agentic-nix] Fetching and indexing {ecosystem} {pkg_ver}... (WARNING: Ollama on CPU — will be slow)");
         }
-        if let Err(e) = ensure_embed_model().await {
-            return Ok(CallToolResult::success(vec![Content::text(format!(
-                "Cannot reach Ollama embed model: {e}"
-            ))]));
-        }
-        let result = match subcommand {
-            "hackage" => {
-                ingest_hackage(&self.pool, &package, &version, false, ingest_project).await
-            }
-            "crate" => ingest_crate(&self.pool, &package, &version, false, ingest_project).await,
-            "pypi" => ingest_pypi(&self.pool, &package, &version, false, ingest_project).await,
-            _ => Err(anyhow::anyhow!("unknown ecosystem: {ecosystem}")),
+        let kind = match subcommand {
+            "crate" => operations::Ecosystem::Rust,
+            "pypi" => operations::Ecosystem::Python,
+            _ => operations::Ecosystem::Haskell,
         };
+        let result = self
+            .jobs
+            .execute(Ingestion::Package {
+                package: package.clone(),
+                version: version.clone(),
+                ecosystem: kind,
+                force,
+                project: ingest_project.map(str::to_owned),
+            })
+            .await;
 
         if let Err(e) = result {
             return Ok(CallToolResult::success(vec![Content::text(format!(
-                "Ingest failed: {e}"
+                "Ingest failed: {e:#}"
             ))]));
         }
 
@@ -614,7 +815,14 @@ impl ServerHandler for CodeSearchServer {
                      - search_github: hybrid search over indexed GitHub issues + PRs (entity_type, repo, state filters)\n\
                      - list_repos: list indexed repositories with file and chunk counts\n\
                      - get_file: retrieve all chunks for a specific file\n\
-                     - fetch_package: download and index a Haskell package from CHaP or Hackage on demand\n\
+                     - fetch_package: synchronously download/index Haskell, Rust or Python packages\n\
+                     - start_ingestion: background code/docs, whole Git checkout, package, GitHub streams or local offline import; returns a job ID\n\
+                     - ingestion_status: poll a job or list recent shared jobs; keep the originating MCP running until terminal\n\
+                     - cancel_ingestion / retry_ingestion: cancel work or start a new attempt from committed progress\n\
+                     - index_status / list_sources: shared counts, completion markers, maintenance, sync errors and source registry\n\
+                     - optimize_index: background optimization of selected collections (empty means all)\n\
+                     - prune_index: global repository/local/old-version cleanup; dry_run defaults true\n\
+                     Ingestion automatically batches index maintenance with a shared lease across MCP clients. Small changes may remain pending until a later ingestion or explicit optimize_index; there is no idle scheduler. Administration is global even when PROJECTS filters search. Local paths and offline import destinations refer to the MCP host.\n\
                      \n\
                      IMPORTANT — external packages:\n\
                      When you need source-level detail about a library that isn't in the current index, \
@@ -645,4 +853,11 @@ async fn count_package(
         agentix_store::project_filter(projects)
     );
     store.count("code_chunks", &filter).await
+}
+
+fn admin_result(result: anyhow::Result<serde_json::Value>) -> Result<CallToolResult, McpError> {
+    let value = result.map_err(|error| McpError::internal_error(format!("{error:#}"), None))?;
+    let text = serde_json::to_string_pretty(&value)
+        .map_err(|error| McpError::internal_error(error.to_string(), None))?;
+    Ok(CallToolResult::success(vec![Content::text(text)]))
 }

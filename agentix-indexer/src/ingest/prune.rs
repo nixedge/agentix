@@ -14,7 +14,7 @@ pub async fn prune_repo(pool: &Store, repo: &str, dry_run: bool) -> Result<()> {
     pool.delete(
         "metadata",
         &format!(
-            "namespace IN ('repo_index', 'git_ingest') AND key = {}",
+            "namespace IN ('repo_index', 'git_ingest', 'package_ingest') AND key = {}",
             literal(repo)
         ),
     )
@@ -33,8 +33,15 @@ pub async fn prune_dirty(pool: &Store, dry_run: bool) -> Result<()> {
     Ok(())
 }
 pub async fn prune_old_versions(pool: &Store, package: Option<&str>, dry_run: bool) -> Result<()> {
+    for repo in old_version_repos(pool, package).await? {
+        prune_repo(pool, &repo, dry_run).await?;
+    }
+    Ok(())
+}
+pub async fn old_version_repos(pool: &Store, package: Option<&str>) -> Result<Vec<String>> {
     let rows = pool.metadata_rows("repo_index").await?;
     let mut latest: BTreeMap<(String, String), chrono::DateTime<chrono::Utc>> = BTreeMap::new();
+    let mut repos = Vec::new();
     for row in &rows {
         let Some(name) = row["package_name"].as_str() else {
             continue;
@@ -65,11 +72,11 @@ pub async fn prune_old_versions(pool: &Store, package: Option<&str>, dry_run: bo
                 let repo = row["repo_path"]
                     .as_str()
                     .context("repository metadata lacks repo_path")?;
-                prune_repo(pool, repo, dry_run).await?;
+                repos.push(repo.to_owned());
             }
         }
     }
-    Ok(())
+    Ok(repos)
 }
 fn indexed_at(row: &serde_json::Value) -> Result<chrono::DateTime<chrono::Utc>> {
     Ok(chrono::DateTime::parse_from_rfc3339(

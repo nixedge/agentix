@@ -84,3 +84,28 @@ counts before native decode/encode and return ContextExceeded/HTTP 400 without
 aborting or truncating. Its embedding context cap increases from 4,096 to 8,192
 tokens, bounded by the model context, to accommodate the indexer's existing
 8,000-byte code chunks intact. The storage model identity/dimensions do not change.
+
+## MCP operational parity — 2026-10-29
+
+The MCP is the user's primary indexing interface. Every ingest CLI capability must
+be available there: local code/docs, Git branch/tag/revision, CHaP/Hackage/crates/PyPI,
+all GitHub streams, registry/status, optimization, pruning and explicit offline import.
+Existing search/fetch tools remain compatible. Long operations start background jobs
+and return an ID promptly; clients can poll, cancel and retry through the shared store.
+Another MCP process can observe/control a job. Worker loss becomes an interrupted
+state rather than an indefinitely running job. Cancellation preserves committed data.
+
+All MCP ingestion paths automatically request collection maintenance. Maintenance
+tracks dirty generations/counts, batches small changes, refreshes after significant
+growth/deletion or elapsed dirty time, and uses a shared expiring lease to avoid
+duplicate work across MCP processes. Pending/failed maintenance is visible and
+manually runnable through MCP. No new server protocol or inference behavior is needed.
+Registry package loaders and fetch_package must require completion state before
+skipping, including after partial/forced failures. Pruning removes completion state.
+
+Tools must validate ambiguous Git refs, unknown source/collection names and invalid
+parameters before launching work. Pruning defaults to dry-run and explicitly identifies
+its global scope. Import reads an export accessible to the MCP host and creates a fresh
+local destination; it must not pretend to import a laptop path into the remote store.
+Integration tests exercise discovery, actual HTTP/Lance storage, background completion,
+cross-client status/cancellation, maintenance coordination and package completion guards.

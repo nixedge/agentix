@@ -1,6 +1,8 @@
+pub mod maintenance;
 pub mod migration;
 pub mod ingest {
     pub mod code;
+    pub mod completion;
     pub mod crates;
     pub mod docs;
     pub mod embed;

@@ -25,3 +25,9 @@ Remote deployment amendment (supersedes local-only readiness):
 - [x] T018 Exercise the user's deployed LAN store with real repo/package/GitHub ingestion, all MCP tools, concurrent clients, incremental replacement and maintenance; fix GitHub User-Agent and empty-success sync status, rebuild clients and record evidence/remaining relevance and file-reconstruction limits.
 - [x] T019 Recover large Git ingestion: retry transient embedding HTTP statuses with diagnostics, persist revision completion/docs state and prune it, add real HTTP/Git regressions, rebuild clients and time complete ledger-master ingestion plus searches; retain the measured semantic-ranking miss as a relevance limitation.
 - [x] T020 Fix confirmed llama.cpp input overflow in this worktree: guard native token counts, accommodate intact 8,000-byte code chunks with bounded 8,192-token context, return HTTP 400, test recovery with a real GGUF and prepare inference/client packages for deployment.
+- [x] T021 [MCP] Add reliable registry-package completion state and remove row-count-only skips from CLI/MCP paths; cover partial/completed/forced cases and prune cleanup.
+- [x] T022 [MCP] Add shared dirty-generation maintenance policy, expiring lease, status/failure reports and explicit optimization; test coordination and changes during maintenance.
+- [x] T023 [MCP] Expose every ingestion source as a background job with shared status, heartbeat/interruption, cancellation and retry; preserve existing fetch tool compatibility.
+- [x] T024 [MCP] Expose registry/status, optimization and default-dry-run pruning; document global administration and local-only import semantics.
+- [x] T025 [MCP] Extend actual HTTP/Lance/stdio multi-client integration coverage, full workspace gates, canonical builds and reversible deployed MCP smoke.
+- [x] T026 [MCP] Update primary MCP instructions/docs, parity inventory and validation evidence; commit the reviewed implementation in this worktree.

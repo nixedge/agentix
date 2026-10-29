@@ -238,3 +238,65 @@ Evidence under the ignored validation directory: `ledger-github-resume*`,
 `ledger-{concurrent-a,concurrent-b,rerank,min-ada-candidates}*`, and
 `ledger-{oversized,recovery}-probe*`. Source and client packages remain unchanged;
 only this validation record and task completion were updated.
+
+## MCP operational parity — 2026-10-29
+
+The MCP now exposes all ingest CLI capabilities. The README contains the capability
+mapping and background-job workflow. Eight new tools cover start/status/cancel/retry,
+explicit optimization, pruning, global health and the source registry. Existing
+search tools and synchronous fetch_package remain available; fetch gains force.
+Local paths/import destinations belong to the MCP host; offline import creates a
+fresh local store and does not write that path on the remote storage host.
+
+Registry packages require explicit successful completion before skipping. Partial
+and forced attempts invalidate completion; pruning removes markers. Successful MCP
+ingestion records dirty collection generations and invokes shared maintenance.
+A metadata CAS lease coordinates clients; small changes defer until sufficient row
+count drift or a later call after five minutes. There is no idle maintenance daemon.
+Explicit optimize_index flushes pending work. Maintenance failures report committed
+ingestion separately. Cancelled/crashed leases expire after 15 minutes.
+
+Background workers are bounded to two per MCP. Job requests, results, errors,
+cancellation and heartbeats are stored in the existing shared metadata API. Other
+clients can inspect/control them. A missing heartbeat becomes interrupted on status
+inspection; retry starts a new job. The originating MCP must remain running.
+This does not promise durable workers or exactly-once execution across process loss.
+Pruning defaults to dry-run and describes its global, cross-project effect.
+
+Validation uses real LanceDB and actual HTTP storage plus stdio MCP processes:
+local/authenticated/unauthenticated discovery and ingestion, a second process
+polling jobs, local code plus docs, Git clone/completion, completed package handling,
+fresh local import, optimization, pruning preview/deletion, stale-job recovery and
+retry. A delayed embedding fixture verifies cross-client cancellation without
+committing code. Unit regressions cover package completion independent of row count,
+prune cleanup, pending generations arriving under another maintenance lease,
+expired-lease recovery and invalid job parameters. The first local background test
+caught a heartbeat/write-lock scheduling deadlock; polling the entire monitor future
+alongside ingestion fixed it, and all local/remote paths pass afterward.
+
+Final gates: full release workspace with the pinned real GGUF fixture, strict
+indexer/MCP all-target Clippy, Rust formatting, diff checks and canonical Nix indexer
+and MCP builds. No storage protocol, inference, NixOS module or search ranking
+change is part of this amendment. The previously measured semantic relevance miss
+and incomplete get_file reconstruction remain separate limitations.
+
+Raw evidence is ignored under data/lance-validation/: mcp-parity-workspace-tests.log,
+mcp-parity-clippy.log, mcp-parity-build.{json,log}, and mcp-parity-live.{rs,log}.
+
+Final result: **211 passed, 0 failed, 3 ignored across 46 suites**. The three
+pre-existing ignored model tests remain unchanged. Both canonical client packages
+built successfully. Strict Clippy, formatting and diff checks passed.
+
+Two packaged MCPs connected to the deployed unauthenticated ai.lan:8091 store,
+using ai.lan:11434 for real 1,536-dimensional Jina embeddings. Background local
+code/docs, forced crates.io cfg-if 1.0.0, Hackage split 0.2.5, PyPI six 1.17.0 and
+all four nixedge/agentix GitHub streams completed successfully. Existing Hackage
+and PyPI rows revalidated incrementally and gained completion state. Code and docs
+retrieval, labelled health/source reports, explicit optimization and default-dry-run
+pruning passed. Only the disposable local fixture was actually pruned. cfg-if's
+eight chunks remain indexed; existing split/six gained the validation project tag.
+The final corpus after fixture cleanup has 20,896 code chunks, 1,018 documents,
+26 issues, 45 PRs, 80 issue comments and 23 review comments. This verifies deployed
+functionality, not a load/capacity or ranking benchmark. Only MCP clients need an
+update for these tools; CLI users should update ingest for package completion.
+No storage-server/inference deployment or NixOS module change is required.

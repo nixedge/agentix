@@ -5,6 +5,7 @@ use tracing_subscriber::{self, EnvFilter};
 
 use agentix_search::{db, embed, fmt};
 
+mod operations;
 mod tools;
 
 #[derive(Parser)]

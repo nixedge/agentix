@@ -39,7 +39,7 @@ pub async fn ingest_pypi(
             .count("code_chunks", &agentix_store::repo_filter(&repo_path_str))
             .await?;
 
-        if count > 0 {
+        if super::completion::package_complete(pool, &repo_path_str).await? {
             pool.tag_repository(&repo_path_str, project).await?;
             eprintln!(
                 "Package {pkg_ver} already indexed ({count} chunks). Use --force to re-index."
@@ -48,6 +48,7 @@ pub async fn ingest_pypi(
         }
     }
 
+    super::completion::mark_package(pool, &repo_path_str, false).await?;
     // Resolve the sdist download URL via the PyPI JSON API.
     let api_url = format!("{PYPI_API_BASE}/{package}/{version}/json");
     eprintln!("Fetching metadata from {api_url}");
@@ -149,5 +150,6 @@ pub async fn ingest_pypi(
     )
     .await?;
 
+    super::completion::mark_package(pool, &repo_path_str, true).await?;
     Ok(())
 }

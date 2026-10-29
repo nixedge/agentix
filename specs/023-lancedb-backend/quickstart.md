@@ -101,6 +101,11 @@ unset AGENTIX_LANCE_PATH PG_DSN AGENTIX_STORE_TOKEN AGENTIX_STORE_TOKEN_FILE
 nix run .#agentix-mcp-server -- repos
 ```
 
+After updating the MCP binary, ingestion and maintenance can run through MCP
+tools without a CLI session. See the [MCP capability table](../../README.md#ingestion-and-maintenance-through-mcp).
+This addition uses the existing metadata/maintenance API: it requires updated
+MCP clients, with no storage-server or inference-service change.
+
 Use those same variables for the laptop's stdio MCP configuration and any `ingest` commands. Ensure the jail's existing network policy permits the API endpoint; no index mount or token provisioning is needed for LAN mode.
 
 Authentication is optional. To enable it, set `services.agentix.storage.tokenFile = "/run/secrets/agentix-store-token";` on the server and `AGENTIX_STORE_TOKEN_FILE` to a file containing the same token on each laptop. Provision that runtime file through your existing secret mechanism; the token must contain at least 32 printable non-space ASCII characters. NixOS uses `LoadCredential` only when tokenFile is set. `AGENTIX_STORE_TOKEN` is an alternative to a client token file. Invalid configured credentials still fail explicitly. For jailed MCPs using authentication, the trusted launcher can inject the token through the environment without mounting a credential file.

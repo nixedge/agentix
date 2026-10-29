@@ -73,3 +73,31 @@ embedding endpoints. Keep source chunks intact; do not silently truncate or aver
 partial embeddings. Extend the real GGUF regression to reject a too-long input and
 then successfully embed another request. Build the inference package and clients;
 the operator must update agentix-llama before resuming the live ledger workload.
+
+## MCP operational parity
+
+Keep ingestion logic in agentix-indexer. Add a package completion helper and shared
+maintenance policy using existing Store metadata/CAS/maintain operations, so remote
+clients work with the already-deployed storage API. Auto-maintain a touched collection
+on first tracking, after 10% row-count drift clamped to 64–512 rows, or after five
+minutes with dirty work. Persist dirty generations and a 15-minute optimization lease;
+preserve changes arriving during optimization and report failures without claiming
+that already-committed ingestion rolled back.
+
+Add typed MCP operation/job contracts in a separate operations module. start_ingestion
+supports local code/docs, Git, registry packages, GitHub and explicit local import.
+ingestion_status, cancel_ingestion and retry_ingestion use shared metadata; workers
+heartbeat every five seconds and stale jobs become interrupted after 30 seconds.
+Bound concurrent background ingestions per MCP with a semaphore. Cancellation drops
+the ingest future; Git subprocesses must use kill_on_drop. Existing fetch_package
+remains synchronous/compatible, gains force, and uses the same completion and
+maintenance helpers. Maintenance runs through optimize_index (background job), and
+index_status/list_sources expose counts, registry, sync, jobs and maintenance state.
+prune_index exposes repo/local/old-versions targets with dry_run=true by default.
+Reuse existing library functions rather than shelling out to ingest.
+
+Validate with real Lance HTTP + two stdio MCP clients, deterministic embedding fixtures,
+a disposable Git/local repo, job cancellation/interruption and maintenance leases.
+Run full workspace tests, strict changed-crate Clippy, formatting, canonical client
+builds, then read-only/live reversible MCP smoke against the deployed store. Update
+tool instructions, README and quickstart with the primary MCP workflows.

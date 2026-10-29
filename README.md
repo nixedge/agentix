@@ -577,6 +577,51 @@ Nix-packaged Ollama can't resolve CUDA libraries outside NixOS. Use the system O
 instead — see [Non-NixOS / Ubuntu setup](#non-nixos--ubuntu-setup). Confirm GPU is active with
 `ollama ps` while a model is loaded.
 
+### Ingestion and maintenance through MCP
+
+The MCP exposes every ingest CLI operation. Use `start_ingestion` for background
+work, then poll `ingestion_status` with the returned `id` as `job_id`:
+
+```json
+{"request":{"source":"git","url":"https://github.com/IntersectMBO/cardano-ledger","branch":"master"}}
+```
+
+Keep the originating MCP process running until the job finishes. Other MCPs using
+the same store can inspect or cancel it; `retry_ingestion` starts a new attempt
+after failure, cancellation or interruption. There are two background workers per
+MCP. Jobs heartbeat every five seconds; a missing heartbeat becomes interrupted
+after 30 seconds when status is checked. Committed data survives cancellation.
+Git and registry packages have explicit completion markers so partial ingestion
+is retried. Package versions indexed before these markers revalidate once.
+
+| CLI capability | MCP interface |
+| --- | --- |
+| `code`, `docs` | `start_ingestion`, source `code` or `docs`, `repo_path` |
+| `git` | source `git`, `url`, optional one of `rev`/`branch`/`tag` |
+| `hackage`, `crate`, `pypi` | source `package`, `package`, `version`, `ecosystem` (`haskell`/`rust`/`python`); synchronous `fetch_package` also remains available |
+| `github` | source `github`, `repo` (`OWNER/REPO`), optional `streams` |
+| `import` | source `import`, `input`, `destination`, `model`, `dimensions` |
+| `stats`, `sync-status` | `index_status` |
+| `list` | `list_sources`; `list_repos` provides project-filtered search summaries |
+| `optimize` | `optimize_index`, optional `collections` (empty means all six) |
+| `prune repo/local/old-versions` | `prune_index`, `selection.target` (`repo`/`local`/`old_versions`), optional `repo_path`/`package` |
+
+Local paths and offline import destinations refer to the MCP host, including its
+jail. Import creates a fresh local store; it does not merge into a remote store.
+Pruning defaults to `dry_run: true`. Administration is global: actual pruning
+also removes other projects' tags on the selected repository. `PROJECTS` filters
+search visibility, not administrative authority.
+
+Successful ingestion automatically tracks changes and maintains affected search
+indexes. Shared metadata leases coordinate concurrent MCPs. First use optimizes;
+later changes accumulate until row-count drift reaches 10% (bounded to 64–512 rows)
+or pending changes are at least five minutes old on a subsequent call. There is
+no idle scheduler: use `optimize_index` to flush deferred maintenance immediately.
+`index_status` shows pending generations, leases, errors and completion markers.
+Cancelled/crashed optimization leases expire after 15 minutes. A maintenance
+failure reports that ingestion committed and remains pending; it does not undo
+indexed files.
+
 ### Shared storage for laptop MCPs
 
 For separate storage and MCP hosts, deploy `agentix-store-server` on the index host and

@@ -71,6 +71,20 @@ impl Drop for Mcp {
     }
 }
 impl Mcp {
+    fn job(&mut self, name: &str, arguments: Value) -> Result<Value> {
+        serde_json::from_str(&self.call(100, name, arguments)?).map_err(Into::into)
+    }
+    fn wait_job(&mut self, id: &str) -> Result<Value> {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        loop {
+            let row = self.job("ingestion_status", json!({"job_id":id}))?;
+            if !matches!(row["state"].as_str(), Some("queued" | "running")) {
+                return Ok(row);
+            }
+            ensure!(std::time::Instant::now() < deadline, "job timed out: {row}");
+            std::thread::sleep(std::time::Duration::from_millis(40));
+        }
+    }
     fn start(mut command: Command) -> Result<Self> {
         let mut child = command
             .stdin(Stdio::piped())
@@ -153,6 +167,8 @@ async fn exercise(remote: Option<bool>) -> Result<()> {
     store.put("github_issues",vec![Record{row:json!({"repo":"owner/repo","number":1,"state":"closed","title":"Resolved issue","content":"issuetoken resolved"}),embedding:Some(vec![1.0,0.2,0.3,0.4])}]).await?;
     store.put("github_prs",vec![Record{row:json!({"repo":"owner/repo","number":2,"state":"merged","title":"Merged change","content":"prtoken merged"}),embedding:Some(vec![1.0,0.2,0.3,0.4])}]).await?;
     store.put("code_chunks",vec![Record{row:json!({"repo_path":"crates.io::fixture-0.0.0","file_path":"lib.rs","chunk_index":0,"content":"packagefixturetoken","language":"rust","project":["another-team"]}),embedding:Some(vec![1.0,0.2,0.3,0.4])}]).await?;
+    agentix_indexer::ingest::completion::mark_package(&store, "crates.io::fixture-0.0.0", true)
+        .await?;
     let server = Embeddings::start()?;
     if remote.is_some() {
         let ambiguous = command(&index, &server, remote)
@@ -258,5 +274,177 @@ async fn exercise(remote: Option<bool>) -> Result<()> {
         1
     );
     assert!(server.requests.load(Ordering::Relaxed) > 0);
+    let listing = mcp.send(json!({"jsonrpc":"2.0","id":99,"method":"tools/list","params":{}}))?;
+    let names: Vec<_> = listing["result"]["tools"]
+        .as_array()
+        .context("tools")?
+        .iter()
+        .filter_map(|t| t["name"].as_str())
+        .collect();
+    for name in [
+        "start_ingestion",
+        "ingestion_status",
+        "retry_ingestion",
+        "cancel_ingestion",
+        "index_status",
+        "list_sources",
+        "optimize_index",
+        "prune_index",
+    ] {
+        assert!(names.contains(&name), "missing {name}");
+    }
+    let source = tmp.path().join("operational");
+    std::fs::create_dir(&source)?;
+    std::fs::write(
+        source.join("lib.rs"),
+        "pub fn operational_fixture() -> u32 { 42 }\n",
+    )?;
+    std::fs::write(
+        source.join("README.md"),
+        "# Operational fixture\n\nDocumentation for operational_fixture.\n",
+    )?;
+    let job = mcp.job(
+        "start_ingestion",
+        json!({"request":{"source":"code","repo_path":source}}),
+    )?;
+    // The original process remains alive, while a second client polls shared state.
+    let observer = second.as_mut().unwrap_or(&mut mcp);
+    let completed = observer.wait_job(job["id"].as_str().context("job id")?)?;
+    assert_eq!(completed["state"], "completed", "{completed}");
+    let filter = agentix_store::repo_filter(&source.to_string_lossy());
+    assert!(store.count("code_chunks", &filter).await? > 0);
+    assert!(store.count("documents", &filter).await? > 0);
+    let registry = observer.job("list_sources", json!({"local":true}))?;
+    assert!(registry.to_string().contains("operational"));
+    let status = observer.job("index_status", json!({}))?;
+    assert!(status["counts"]["code_chunks"].as_u64().unwrap_or(0) > 0);
+    assert!(!status["maintenance"]
+        .as_array()
+        .context("maintenance")?
+        .is_empty());
+    assert!(status["maintenance"]
+        .as_array()
+        .context("maintenance")?
+        .iter()
+        .all(|row| row["collection"].is_string()));
+    let optimized = observer.job(
+        "optimize_index",
+        json!({"collections":["code_chunks","documents"]}),
+    )?;
+    assert_eq!(
+        observer.wait_job(optimized["id"].as_str().context("job id")?)?["state"],
+        "completed"
+    );
+    let preview = observer.job(
+        "prune_index",
+        json!({"selection":{"target":"repo","repo_path":source}}),
+    )?;
+    let preview = observer.wait_job(preview["id"].as_str().context("job id")?)?;
+    assert_eq!(preview["result"]["ingestion"]["dry_run"], true);
+    assert!(store.count("code_chunks", &filter).await? > 0);
+    let prune = observer.job(
+        "prune_index",
+        json!({"selection":{"target":"repo","repo_path":source},"dry_run":false}),
+    )?;
+    assert_eq!(
+        observer.wait_job(prune["id"].as_str().context("job id")?)?["state"],
+        "completed"
+    );
+    assert_eq!(store.count("code_chunks", &filter).await?, 0);
+    assert_eq!(store.count("documents", &filter).await?, 0);
+    store
+        .set_metadata(
+            "mcp_jobs",
+            "stale-fixture",
+            json!({"id":"stale-fixture","state":"running","heartbeat_at":1,"created_at":1,
+        "request":{"source":"optimize","collections":["documents"]}}),
+        )
+        .await?;
+    assert_eq!(
+        observer.job("ingestion_status", json!({"job_id":"stale-fixture"}))?["state"],
+        "interrupted"
+    );
+    let retried = observer.job("retry_ingestion", json!({"job_id":"stale-fixture"}))?;
+    assert_ne!(retried["id"], "stale-fixture");
+    assert_eq!(
+        observer.wait_job(retried["id"].as_str().context("job id")?)?["state"],
+        "completed"
+    );
+    for args in [
+        vec!["init"],
+        vec!["add", "."],
+        vec![
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-m",
+            "fixture",
+        ],
+    ] {
+        ensure!(
+            Command::new("git")
+                .current_dir(&source)
+                .args(args)
+                .output()?
+                .status
+                .success(),
+            "fixture Git setup failed"
+        );
+    }
+    let git = observer.job(
+        "start_ingestion",
+        json!({"request":{"source":"git","url":source}}),
+    )?;
+    let git = observer.wait_job(git["id"].as_str().context("job id")?)?;
+    assert_eq!(git["state"], "completed", "{git}");
+    assert!(store
+        .metadata_rows("git_ingest")
+        .await?
+        .iter()
+        .any(|r| r["complete"] == true));
+    let package = observer.job("start_ingestion", json!({"request":{"source":"package","package":"fixture","version":"0.0.0","ecosystem":"rust"}}))?;
+    assert_eq!(
+        observer.wait_job(package["id"].as_str().context("job id")?)?["state"],
+        "completed"
+    );
+    let input = tmp.path().join("export.jsonl");
+    let destination = tmp.path().join("offline-import");
+    std::fs::write(&input, json!({"table":"documents","row":{"repo_path":"import-fixture","source_path":"README.md","chunk_index":0,"content":"import fixture"},"embedding":null}).to_string())?;
+    let imported = observer.job("start_ingestion", json!({"request":{"source":"import","input":input,"destination":destination,"model":"fixture","dimensions":4}}))?;
+    let imported = observer.wait_job(imported["id"].as_str().context("job id")?)?;
+    assert_eq!(imported["state"], "completed", "{imported}");
+    assert_eq!(
+        Store::open(&destination, "fixture", 4)
+            .await?
+            .count("documents", "true")
+            .await?,
+        1
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn another_mcp_can_cancel_a_slow_background_ingestion() -> Result<()> {
+    let tmp = FixtureDirectory::new()?;
+    let index = tmp.path().join("index");
+    let store = Store::open(&index, "fixture", 4).await?;
+    let storage = http::StorageServer::start(store.clone(), None)?;
+    let embeddings = Embeddings::start_with_delay(std::time::Duration::from_secs(6))?;
+    let source = tmp.path().join("slow");
+    std::fs::create_dir(&source)?;
+    std::fs::write(source.join("lib.rs"), "pub fn cancelled_fixture() {}\n")?;
+    let remote = Some((storage.url.as_str(), false));
+    let mut worker = Mcp::start(command(&index, &embeddings, remote))?;
+    let mut observer = Mcp::start(command(&index, &embeddings, remote))?;
+    let job = worker.job(
+        "start_ingestion",
+        json!({"request":{"source":"code","repo_path":source}}),
+    )?;
+    let id = job["id"].as_str().context("job id")?;
+    observer.job("cancel_ingestion", json!({"job_id":id}))?;
+    assert_eq!(observer.wait_job(id)?["state"], "cancelled");
+    assert_eq!(store.count("code_chunks", "true").await?, 0);
     Ok(())
 }
