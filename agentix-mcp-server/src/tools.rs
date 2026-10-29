@@ -1,9 +1,9 @@
+use agentix_store::Store;
 use rmcp::{
     model::{CallToolResult, Content, ServerCapabilities, ServerInfo},
     schemars, tool, Error as McpError, ServerHandler,
 };
 use serde::Deserialize;
-use sqlx::PgPool;
 
 use agentix_indexer::ingest::{
     crates::ingest_crate, embed::ensure_embed_model, hackage::ingest_hackage, pypi::ingest_pypi,
@@ -51,7 +51,7 @@ fn default_limit() -> i32 {
 pub struct SearchCodeParams {
     #[schemars(description = "Natural language or code search query")]
     pub query: String,
-    #[schemars(description = "Number of results to return (default 10)")]
+    #[schemars(description = "Number of results to return (1..100, default 10)")]
     #[serde(default = "default_limit")]
     pub limit: i32,
     #[schemars(description = "Filter by language: typescript, python, rust, go, etc.")]
@@ -75,7 +75,7 @@ pub struct SearchCodeParams {
 pub struct SearchDocsParams {
     #[schemars(description = "Natural language search query")]
     pub query: String,
-    #[schemars(description = "Number of results to return (default 10)")]
+    #[schemars(description = "Number of results to return (1..100, default 10)")]
     #[serde(default = "default_limit")]
     pub limit: i32,
     #[schemars(
@@ -89,7 +89,7 @@ pub struct SearchDocsParams {
 pub struct SearchGithubParams {
     #[schemars(description = "Natural language search query")]
     pub query: String,
-    #[schemars(description = "Number of results to return (default 10)")]
+    #[schemars(description = "Number of results to return (1..100, default 10)")]
     #[serde(default = "default_limit")]
     pub limit: i32,
     #[schemars(description = "Filter by entity type: issues or prs (default: both)")]
@@ -132,13 +132,13 @@ fn default_ecosystem() -> String {
 
 #[derive(Clone)]
 pub struct CodeSearchServer {
-    pool: PgPool,
+    pool: Store,
     projects: Vec<String>,
 }
 
 #[tool(tool_box)]
 impl CodeSearchServer {
-    pub fn new(pool: PgPool) -> Self {
+    pub fn new(pool: Store) -> Self {
         let projects = std::env::var("PROJECTS")
             .unwrap_or_default()
             .split(',')
@@ -443,36 +443,9 @@ impl CodeSearchServer {
         // When PROJECTS is set we only skip ingest if the package is already
         // tagged with the current project — otherwise we run ingest anyway so
         // the ON CONFLICT handler merges the new project into the existing array.
-        let visible: i64 = {
-            let n = repo_path_keys.len();
-            let repo_clauses: Vec<String> = (1..=n).map(|i| format!("repo_path = ${i}")).collect();
-            let project_param = n + 1;
-            let project_clause = if self.projects.is_empty() {
-                String::new() // no scope filter — any existing chunk counts
-            } else {
-                format!(" AND project && ${project_param}::text[]")
-            };
-            let q = format!(
-                "SELECT COUNT(*) FROM code_chunks WHERE ({}){}",
-                repo_clauses.join(" OR "),
-                project_clause
-            );
-            let mut query = sqlx::query_scalar(&q);
-            for key in &repo_path_keys {
-                query = query.bind(key);
-            }
-            if !self.projects.is_empty() {
-                query = query.bind(self.projects.clone());
-            }
-            match query.fetch_one(&self.pool).await {
-                Ok(n) => n,
-                Err(e) => {
-                    return Ok(CallToolResult::success(vec![Content::text(format!(
-                        "Database error: {e}"
-                    ))]));
-                }
-            }
-        };
+        let visible = count_package(&self.pool, &repo_path_keys, &self.projects)
+            .await
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
 
         if visible > 0 {
             return Ok(CallToolResult::success(vec![Content::text(format!(
@@ -483,20 +456,9 @@ impl CodeSearchServer {
 
         // Check whether the package exists at all (unscoped) before we ingest.
         // If it does, ingest will just add the new project to existing chunks.
-        let pre_existing: i64 = {
-            let placeholders: Vec<String> = (1..=repo_path_keys.len())
-                .map(|i| format!("repo_path = ${i}"))
-                .collect();
-            let q = format!(
-                "SELECT COUNT(*) FROM code_chunks WHERE {}",
-                placeholders.join(" OR ")
-            );
-            let mut query = sqlx::query_scalar(&q);
-            for key in &repo_path_keys {
-                query = query.bind(key);
-            }
-            query.fetch_one(&self.pool).await.unwrap_or(0)
-        };
+        let pre_existing = count_package(&self.pool, &repo_path_keys, &[])
+            .await
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
 
         // Call the ingest functions directly (no subprocess).
         // Tag newly indexed packages with the first configured project (if any).
@@ -528,20 +490,9 @@ impl CodeSearchServer {
         }
 
         // Query final visible chunk count.
-        let chunks: i64 = {
-            let placeholders: Vec<String> = (1..=repo_path_keys.len())
-                .map(|i| format!("repo_path = ${i}"))
-                .collect();
-            let q = format!(
-                "SELECT COUNT(*) FROM code_chunks WHERE {}",
-                placeholders.join(" OR ")
-            );
-            let mut query = sqlx::query_scalar(&q);
-            for key in &repo_path_keys {
-                query = query.bind(key);
-            }
-            query.fetch_one(&self.pool).await.unwrap_or(0)
-        };
+        let chunks = count_package(&self.pool, &repo_path_keys, &self.projects)
+            .await
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
 
         let msg = if pre_existing > 0 && ingest_project.is_some() {
             // Package existed under a different scope — project array was extended.
@@ -678,4 +629,20 @@ impl ServerHandler for CodeSearchServer {
             ..Default::default()
         }
     }
+}
+
+async fn count_package(
+    store: &Store,
+    keys: &[String],
+    projects: &[String],
+) -> anyhow::Result<usize> {
+    let filter = format!(
+        "({}) AND ({})",
+        keys.iter()
+            .map(|key| agentix_store::repo_filter(key))
+            .collect::<Vec<_>>()
+            .join(" OR "),
+        agentix_store::project_filter(projects)
+    );
+    store.count("code_chunks", &filter).await
 }

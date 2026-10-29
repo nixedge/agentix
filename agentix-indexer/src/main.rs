@@ -1,17 +1,4 @@
-mod ingest {
-    pub mod code;
-    pub mod crates;
-    pub mod docs;
-    pub mod embed;
-    pub mod git;
-    pub mod github;
-    pub mod hackage;
-    pub mod lhs;
-    pub mod prune;
-    pub mod pypi;
-    pub mod repo_index;
-    pub mod symbols;
-}
+use agentix_indexer::ingest;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -22,7 +9,7 @@ use ingest::repo_index::{upsert_repo, RepoMeta};
 #[derive(Parser)]
 #[command(
     name = "ingest",
-    about = "Index code / docs / GitHub into PostgreSQL for hybrid search"
+    about = "Index code / docs / GitHub into local LanceDB for hybrid search"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -31,6 +18,23 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Import a read-only legacy PostgreSQL JSONL export into a fresh local index.
+    Import {
+        input: PathBuf,
+        #[arg(long)]
+        destination: PathBuf,
+        /// Assert the historical embedding model; must match EMBED_MODEL for later search.
+        #[arg(long)]
+        model: String,
+        #[arg(long, default_value_t = 1536)]
+        dimensions: usize,
+    },
+    /// Rebuild lexical/scalar/HNSW indexes after incremental ingestion or import.
+    Optimize,
+    /// Show stored counts for every searchable collection.
+    Stats,
+    /// Show persisted GitHub sync watermarks and errors.
+    SyncStatus,
     /// Index a local codebase and its markdown docs (incremental: unchanged files are skipped).
     /// The repo is marked dirty in repo_index since it is a local clone, not a released version.
     Code {
@@ -171,12 +175,39 @@ enum PruneTarget {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let dsn =
-        std::env::var("PG_DSN").unwrap_or_else(|_| "postgresql://127.0.0.1:5432/codebase".into());
-    let pool = sqlx::PgPool::connect(&dsn).await?;
-
     let cli = Cli::parse();
+    if let Commands::Import {
+        input,
+        destination,
+        model,
+        dimensions,
+    } = &cli.command
+    {
+        let report =
+            agentix_indexer::migration::import_postgres(input, destination, model, *dimensions)
+                .await?;
+        println!("{}", serde_json::to_string_pretty(&report)?);
+        return Ok(());
+    }
+    let pool = agentix_store::Store::from_env().await?;
     match cli.command {
+        Commands::Import { .. } => anyhow::bail!("import must use its explicit destination"),
+        Commands::Optimize => {
+            for name in agentix_store::COLLECTIONS {
+                pool.maintain(name).await?;
+            }
+        }
+        Commands::Stats => {
+            for name in agentix_store::COLLECTIONS {
+                println!("{name}\t{}", pool.count(name, "true").await?);
+            }
+        }
+        Commands::SyncStatus => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&pool.metadata_rows("sync_state").await?)?
+            );
+        }
         Commands::Code {
             repo_path,
             force,
@@ -285,20 +316,33 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn list_repos(pool: &sqlx::PgPool, local: bool, source_kind: Option<&str>) -> Result<()> {
-    let rows: Vec<(String, String, Option<String>, Option<String>)> = sqlx::query_as(
-        r#"
-        SELECT repo_path, source_kind, package_name, version
-        FROM repo_index
-        WHERE ($1 = false OR source_kind = 'local')
-          AND ($2::text IS NULL OR source_kind = $2)
-        ORDER BY indexed_at DESC
-        "#,
-    )
-    .bind(local)
-    .bind(source_kind)
-    .fetch_all(pool)
-    .await?;
+async fn list_repos(
+    pool: &agentix_store::Store,
+    local: bool,
+    source_kind: Option<&str>,
+) -> Result<()> {
+    let projects = agentix_store::configured_projects();
+    let rows = pool
+        .metadata_rows("repo_index")
+        .await?
+        .into_iter()
+        .filter(|r| {
+            (!local || r["source_kind"] == "local")
+                && source_kind.is_none_or(|kind| r["source_kind"] == kind)
+                && (projects.is_empty()
+                    || r["project"].as_array().is_some_and(|tags| {
+                        tags.iter().any(|tag| projects.iter().any(|p| tag == p))
+                    }))
+        })
+        .map(|r| {
+            (
+                r["repo_path"].as_str().unwrap_or_default().to_owned(),
+                r["source_kind"].as_str().unwrap_or_default().to_owned(),
+                r["package_name"].as_str().map(str::to_owned),
+                r["version"].as_str().map(str::to_owned),
+            )
+        })
+        .collect::<Vec<_>>();
 
     if rows.is_empty() {
         eprintln!("No repos in index.");

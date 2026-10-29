@@ -237,7 +237,7 @@ mod tests {
             ntfy: NtfyClient::new("http://localhost".into(), "test".into()),
             google_auth: None,
             prometheus_handle: test_prometheus(),
-            tts_engine: None,
+            http: reqwest::Client::new(),
         })
     }
 

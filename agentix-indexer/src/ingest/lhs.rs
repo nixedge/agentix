@@ -384,10 +384,12 @@ mod tests {
     fn latex_unclosed_begin_code_treated_as_code() {
         let src = "prose\n\\begin{code}\nfoo = 1\nbar = 2\n";
         let parsed = parse_lhs(src);
-        let last = parsed.blocks.last().expect("should have blocks");
-        assert_eq!(last.kind, BlockKind::Code);
-        assert!(last.content.contains("foo = 1"));
-        assert!(last.content.contains("bar = 2"));
+        assert!(parsed
+            .blocks
+            .last()
+            .is_some_and(|last| last.kind == BlockKind::Code
+                && last.content.contains("foo = 1")
+                && last.content.contains("bar = 2")));
     }
 
     #[test]

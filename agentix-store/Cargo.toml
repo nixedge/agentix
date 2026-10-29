@@ -1,0 +1,31 @@
+[package]
+name = "agentix-store"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = "1"
+arrow-array = "58"
+arrow-schema = "58"
+arrow-json = "58"
+lancedb = { version = "=0.40.0", default-features = false, features = ["remote"] }
+futures = "0.3"
+fs2 = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = "0.4"
+axum = { version = "0.8", features = ["json"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+tokio = { version = "1", features = ["sync", "net", "macros", "rt-multi-thread", "signal", "time"] }
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+[[bin]]
+name = "agentix-store-server"
+path = "src/bin/agentix-store-server.rs"

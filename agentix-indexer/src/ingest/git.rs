@@ -1,5 +1,5 @@
+use agentix_store::Store;
 use anyhow::{bail, Context, Result};
-use sqlx::PgPool;
 use std::path::Path;
 use tempfile::TempDir;
 use tokio::process::Command;
@@ -30,7 +30,7 @@ async fn run_git(args: &[&str], cwd: Option<&Path>) -> Result<String> {
 
 #[allow(clippy::too_many_arguments)]
 pub async fn ingest_git(
-    pool: &PgPool,
+    pool: &Store,
     url: &str,
     rev: Option<&str>,
     branch: Option<&str>,
@@ -43,7 +43,7 @@ pub async fn ingest_git(
     let tmp_str = tmp
         .path()
         .to_str()
-        .expect("tempdir path is not valid UTF-8");
+        .context("tempdir path is not valid UTF-8")?;
 
     // Clone the repository.
     if let Some(b) = branch.or(tag) {
@@ -70,13 +70,11 @@ pub async fn ingest_git(
 
     // Check if already indexed.
     if !force {
-        let count: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM code_chunks WHERE repo_path = $1")
-                .bind(&repo_path_str)
-                .fetch_one(pool)
-                .await
-                .unwrap_or(0);
+        let count = pool
+            .count("code_chunks", &agentix_store::repo_filter(&repo_path_str))
+            .await?;
         if count > 0 {
+            pool.tag_repository(&repo_path_str, project).await?;
             eprintln!(
                 "Git repo {url}@{short_rev} already indexed ({count} chunks). Use --force to re-index."
             );

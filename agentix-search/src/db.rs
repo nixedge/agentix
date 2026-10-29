@@ -1,9 +1,10 @@
-use anyhow::Result;
-use sqlx::{PgPool, Row as _};
+pub use agentix_store::RepoSummary;
+use agentix_store::{checked_limit, literal, project_filter, Store};
+use anyhow::{ensure, Result};
+use serde::Deserialize;
+use serde_json::Value;
 
-// ── Code chunks ───────────────────────────────────────────────────────────────
-
-#[derive(Clone)]
+#[derive(Clone, Deserialize)]
 pub struct ChunkRow {
     pub repo_path: String,
     pub file_path: String,
@@ -14,355 +15,130 @@ pub struct ChunkRow {
     pub symbol_kind: Option<String>,
     pub rrf_score: Option<f64>,
 }
-
-pub struct RepoSummary {
-    pub repo_path: String,
-    pub chunks: i64,
-    pub files: i64,
-    pub last_indexed: String,
-}
-
-fn vec_literal(query_vec: &[f32]) -> String {
-    format!(
-        "[{}]",
-        query_vec
-            .iter()
-            .map(|x| x.to_string())
-            .collect::<Vec<_>>()
-            .join(",")
-    )
-}
-
-/// Hybrid BM25 + vector search over code_chunks with optional language / symbol_kind filters.
-/// When filters are set, fetches 3× candidates then trims to `limit`.
-#[allow(clippy::too_many_arguments)]
-pub async fn hybrid_search(
-    pool: &PgPool,
-    query_text: &str,
-    query_vec: &[f32],
-    limit: i32,
+fn code_filter(
     language: Option<&str>,
-    symbol_kind: Option<&str>,
-    repo_path: Option<&str>,
+    kind: Option<&str>,
+    repo: Option<&str>,
     projects: &[String],
-) -> Result<Vec<ChunkRow>> {
-    let vec_str = vec_literal(query_vec);
-    // Over-fetch when filtering so we have enough after the WHERE clause prunes results
-    let candidates = if language.is_some()
-        || symbol_kind.is_some()
-        || repo_path.is_some()
-        || !projects.is_empty()
-    {
-        (limit * 3).max(20)
-    } else {
-        limit
-    };
-    let projects_filter: Option<Vec<String>> = if projects.is_empty() {
-        None
-    } else {
-        Some(projects.to_vec())
-    };
-
-    let rows = sqlx::query(
-        "SELECT h.repo_path, h.file_path, h.start_line, h.end_line, h.content, h.language,
-                c.symbol_kind, h.rrf_score
-         FROM hybrid_search($1, $2::vector, $3) h
-         JOIN code_chunks c USING (id)
-         WHERE ($4 IS NULL OR h.language = $4)
-           AND ($5 IS NULL OR c.symbol_kind = $5)
-           AND ($6 IS NULL OR h.repo_path LIKE $6)
-           AND ($7::text[] IS NULL OR c.project && $7::text[])
-         ORDER BY h.rrf_score DESC
-         LIMIT $8",
-    )
-    .bind(query_text)
-    .bind(&vec_str)
-    .bind(candidates)
-    .bind(language)
-    .bind(symbol_kind)
-    .bind(repo_path)
-    .bind(projects_filter)
-    .bind(limit)
-    .fetch_all(pool)
-    .await?;
-
-    Ok(rows
-        .iter()
-        .map(|r| ChunkRow {
-            repo_path: r.get("repo_path"),
-            file_path: r.get("file_path"),
-            start_line: r.get("start_line"),
-            end_line: r.get("end_line"),
-            content: r.get("content"),
-            language: r.get("language"),
-            symbol_kind: r.get("symbol_kind"),
-            rrf_score: r.get("rrf_score"),
-        })
-        .collect())
+) -> String {
+    let mut filters = vec![project_filter(projects)];
+    for (column, value, operator) in [
+        ("language", language, "="),
+        ("symbol_kind", kind, "="),
+        ("repo_path", repo, "LIKE"),
+    ] {
+        if let Some(value) = value {
+            filters.push(format!("{column} {operator} {}", literal(value)));
+        }
+    }
+    filters.join(" AND ")
 }
-
-/// Sanitize a BM25 query string for use with `paradedb.match`.
-///
-/// `paradedb.match` interprets several characters as query operators:
-///   `-`  → NOT,  `+` → must,  `|` → OR,  `*` → wildcard,
-///   `~`  → fuzzy, `^` → boost, `(` `)` → grouping, `"` → phrase
-///
-/// These are common in code identifiers (e.g. `cardano-lsm-rust`) and repo
-/// names, so we replace them with spaces to get plain term matching.
-fn sanitize_bm25_query(q: &str) -> String {
-    q.chars()
-        .map(|c| match c {
-            '-' | '+' | '|' | '*' | '~' | '^' | '(' | ')' | '"' | '\\' => ' ',
-            c => c,
+fn chunks(rows: Vec<(Value, f64)>) -> Result<Vec<ChunkRow>> {
+    rows.into_iter()
+        .map(|(row, score)| {
+            let mut row: ChunkRow = serde_json::from_value(row)?;
+            row.rrf_score = Some(score);
+            Ok(row)
         })
         .collect()
 }
-
-pub async fn bm25_search(
-    pool: &PgPool,
-    query: &str,
+#[allow(clippy::too_many_arguments)]
+pub async fn hybrid_search(
+    pool: &Store,
+    text: &str,
+    vector: &[f32],
     limit: i32,
     language: Option<&str>,
-    symbol_kind: Option<&str>,
-    repo_path: Option<&str>,
+    kind: Option<&str>,
+    repo: Option<&str>,
     projects: &[String],
 ) -> Result<Vec<ChunkRow>> {
-    let query = sanitize_bm25_query(query);
-    let query = query.trim();
-
-    // Build SQL dynamically: ParadeDB raises "Unsupported query shape" when @@@ is
-    // combined with conditional predicates like `($n IS NULL OR col = $n)` even
-    // when the parameter is NULL.  Only append clauses when the caller supplies a value.
-    let mut sql =
-        "SELECT repo_path, file_path, start_line, end_line, content, language, symbol_kind,
-                          paradedb.score(id)::float8 AS rrf_score
-                   FROM   code_chunks
-                   WHERE  id @@@ paradedb.match('content', $1)"
-            .to_string();
-
-    let mut next_param = 3usize; // $1 = query, $2 = limit
-    if language.is_some() {
-        sql.push_str(&format!(" AND language = ${next_param}"));
-        next_param += 1;
-    }
-    if symbol_kind.is_some() {
-        sql.push_str(&format!(" AND symbol_kind = ${next_param}"));
-        next_param += 1;
-    }
-    if repo_path.is_some() {
-        sql.push_str(&format!(" AND repo_path LIKE ${next_param}"));
-        next_param += 1;
-    }
-    if !projects.is_empty() {
-        sql.push_str(&format!(" AND project && ${next_param}::text[]"));
-        next_param += 1;
-    }
-    let _ = next_param; // silence unused warning
-    sql.push_str(" ORDER BY paradedb.score(id) DESC LIMIT $2");
-
-    let q = sqlx::query(&sql).bind(query).bind(limit);
-    let q = if let Some(lang) = language {
-        q.bind(lang)
-    } else {
-        q
-    };
-    let q = if let Some(kind) = symbol_kind {
-        q.bind(kind)
-    } else {
-        q
-    };
-    let q = if let Some(rp) = repo_path {
-        q.bind(rp)
-    } else {
-        q
-    };
-    let q = if !projects.is_empty() {
-        q.bind(projects.to_vec())
-    } else {
-        q
-    };
-
-    let rows = q.fetch_all(pool).await?;
-
-    Ok(rows
-        .iter()
-        .map(|r| ChunkRow {
-            repo_path: r.get("repo_path"),
-            file_path: r.get("file_path"),
-            start_line: r.get("start_line"),
-            end_line: r.get("end_line"),
-            content: r.get("content"),
-            language: r.get("language"),
-            symbol_kind: r.get("symbol_kind"),
-            rrf_score: r.get("rrf_score"),
-        })
-        .collect())
-}
-
-pub async fn list_repos(pool: &PgPool, projects: &[String]) -> Result<Vec<RepoSummary>> {
-    let projects_filter: Option<Vec<String>> = if projects.is_empty() {
-        None
-    } else {
-        Some(projects.to_vec())
-    };
-    let rows = sqlx::query(
-        "SELECT repo_path,
-                COUNT(*)                  AS chunks,
-                COUNT(DISTINCT file_path) AS files,
-                MAX(indexed_at)::TEXT     AS last_indexed
-         FROM   code_chunks
-         WHERE  ($1::text[] IS NULL OR project && $1::text[])
-         GROUP  BY repo_path
-         ORDER  BY MAX(indexed_at) DESC",
+    chunks(
+        pool.hybrid(
+            "code_chunks",
+            text,
+            vector,
+            &code_filter(language, kind, repo, projects),
+            limit,
+        )
+        .await?,
     )
-    .bind(projects_filter)
-    .fetch_all(pool)
-    .await?;
-
-    Ok(rows
-        .iter()
-        .map(|r| RepoSummary {
-            repo_path: r.get("repo_path"),
-            chunks: r.get("chunks"),
-            files: r.get("files"),
-            last_indexed: r
-                .get::<Option<String>, _>("last_indexed")
-                .unwrap_or_default(),
-        })
-        .collect())
 }
-
+pub async fn bm25_search(
+    pool: &Store,
+    text: &str,
+    limit: i32,
+    language: Option<&str>,
+    kind: Option<&str>,
+    repo: Option<&str>,
+    projects: &[String],
+) -> Result<Vec<ChunkRow>> {
+    chunks(
+        pool.keyword(
+            "code_chunks",
+            text,
+            &code_filter(language, kind, repo, projects),
+            limit,
+        )
+        .await?,
+    )
+}
+pub async fn list_repos(pool: &Store, projects: &[String]) -> Result<Vec<RepoSummary>> {
+    pool.repositories(projects).await
+}
 pub async fn get_file_chunks(
-    pool: &PgPool,
-    repo_path: &str,
-    file_path: &str,
+    pool: &Store,
+    repo: &str,
+    file: &str,
     projects: &[String],
 ) -> Result<Vec<ChunkRow>> {
-    let projects_filter: Option<Vec<String>> = if projects.is_empty() {
-        None
-    } else {
-        Some(projects.to_vec())
-    };
-    let rows = sqlx::query(
-        "SELECT repo_path, file_path, start_line, end_line, content, language, symbol_kind
-         FROM   code_chunks
-         WHERE  repo_path = $1 AND file_path = $2
-           AND ($3::text[] IS NULL OR project && $3::text[])
-         ORDER  BY chunk_index",
-    )
-    .bind(repo_path)
-    .bind(file_path)
-    .bind(projects_filter)
-    .fetch_all(pool)
-    .await?;
-
-    Ok(rows
-        .iter()
-        .map(|r| ChunkRow {
-            repo_path: r.get("repo_path"),
-            file_path: r.get("file_path"),
-            start_line: r.get("start_line"),
-            end_line: r.get("end_line"),
-            content: r.get("content"),
-            language: r.get("language"),
-            symbol_kind: r.get("symbol_kind"),
-            rrf_score: None,
-        })
-        .collect())
+    let filter = format!(
+        "{} AND ({})",
+        agentix_store::file_filter(repo, file),
+        project_filter(projects)
+    );
+    let mut rows = pool.rows("code_chunks", &filter).await?;
+    rows.sort_by_key(|r| r["chunk_index"].as_i64().unwrap_or_default());
+    rows.into_iter()
+        .map(|r| Ok(serde_json::from_value(r)?))
+        .collect()
 }
-
-// ── Documents ─────────────────────────────────────────────────────────────────
-
-#[derive(Clone)]
+#[derive(Clone, Deserialize)]
 pub struct DocRow {
     pub source_path: String,
     pub doc_kind: Option<String>,
     pub title: Option<String>,
     pub content: String,
     pub repo_path: String,
+    #[serde(default)]
     pub rrf_score: f64,
 }
-
 pub async fn search_docs_hybrid(
-    pool: &PgPool,
-    query_text: &str,
-    query_vec: &[f32],
+    pool: &Store,
+    text: &str,
+    vector: &[f32],
     limit: i32,
-    doc_kind: Option<&str>,
+    kind: Option<&str>,
     projects: &[String],
 ) -> Result<Vec<DocRow>> {
-    let vec_str = vec_literal(query_vec);
-    let candidates = (limit * 3).max(20);
-    let projects_filter: Option<Vec<String>> = if projects.is_empty() {
-        None
-    } else {
-        Some(projects.to_vec())
-    };
-
-    let rows = sqlx::query(
-        "WITH bm25_ranked AS (
-             SELECT id, paradedb.score(id) AS bm25_score
-             FROM documents
-             WHERE id @@@ paradedb.match('content', $1)
-               AND ($3 IS NULL OR doc_kind = $3)
-               AND ($5::text[] IS NULL OR project && $5::text[])
-             LIMIT 60
-         ),
-         bm25_with_rank AS (
-             SELECT id, ROW_NUMBER() OVER (ORDER BY bm25_score DESC) AS rank
-             FROM bm25_ranked
-         ),
-         vec_ranked AS (
-             SELECT id, ROW_NUMBER() OVER (ORDER BY embedding <=> $2::vector) AS rank
-             FROM documents
-             WHERE embedding IS NOT NULL
-               AND ($3 IS NULL OR doc_kind = $3)
-               AND ($5::text[] IS NULL OR project && $5::text[])
-             ORDER BY embedding <=> $2::vector
-             LIMIT 60
-         ),
-         fused AS (
-             SELECT COALESCE(b.id, v.id) AS id,
-                    (COALESCE(1.0 / (60 + b.rank), 0.0)
-                  + COALESCE(1.0 / (60 + v.rank), 0.0))::float8 AS rrf_score
-             FROM bm25_with_rank b
-             FULL OUTER JOIN vec_ranked v USING (id)
-         )
-         SELECT d.source_path, d.doc_kind, d.title, d.content, d.repo_path, f.rrf_score
-         FROM fused f
-         JOIN documents d USING (id)
-         ORDER BY f.rrf_score DESC
-         LIMIT $4",
-    )
-    .bind(query_text)
-    .bind(&vec_str)
-    .bind(doc_kind)
-    .bind(candidates)
-    .bind(projects_filter)
-    .fetch_all(pool)
-    .await?;
-
-    Ok(rows
-        .iter()
-        .map(|r| DocRow {
-            source_path: r.get("source_path"),
-            doc_kind: r.get("doc_kind"),
-            title: r.get("title"),
-            content: r.get("content"),
-            repo_path: r.get("repo_path"),
-            rrf_score: r.get::<f64, _>("rrf_score"),
-        })
-        .collect::<Vec<_>>()
+    let mut filter = project_filter(projects);
+    if let Some(kind) = kind {
+        filter.push_str(&format!(" AND doc_kind = {}", literal(kind)));
+    }
+    pool.hybrid("documents", text, vector, &filter, limit)
+        .await?
         .into_iter()
-        .take(limit as usize)
-        .collect())
+        .map(|(row, score)| {
+            let mut row: DocRow = serde_json::from_value(row)?;
+            row.rrf_score = score;
+            Ok(row)
+        })
+        .collect()
 }
-
-// ── GitHub ────────────────────────────────────────────────────────────────────
-
-#[derive(Clone)]
+#[derive(Clone, Deserialize)]
 pub struct GithubRow {
-    pub entity_type: String, // "issue" or "pr"
+    #[serde(default)]
+    pub entity_type: String,
     pub repo: String,
     pub number: i32,
     pub state: Option<String>,
@@ -371,155 +147,49 @@ pub struct GithubRow {
     pub labels: Option<String>,
     pub content: String,
     pub created_at: Option<String>,
+    #[serde(default)]
     pub rrf_score: f64,
 }
-
-/// Hybrid search across github_issues and github_prs, merging and re-ranking by RRF score.
 pub async fn search_github_hybrid(
-    pool: &PgPool,
-    query_text: &str,
-    query_vec: &[f32],
+    pool: &Store,
+    text: &str,
+    vector: &[f32],
     limit: i32,
     repo: Option<&str>,
     state: Option<&str>,
-    entity_type: Option<&str>, // "issues", "prs", or None for both
+    entity: Option<&str>,
 ) -> Result<Vec<GithubRow>> {
-    let vec_str = vec_literal(query_vec);
-    let want_issues = entity_type.map(|t| t == "issues").unwrap_or(true);
-    let want_prs = entity_type.map(|t| t == "prs").unwrap_or(true);
-
-    let mut all: Vec<GithubRow> = Vec::new();
-
-    // Search issues
-    if want_issues {
-        let rows = sqlx::query(
-            "WITH bm25_ranked AS (
-                 SELECT id, paradedb.score(id) AS bm25_score
-                 FROM github_issues
-                 WHERE id @@@ paradedb.match('content', $1)
-                   AND ($3 IS NULL OR repo = $3)
-                   AND ($4 IS NULL OR state = $4)
-                 LIMIT 60
-             ),
-             bm25_with_rank AS (
-                 SELECT id, ROW_NUMBER() OVER (ORDER BY bm25_score DESC) AS rank
-                 FROM bm25_ranked
-             ),
-             vec_ranked AS (
-                 SELECT id, ROW_NUMBER() OVER (ORDER BY embedding <=> $2::vector) AS rank
-                 FROM github_issues
-                 WHERE embedding IS NOT NULL
-                   AND ($3 IS NULL OR repo = $3)
-                   AND ($4 IS NULL OR state = $4)
-                 ORDER BY embedding <=> $2::vector
-                 LIMIT 60
-             ),
-             fused AS (
-                 SELECT COALESCE(b.id, v.id) AS id,
-                        (COALESCE(1.0 / (60 + b.rank), 0.0)
-                      + COALESCE(1.0 / (60 + v.rank), 0.0))::float8 AS rrf_score
-                 FROM bm25_with_rank b
-                 FULL OUTER JOIN vec_ranked v USING (id)
-             )
-             SELECT i.repo, i.number, i.state, i.title, i.author, i.labels,
-                    i.content, i.created_at::TEXT, f.rrf_score
-             FROM fused f
-             JOIN github_issues i USING (id)
-             ORDER BY f.rrf_score DESC
-             LIMIT $5",
-        )
-        .bind(query_text)
-        .bind(&vec_str)
-        .bind(repo)
-        .bind(state)
-        .bind(limit)
-        .fetch_all(pool)
-        .await?;
-
-        for r in &rows {
-            all.push(GithubRow {
-                entity_type: "issue".into(),
-                repo: r.get("repo"),
-                number: r.get("number"),
-                state: r.get("state"),
-                title: r.get("title"),
-                author: r.get("author"),
-                labels: r.get("labels"),
-                content: r.get("content"),
-                created_at: r.get("created_at"),
-                rrf_score: r.get::<f64, _>("rrf_score"),
-            });
+    let limit_usize = checked_limit(limit)?;
+    ensure!(
+        matches!(entity, None | Some("issues" | "prs")),
+        "entity_type must be issues or prs"
+    );
+    let mut filter = "true".to_owned();
+    for (column, value) in [("repo_path", repo), ("state", state)] {
+        if let Some(value) = value {
+            filter.push_str(&format!(" AND {column} = {}", literal(value)));
         }
     }
-
-    // Search PRs
-    if want_prs {
-        let rows = sqlx::query(
-            "WITH bm25_ranked AS (
-                 SELECT id, paradedb.score(id) AS bm25_score
-                 FROM github_prs
-                 WHERE id @@@ paradedb.match('content', $1)
-                   AND ($3 IS NULL OR repo = $3)
-                   AND ($4 IS NULL OR state = $4)
-                 LIMIT 60
-             ),
-             bm25_with_rank AS (
-                 SELECT id, ROW_NUMBER() OVER (ORDER BY bm25_score DESC) AS rank
-                 FROM bm25_ranked
-             ),
-             vec_ranked AS (
-                 SELECT id, ROW_NUMBER() OVER (ORDER BY embedding <=> $2::vector) AS rank
-                 FROM github_prs
-                 WHERE embedding IS NOT NULL
-                   AND ($3 IS NULL OR repo = $3)
-                   AND ($4 IS NULL OR state = $4)
-                 ORDER BY embedding <=> $2::vector
-                 LIMIT 60
-             ),
-             fused AS (
-                 SELECT COALESCE(b.id, v.id) AS id,
-                        (COALESCE(1.0 / (60 + b.rank), 0.0)
-                      + COALESCE(1.0 / (60 + v.rank), 0.0))::float8 AS rrf_score
-                 FROM bm25_with_rank b
-                 FULL OUTER JOIN vec_ranked v USING (id)
-             )
-             SELECT p.repo, p.number, p.state, p.title, p.author, p.labels,
-                    p.content, p.created_at::TEXT, f.rrf_score
-             FROM fused f
-             JOIN github_prs p USING (id)
-             ORDER BY f.rrf_score DESC
-             LIMIT $5",
-        )
-        .bind(query_text)
-        .bind(&vec_str)
-        .bind(repo)
-        .bind(state)
-        .bind(limit)
-        .fetch_all(pool)
-        .await?;
-
-        for r in &rows {
-            all.push(GithubRow {
-                entity_type: "pr".into(),
-                repo: r.get("repo"),
-                number: r.get("number"),
-                state: r.get("state"),
-                title: r.get("title"),
-                author: r.get("author"),
-                labels: r.get("labels"),
-                content: r.get("content"),
-                created_at: r.get("created_at"),
-                rrf_score: r.get::<f64, _>("rrf_score"),
-            });
+    let mut results = Vec::new();
+    for (table, requested, kind) in [
+        ("github_issues", "issues", "issue"),
+        ("github_prs", "prs", "pr"),
+    ] {
+        if entity.is_some_and(|e| e != requested) {
+            continue;
+        }
+        for (row, score) in pool.hybrid(table, text, vector, &filter, limit).await? {
+            let mut row: GithubRow = serde_json::from_value(row)?;
+            row.entity_type = kind.into();
+            row.rrf_score = score;
+            results.push(row);
         }
     }
-
-    // Merge issues + PR results by RRF score
-    all.sort_by(|a, b| {
-        b.rrf_score
-            .partial_cmp(&a.rrf_score)
-            .unwrap_or(std::cmp::Ordering::Equal)
+    results.sort_by(|a, b| {
+        b.rrf_score.total_cmp(&a.rrf_score).then_with(|| {
+            (&a.repo, a.number, &a.entity_type).cmp(&(&b.repo, b.number, &b.entity_type))
+        })
     });
-    all.truncate(limit as usize);
-    Ok(all)
+    results.truncate(limit_usize);
+    Ok(results)
 }

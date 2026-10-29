@@ -1,17 +1,13 @@
+use agentix_store::Store;
 use anyhow::Result;
-use indicatif::{ProgressBar, ProgressStyle};
 use sha2::{Digest, Sha256};
-use sqlx::PgPool;
 use std::collections::HashMap;
 use std::path::Path;
-use tokio::task::JoinSet;
 
-use super::embed::{embed_batch, ensure_embed_model, vec_literal};
+use super::embed::ensure_embed_model;
 use super::lhs;
 use super::symbols::extract_symbols;
 
-const EMBED_BATCH: usize = 16;
-const MAX_CONCURRENT_FLUSHES: usize = 4;
 const CHUNK_LINES: usize = 120;
 const OVERLAP_LINES: usize = 15;
 const MAX_CHUNK_BYTES: usize = 8_000;
@@ -39,7 +35,7 @@ const SKIP_DIRS: &[&str] = &[
 ];
 
 pub async fn ingest_code(
-    pool: &PgPool,
+    pool: &Store,
     repo_path: &Path,
     force: bool,
     extra_patterns: &[String],
@@ -47,221 +43,104 @@ pub async fn ingest_code(
     project: Option<&str>,
 ) -> Result<()> {
     let repo_str = match repo_path_override {
-        Some(s) => s.to_string(),
+        Some(s) => s.to_owned(),
         None => repo_path.canonicalize()?.to_string_lossy().into_owned(),
     };
-
-    // Ensure the embed model is available before doing any work.
     ensure_embed_model().await?;
-
-    // Collect files
-    let all_files = collect_files(repo_path, extra_patterns);
-    if all_files.is_empty() {
-        eprintln!("No files matched.");
-        return Ok(());
+    let files = collect_files(repo_path, extra_patterns);
+    let old = pool
+        .rows("code_chunks", &agentix_store::repo_filter(&repo_str))
+        .await?;
+    let mut existing: HashMap<String, serde_json::Value> = HashMap::new();
+    for row in old {
+        if let Some(file) = row["file_path"].as_str() {
+            existing.entry(file.into()).or_insert(row);
+        }
     }
-    eprintln!("Found {} files in {}", all_files.len(), repo_str);
-
-    // Optionally clear existing data
-    if force {
-        let n: i64 = sqlx::query_scalar(
-            "WITH d AS (DELETE FROM code_chunks WHERE repo_path = $1 RETURNING 1)
-             SELECT COUNT(*) FROM d",
-        )
-        .bind(&repo_str)
-        .fetch_one(pool)
-        .await
-        .unwrap_or(0);
-        eprintln!("Cleared {} existing chunks.", n);
-    }
-
-    // Load existing (file_path → (mtime_nanos, content_hash)) for incremental skip.
-    // mtime is used as a cheap stat-based pre-check; hash is the fallback for correctness.
-    struct FileInfo {
-        mtime_nanos: Option<i64>,
-        content_hash: String,
-    }
-    let existing: HashMap<String, FileInfo> = if force {
-        HashMap::new()
-    } else {
-        let rows = sqlx::query(
-            "SELECT DISTINCT ON (file_path) file_path, file_mtime, content_hash
-             FROM code_chunks
-             WHERE repo_path = $1 AND content_hash IS NOT NULL
-             ORDER BY file_path, chunk_index",
-        )
-        .bind(&repo_str)
-        .fetch_all(pool)
-        .await
-        .unwrap_or_default();
-        rows.iter()
-            .map(|r| {
-                use sqlx::Row as _;
-                let fp: String = r.get("file_path");
-                let mt: Option<i64> = r.get("file_mtime");
-                let hash: String = r.get("content_hash");
-                (
-                    fp,
-                    FileInfo {
-                        mtime_nanos: mt,
-                        content_hash: hash,
-                    },
-                )
-            })
-            .collect()
-    };
-
-    let n_files = all_files.len();
-    let log_every = (n_files / 10).max(1);
-    let bar = ProgressBar::new(n_files as u64);
-    bar.set_style(
-        ProgressStyle::default_bar()
-            .template("{spinner:.green} [{bar:40.cyan/blue}] {pos}/{len} {msg}")
-            .unwrap()
-            .progress_chars("=>-"),
-    );
-
-    let mut pending: Vec<ChunkRecord> = Vec::with_capacity(EMBED_BATCH);
-    let mut tasks: JoinSet<Result<usize>> = JoinSet::new();
-    let mut total_chunks = 0usize;
-    let mut skipped_files = 0usize;
-    let mut incremental_skips = 0usize;
-
-    for (file_idx, file_path) in all_files.iter().enumerate() {
-        bar.set_message(
-            file_path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("")
-                .to_string(),
-        );
-
-        let rel = file_path
+    let mut seen = std::collections::HashSet::new();
+    let mut total = 0;
+    let mut pending = Vec::new();
+    let mut pending_chunks = 0;
+    let mut unchanged = 0;
+    for file in files {
+        let relative = file
             .strip_prefix(repo_path)
-            .unwrap_or(file_path)
+            .unwrap_or(&file)
             .to_string_lossy()
             .into_owned();
-
-        // Cheap mtime stat — avoids reading the file at all when unchanged.
-        let file_mtime: Option<i64> = std::fs::metadata(file_path)
+        seen.insert(relative.clone());
+        let mtime = std::fs::metadata(&file)
             .and_then(|m| m.modified())
             .ok()
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map(|d| d.as_nanos() as i64);
-
-        if !force {
-            if let Some(info) = existing.get(&rel) {
-                if let (Some(db_mt), Some(fs_mt)) = (info.mtime_nanos, file_mtime) {
-                    if db_mt == fs_mt {
-                        // Fast path: mtime matches — skip without reading.
-                        incremental_skips += 1;
-                        bar.inc(1);
-                        continue;
-                    }
-                }
+        let previous = existing.get(&relative);
+        let same_mtime =
+            mtime.is_some() && previous.is_some_and(|p| p["file_mtime"].as_i64() == mtime);
+        let needs_tag = project.is_some_and(|p| {
+            !previous.is_some_and(|r| {
+                r["project"]
+                    .as_array()
+                    .is_some_and(|tags| tags.iter().any(|t| t == p))
+            })
+        });
+        if !force && same_mtime {
+            if needs_tag {
+                pool.retag_file("code_chunks", &repo_str, &relative, project, mtime)
+                    .await?;
             }
+            unchanged += 1;
+            continue;
         }
-
-        let source = match std::fs::read_to_string(file_path) {
+        let source = match std::fs::read_to_string(&file) {
             Ok(s) => s,
-            Err(_) => {
-                skipped_files += 1;
-                bar.inc(1);
+            Err(e) => {
+                eprintln!("Skipping {}: {e}", file.display());
                 continue;
             }
         };
-
-        let file_hash = sha256_hex(&source);
-
-        if !force {
-            if let Some(info) = existing.get(&rel) {
-                if info.content_hash == file_hash {
-                    // Hash matches but mtime differed (e.g. touch/copy). Update mtime so
-                    // the next run can use the fast path again.
-                    let _ = sqlx::query(
-                        "UPDATE code_chunks SET file_mtime = $1
-                         WHERE repo_path = $2 AND file_path = $3",
-                    )
-                    .bind(file_mtime)
-                    .bind(&repo_str)
-                    .bind(&rel)
-                    .execute(pool)
-                    .await;
-                    incremental_skips += 1;
-                    bar.inc(1);
-                    continue;
-                }
-            }
+        let hash = sha256_hex(&source);
+        if !force && previous.is_some_and(|p| p["content_hash"].as_str() == Some(hash.as_str())) {
+            pool.retag_file("code_chunks", &repo_str, &relative, project, mtime)
+                .await?;
+            unchanged += 1;
+            continue;
         }
-
-        let lang = detect_language(file_path);
-        let ext = file_path
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("")
-            .to_lowercase();
-        let fname = file_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        let chunks = if ext == "lhs" || fname.ends_with(".lhs-boot") {
-            make_lhs_chunks(&source)
-        } else {
-            make_chunks(&source, &lang)
-        };
-
-        for chunk in chunks {
-            pending.push(ChunkRecord {
-                repo_path: repo_str.clone(),
-                file_path: rel.clone(),
-                chunk_index: chunk.index,
-                content: chunk.content,
-                start_line: chunk.start_line,
-                end_line: chunk.end_line,
-                language: lang.clone(),
-                symbol_kind: chunk.symbol_kind,
-                content_hash: file_hash.clone(),
-                file_mtime,
-                project: project.map(|s| s.to_string()),
-            });
-            if pending.len() >= EMBED_BATCH {
-                // Throttle: wait for one task before spawning another if at capacity.
-                if tasks.len() >= MAX_CONCURRENT_FLUSHES {
-                    if let Some(res) = tasks.join_next().await {
-                        total_chunks += res??;
-                    }
-                }
-                let batch = std::mem::replace(&mut pending, Vec::with_capacity(EMBED_BATCH));
-                let pool2 = pool.clone();
-                tasks.spawn(async move { flush_bulk(batch, pool2).await });
-            }
+        let language = detect_language(&file);
+        let filename = file
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or_default();
+        let chunks =
+            if file.extension().is_some_and(|e| e == "lhs") || filename.ends_with(".lhs-boot") {
+                make_lhs_chunks(&source)
+            } else {
+                make_chunks(&source, &language)
+            };
+        let records=chunks.into_iter().map(|chunk|agentix_store::Record{row:serde_json::json!({
+            "repo_path":repo_str,"file_path":relative,"chunk_index":chunk.index,"content":chunk.content,
+            "start_line":chunk.start_line,"end_line":chunk.end_line,"language":language,"symbol_kind":chunk.symbol_kind,
+            "content_hash":hash,"file_mtime":mtime,"project":project.into_iter().collect::<Vec<_>>(),"indexed_at":chrono::Utc::now().to_rfc3339()
+        }),embedding:None}).collect::<Vec<_>>();
+        pending_chunks += records.len();
+        pending.push((relative, records));
+        if pending_chunks >= 16 {
+            total +=
+                super::embed::flush_files(pool, "code_chunks", &repo_str, &mut pending).await?;
+            pending_chunks = 0;
         }
-        if bar.is_hidden() && (file_idx + 1) % log_every == 0 {
-            eprintln!(
-                "  [{}/{}] files · {} chunks indexed",
-                file_idx + 1,
-                n_files,
-                total_chunks,
-            );
+    }
+    total += super::embed::flush_files(pool, "code_chunks", &repo_str, &mut pending).await?;
+    for file in existing.keys() {
+        if !seen.contains(file) && (force || !repo_path.join(file).exists()) {
+            pool.replace_file("code_chunks", &repo_str, file, vec![])
+                .await?;
         }
-        bar.inc(1);
     }
-
-    // Flush remainder then drain all in-flight tasks.
-    if !pending.is_empty() {
-        let pool2 = pool.clone();
-        tasks.spawn(async move { flush_bulk(pending, pool2).await });
-    }
-    while let Some(res) = tasks.join_next().await {
-        total_chunks += res??;
-    }
-    bar.finish_and_clear();
-
-    eprintln!(
-        "Done. Indexed {} chunks ({} files unchanged, {} skipped).",
-        total_chunks, incremental_skips, skipped_files
-    );
+    pool.maintain_if_needed("code_chunks").await?;
+    eprintln!("Done. Indexed {total} chunks ({unchanged} files unchanged).");
     Ok(())
 }
-
-// ── Internal types ────────────────────────────────────────────────────────────
 
 struct Chunk {
     index: i32,
@@ -269,20 +148,6 @@ struct Chunk {
     start_line: i32,
     end_line: i32,
     symbol_kind: Option<String>,
-}
-
-struct ChunkRecord {
-    repo_path: String,
-    file_path: String,
-    chunk_index: i32,
-    content: String,
-    start_line: i32,
-    end_line: i32,
-    language: String,
-    symbol_kind: Option<String>,
-    content_hash: String,
-    file_mtime: Option<i64>,
-    project: Option<String>,
 }
 
 // ── File collection ───────────────────────────────────────────────────────────
@@ -476,80 +341,6 @@ fn chunk_lines(source: &str) -> Vec<Chunk> {
         i += step;
     }
     chunks
-}
-
-// ── Flush batch to DB ─────────────────────────────────────────────────────────
-
-/// Embed a batch of chunks and write them to the DB in a single bulk INSERT … UNNEST(…).
-/// Returns the number of rows upserted.
-async fn flush_bulk(records: Vec<ChunkRecord>, pool: PgPool) -> Result<usize> {
-    if records.is_empty() {
-        return Ok(0);
-    }
-
-    let texts: Vec<&str> = records.iter().map(|r| r.content.as_str()).collect();
-    let embeddings = embed_batch(&texts).await?;
-
-    // Build typed arrays for UNNEST — one allocation per column, one round-trip total.
-    let repo_paths: Vec<&str> = records.iter().map(|r| r.repo_path.as_str()).collect();
-    let file_paths: Vec<&str> = records.iter().map(|r| r.file_path.as_str()).collect();
-    let indices: Vec<i32> = records.iter().map(|r| r.chunk_index).collect();
-    let contents: Vec<&str> = records.iter().map(|r| r.content.as_str()).collect();
-    let start_lines: Vec<i32> = records.iter().map(|r| r.start_line).collect();
-    let end_lines: Vec<i32> = records.iter().map(|r| r.end_line).collect();
-    let languages: Vec<&str> = records.iter().map(|r| r.language.as_str()).collect();
-    let symbol_kinds: Vec<Option<&str>> =
-        records.iter().map(|r| r.symbol_kind.as_deref()).collect();
-    let hashes: Vec<&str> = records.iter().map(|r| r.content_hash.as_str()).collect();
-    let mtimes: Vec<Option<i64>> = records.iter().map(|r| r.file_mtime).collect();
-    let vecs: Vec<String> = embeddings.iter().map(|e| vec_literal(e)).collect();
-    // All chunks in a batch share the same project (one ingest call = one project).
-    // Pass as a scalar TEXT[] so ON CONFLICT can merge it into the existing array.
-    let project: Option<Vec<String>> = records
-        .first()
-        .and_then(|r| r.project.as_deref())
-        .map(|p| vec![p.to_string()]);
-
-    let n = records.len();
-
-    sqlx::query(
-        "INSERT INTO code_chunks
-             (repo_path, file_path, chunk_index, content,
-              start_line, end_line, language, symbol_kind,
-              content_hash, file_mtime, embedding, project)
-         SELECT
-             UNNEST($1::text[]),  UNNEST($2::text[]),  UNNEST($3::int4[]),
-             UNNEST($4::text[]),  UNNEST($5::int4[]),  UNNEST($6::int4[]),
-             UNNEST($7::text[]),  UNNEST($8::text[]),  UNNEST($9::text[]),
-             UNNEST($10::int8[]), UNNEST($11::text[])::vector, $12::text[]
-         ON CONFLICT (repo_path, file_path, chunk_index) DO UPDATE SET
-             content      = EXCLUDED.content,
-             language     = EXCLUDED.language,
-             symbol_kind  = EXCLUDED.symbol_kind,
-             content_hash = EXCLUDED.content_hash,
-             file_mtime   = EXCLUDED.file_mtime,
-             embedding    = EXCLUDED.embedding,
-             project      = (SELECT array_agg(DISTINCT p)
-                             FROM unnest(coalesce(code_chunks.project, '{}'::text[])
-                                      || coalesce(EXCLUDED.project, '{}'::text[])) p),
-             indexed_at   = NOW()",
-    )
-    .bind(repo_paths)
-    .bind(file_paths)
-    .bind(indices)
-    .bind(contents)
-    .bind(start_lines)
-    .bind(end_lines)
-    .bind(languages)
-    .bind(symbol_kinds)
-    .bind(hashes)
-    .bind(mtimes)
-    .bind(vecs)
-    .bind(project)
-    .execute(&pool)
-    .await?;
-
-    Ok(n)
 }
 
 // ── Literate Haskell pre-processor ────────────────────────────────────────────

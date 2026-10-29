@@ -1,6 +1,6 @@
+use agentix_store::Store;
 use anyhow::{bail, Context, Result};
 use flate2::read::GzDecoder;
-use sqlx::PgPool;
 use std::io::Cursor;
 use tar::Archive;
 use tempfile::TempDir;
@@ -12,7 +12,7 @@ const CHAP_BASE: &str = "https://chap.intersectmbo.org/package";
 const HACKAGE_BASE: &str = "https://hackage.haskell.org/package";
 
 pub async fn ingest_hackage(
-    pool: &PgPool,
+    pool: &Store,
     package: &str,
     version: &str,
     force: bool,
@@ -22,16 +22,22 @@ pub async fn ingest_hackage(
 
     // Check if already indexed (unless force).
     if !force {
-        let count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM code_chunks WHERE repo_path = $1 OR repo_path = $2",
-        )
-        .bind(format!("chap::{pkg_ver}"))
-        .bind(format!("hackage::{pkg_ver}"))
-        .fetch_one(pool)
-        .await
-        .unwrap_or(0);
+        let count = pool
+            .count(
+                "code_chunks",
+                &format!(
+                    "repo_path = {} OR repo_path = {}",
+                    agentix_store::literal(&format!("chap::{pkg_ver}")),
+                    agentix_store::literal(&format!("hackage::{pkg_ver}"))
+                ),
+            )
+            .await?;
 
         if count > 0 {
+            for source in ["chap", "hackage"] {
+                pool.tag_repository(&format!("{source}::{pkg_ver}"), project)
+                    .await?;
+            }
             eprintln!(
                 "Package {pkg_ver} already indexed ({count} chunks). Use --force to re-index."
             );

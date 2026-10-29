@@ -1,7 +1,7 @@
+use agentix_store::Store;
 use anyhow::{bail, Context, Result};
 use flate2::read::GzDecoder;
 use serde::Deserialize;
-use sqlx::PgPool;
 use std::io::Cursor;
 use tar::Archive;
 use tempfile::TempDir;
@@ -25,7 +25,7 @@ struct PypiUrl {
 }
 
 pub async fn ingest_pypi(
-    pool: &PgPool,
+    pool: &Store,
     package: &str,
     version: &str,
     force: bool,
@@ -35,14 +35,12 @@ pub async fn ingest_pypi(
     let repo_path_str = format!("pypi::{pkg_ver}");
 
     if !force {
-        let count: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM code_chunks WHERE repo_path = $1")
-                .bind(&repo_path_str)
-                .fetch_one(pool)
-                .await
-                .unwrap_or(0);
+        let count = pool
+            .count("code_chunks", &agentix_store::repo_filter(&repo_path_str))
+            .await?;
 
         if count > 0 {
+            pool.tag_repository(&repo_path_str, project).await?;
             eprintln!(
                 "Package {pkg_ver} already indexed ({count} chunks). Use --force to re-index."
             );

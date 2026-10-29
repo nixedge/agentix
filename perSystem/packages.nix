@@ -27,6 +27,7 @@
       ../agentix-harness/Cargo.toml
       ../agentix-ax/Cargo.toml
       ../agentix-infer/Cargo.toml
+      ../agentix-store/Cargo.toml
       ../agentix-search/Cargo.toml
       ../agentix-indexer/Cargo.toml
       ../agentix-llama/Cargo.toml
@@ -64,6 +65,10 @@
         cp ${stubMain} $out/agentix-ax/src/main.rs
         mkdir -p $out/agentix-infer/src
         cp ${stubLib} $out/agentix-infer/src/lib.rs
+        mkdir -p $out/agentix-store/src
+        cp ${stubLib} $out/agentix-store/src/lib.rs
+        mkdir -p $out/agentix-store/src/bin
+        cp ${stubMain} $out/agentix-store/src/bin/agentix-store-server.rs
         mkdir -p $out/agentix-search/src
         cp ${stubLib} $out/agentix-search/src/lib.rs
         mkdir -p $out/agentix-indexer/src
@@ -96,7 +101,7 @@
     commonArgs = {
       src = depsOnlySrc;
       strictDeps = true;
-      nativeBuildInputs = [pkgs.pkg-config pkgs.autoPatchelfHook pkgs.clang pkgs.cmake pkgs.ninja pkgs.alsa-lib.dev];
+      nativeBuildInputs = [pkgs.protobuf pkgs.pkg-config pkgs.autoPatchelfHook pkgs.clang pkgs.cmake pkgs.ninja pkgs.alsa-lib.dev];
       buildInputs = [pkgs.onnxruntime pkgs.openssl pkgs.libclang.lib pkgs.stdenv.cc.cc.lib pkgs.alsa-lib];
       ORT_DYLIB_PATH = "${pkgs.onnxruntime}/lib/libonnxruntime.so";
       ORT_LIB_LOCATION = "${pkgs.onnxruntime}/lib";
@@ -112,14 +117,60 @@
 
     # Per-package dep artifacts — each only compiles the external crates that
     # package actually needs, so changes to one package don't invalidate others.
-    agentixDaemonDeps   = craneLib.buildDepsOnly (commonArgs // { pname = "agentix-daemon-deps";     src = depsOnlySrc; cargoExtraArgs = "--package agentix-daemon"; });
-    agentixWhisperDeps  = craneLib.buildDepsOnly (commonArgs // { pname = "agentix-whisper-deps";    src = depsOnlySrc; cargoExtraArgs = "--package agentix-whisper"; });
-    agentixAxDeps       = craneLib.buildDepsOnly (commonArgs // { pname = "agentix-ax-deps";         src = depsOnlySrc; cargoExtraArgs = "--package agentix-ax"; });
-    agentixMcpDeps      = craneLib.buildDepsOnly (commonArgs // { pname = "agentix-mcp-deps";        src = depsOnlySrc; cargoExtraArgs = "--package agentix-mcp-server"; });
-    agentixIndexerDeps  = craneLib.buildDepsOnly (commonArgs // { pname = "agentix-indexer-deps";    src = depsOnlySrc; cargoExtraArgs = "--package agentix-indexer"; });
-    agentixAgentDeps    = craneLib.buildDepsOnly (commonArgs // { pname = "agentix-agent-deps";      src = depsOnlySrc; cargoExtraArgs = "--package agentix-agent"; });
-    agentixVoiceDeps    = craneLib.buildDepsOnly (commonArgs // { pname = "agentix-voice-deps";      src = depsOnlySrc; cargoExtraArgs = "--package agentix-voice"; });
-    agentixJailsDeps    = craneLib.buildDepsOnly (commonArgs // { pname = "agentix-jails-deps";      src = depsOnlySrc; cargoExtraArgs = "--package agentix-jails"; });
+    agentixDaemonDeps = craneLib.buildDepsOnly (commonArgs
+      // {
+        pname = "agentix-daemon-deps";
+        src = depsOnlySrc;
+        cargoExtraArgs = "--package agentix-daemon";
+      });
+    agentixWhisperDeps = craneLib.buildDepsOnly (commonArgs
+      // {
+        pname = "agentix-whisper-deps";
+        src = depsOnlySrc;
+        cargoExtraArgs = "--package agentix-whisper";
+      });
+    agentixAxDeps = craneLib.buildDepsOnly (commonArgs
+      // {
+        pname = "agentix-ax-deps";
+        src = depsOnlySrc;
+        cargoExtraArgs = "--package agentix-ax";
+      });
+    agentixMcpDeps = craneLib.buildDepsOnly (commonArgs
+      // {
+        pname = "agentix-mcp-deps";
+        src = depsOnlySrc;
+        cargoExtraArgs = "--package agentix-mcp-server";
+      });
+    agentixIndexerDeps = craneLib.buildDepsOnly (commonArgs
+      // {
+        pname = "agentix-indexer-deps";
+        src = depsOnlySrc;
+        cargoExtraArgs = "--package agentix-indexer";
+      });
+    agentixStoreDeps = craneLib.buildDepsOnly (commonArgs
+      // {
+        pname = "agentix-store-deps";
+        src = depsOnlySrc;
+        cargoExtraArgs = "--package agentix-store --all-targets";
+      });
+    agentixAgentDeps = craneLib.buildDepsOnly (commonArgs
+      // {
+        pname = "agentix-agent-deps";
+        src = depsOnlySrc;
+        cargoExtraArgs = "--package agentix-agent";
+      });
+    agentixVoiceDeps = craneLib.buildDepsOnly (commonArgs
+      // {
+        pname = "agentix-voice-deps";
+        src = depsOnlySrc;
+        cargoExtraArgs = "--package agentix-voice";
+      });
+    agentixJailsDeps = craneLib.buildDepsOnly (commonArgs
+      // {
+        pname = "agentix-jails-deps";
+        src = depsOnlySrc;
+        cargoExtraArgs = "--package agentix-jails";
+      });
 
     # Pinned whisper.cpp tiny English model (~75 MB) for whisper integration tests.
     agentixTestWhisperModel = pkgs.fetchurl {
@@ -140,15 +191,19 @@
       # findable in the Nix sandbox (cudatoolkit's nvcc wrapper does not do this).
       # cuda_cudart is needed both for the cuda_runtime.h header at build time
       # and for libcudart at link/runtime.
-      nativeBuildInputs = commonArgs.nativeBuildInputs ++ [
-        cudaPackages.cuda_nvcc
-        cudaPackages.cuda_cudart
-      ];
-      buildInputs = commonArgs.buildInputs ++ [
-        cudaPackages.cuda_cudart
-        cudaPackages.libcublas
-        libcublasStatic
-      ];
+      nativeBuildInputs =
+        commonArgs.nativeBuildInputs
+        ++ [
+          cudaPackages.cuda_nvcc
+          cudaPackages.cuda_cudart
+        ];
+      buildInputs =
+        commonArgs.buildInputs
+        ++ [
+          cudaPackages.cuda_cudart
+          cudaPackages.libcublas
+          libcublasStatic
+        ];
       CMAKE_CUDA_COMPILER = "${cudaPackages.cuda_nvcc}/bin/nvcc";
       # Derived from nixpkgs.config.cudaCapabilities. cmake auto-detect fails
       # in the Nix sandbox (no GPU), so all targets must be listed explicitly.
@@ -161,35 +216,38 @@
       RUSTFLAGS = "-L ${cudaPackages.cudatoolkit}/lib -L ${cudaPackages.cudatoolkit}/lib/stubs -L ${cudaPackages.cuda_cudart}/lib -L ${libcublasStatic}/lib";
     };
 
-    agentixLlamaDeps = craneLib.buildDepsOnly (commonArgs // cudaArgs // {
-      pname = "agentix-llama-deps";
-      src = depsOnlySrc;
-      cargoExtraArgs = "--package agentix-llama" + lib.optionalString withCuda " --features cuda";
-    });
+    agentixLlamaDeps = craneLib.buildDepsOnly (commonArgs
+      // cudaArgs
+      // {
+        pname = "agentix-llama-deps";
+        src = depsOnlySrc;
+        cargoExtraArgs = "--package agentix-llama" + lib.optionalString withCuda " --features cuda";
+      });
 
     # Stub commands for each workspace member — written when the member is NOT in the
     # build's keepCrates list.  $out is the shell variable set by pkgs.runCommand.
     # Stub shell commands for each workspace member.  Each command is self-contained
     # (creates its own subdirs) so agentix-jails' nested layout works without special-casing.
     memberStubs = {
-      agentix-api        = "mkdir -p $out/agentix-api/src;        cp ${stubLib}  $out/agentix-api/src/lib.rs";
-      agentix-router     = "mkdir -p $out/agentix-router/src;     cp ${stubLib}  $out/agentix-router/src/lib.rs";
-      agentix-daemon     = "mkdir -p $out/agentix-daemon/src;     cp ${stubMain} $out/agentix-daemon/src/main.rs";
-      agentix-harness    = "mkdir -p $out/agentix-harness/src;    cp ${stubLib}  $out/agentix-harness/src/lib.rs";
-      agentix-ax         = "mkdir -p $out/agentix-ax/src;         cp ${stubMain} $out/agentix-ax/src/main.rs";
-      agentix-infer      = "mkdir -p $out/agentix-infer/src;      cp ${stubLib}  $out/agentix-infer/src/lib.rs";
-      agentix-search     = "mkdir -p $out/agentix-search/src;     cp ${stubLib}  $out/agentix-search/src/lib.rs";
+      agentix-api = "mkdir -p $out/agentix-api/src;        cp ${stubLib}  $out/agentix-api/src/lib.rs";
+      agentix-router = "mkdir -p $out/agentix-router/src;     cp ${stubLib}  $out/agentix-router/src/lib.rs";
+      agentix-daemon = "mkdir -p $out/agentix-daemon/src;     cp ${stubMain} $out/agentix-daemon/src/main.rs";
+      agentix-harness = "mkdir -p $out/agentix-harness/src;    cp ${stubLib}  $out/agentix-harness/src/lib.rs";
+      agentix-ax = "mkdir -p $out/agentix-ax/src;         cp ${stubMain} $out/agentix-ax/src/main.rs";
+      agentix-infer = "mkdir -p $out/agentix-infer/src;      cp ${stubLib}  $out/agentix-infer/src/lib.rs";
+      agentix-store = "mkdir -p $out/agentix-store/src/bin; cp ${stubLib} $out/agentix-store/src/lib.rs; cp ${stubMain} $out/agentix-store/src/bin/agentix-store-server.rs";
+      agentix-search = "mkdir -p $out/agentix-search/src;     cp ${stubLib}  $out/agentix-search/src/lib.rs";
       # agentix-indexer is both a lib (used by mcp-server) and a bin.
-      agentix-indexer    = "mkdir -p $out/agentix-indexer/src;    cp ${stubLib}  $out/agentix-indexer/src/lib.rs; cp ${stubMain} $out/agentix-indexer/src/main.rs";
+      agentix-indexer = "mkdir -p $out/agentix-indexer/src;    cp ${stubLib}  $out/agentix-indexer/src/lib.rs; cp ${stubMain} $out/agentix-indexer/src/main.rs";
       # agentix-llama has no [lib] target but cargo still probes src/lib.rs by convention.
-      agentix-llama      = "mkdir -p $out/agentix-llama/src;      cp ${stubLib}  $out/agentix-llama/src/lib.rs;   cp ${stubMain} $out/agentix-llama/src/main.rs";
-      agentix-whisper    = "mkdir -p $out/agentix-whisper/src;    cp ${stubLib}  $out/agentix-whisper/src/lib.rs; cp ${stubMain} $out/agentix-whisper/src/main.rs";
+      agentix-llama = "mkdir -p $out/agentix-llama/src;      cp ${stubLib}  $out/agentix-llama/src/lib.rs;   cp ${stubMain} $out/agentix-llama/src/main.rs";
+      agentix-whisper = "mkdir -p $out/agentix-whisper/src;    cp ${stubLib}  $out/agentix-whisper/src/lib.rs; cp ${stubMain} $out/agentix-whisper/src/main.rs";
       agentix-mcp-server = "mkdir -p $out/agentix-mcp-server/src; cp ${stubMain} $out/agentix-mcp-server/src/main.rs";
       # agentix-jails has four bins spread across nested subdirs.
-      agentix-jails      = "mkdir -p $out/agentix-jails/src/jail $out/agentix-jails/src/ax_jail $out/agentix-jails/src/gh_proxy; cp ${stubMain} $out/agentix-jails/src/jail/main.rs; cp ${stubMain} $out/agentix-jails/src/ax_jail/main.rs; cp ${stubMain} $out/agentix-jails/src/gh_proxy/client.rs; cp ${stubMain} $out/agentix-jails/src/gh_proxy/server.rs";
-      agentix-agent      = "mkdir -p $out/agentix-agent/src; cp ${stubMain} $out/agentix-agent/src/main.rs";
-      agentix-tts        = "mkdir -p $out/agentix-tts/src;   cp ${stubLib}  $out/agentix-tts/src/lib.rs";
-      agentix-voice      = "mkdir -p $out/agentix-voice/src; cp ${stubMain} $out/agentix-voice/src/main.rs";
+      agentix-jails = "mkdir -p $out/agentix-jails/src/jail $out/agentix-jails/src/ax_jail $out/agentix-jails/src/gh_proxy; cp ${stubMain} $out/agentix-jails/src/jail/main.rs; cp ${stubMain} $out/agentix-jails/src/ax_jail/main.rs; cp ${stubMain} $out/agentix-jails/src/gh_proxy/client.rs; cp ${stubMain} $out/agentix-jails/src/gh_proxy/server.rs";
+      agentix-agent = "mkdir -p $out/agentix-agent/src; cp ${stubMain} $out/agentix-agent/src/main.rs";
+      agentix-tts = "mkdir -p $out/agentix-tts/src;   cp ${stubLib}  $out/agentix-tts/src/lib.rs";
+      agentix-voice = "mkdir -p $out/agentix-voice/src; cp ${stubMain} $out/agentix-voice/src/main.rs";
     };
 
     # Scoped source tree for a workspace binary package.  keepCrates must include
@@ -197,38 +255,42 @@
     # All other workspace members get stub entry points so cargo can resolve the
     # workspace without compiling unrelated code.  Changing agentix-indexer no
     # longer invalidates agentix-llama's derivation, for example.
-    mkWorkspaceSrc = keepCrates:
-      let
-        realDirs = map (name: ../${name}) keepCrates;
-        base = lib.fileset.toSource {
-          root = ./..;
-          fileset = lib.fileset.unions (
-            allManifests
-            ++ realDirs
-            ++ lib.optional (lib.pathExists ../Cargo.lock) ../Cargo.lock
-            ++ lib.optional (lib.pathExists ../patches) ../patches
-          );
-        };
-        stubLines = lib.concatStringsSep "\n" (
-          lib.mapAttrsToList (name: stubCmd:
-            if builtins.elem name keepCrates then "" else stubCmd
-          ) memberStubs
+    mkWorkspaceSrc = keepCrates: let
+      realDirs = map (name: ../${name}) keepCrates;
+      base = lib.fileset.toSource {
+        root = ./..;
+        fileset = lib.fileset.unions (
+          allManifests
+          ++ realDirs
+          ++ lib.optional (lib.pathExists ../Cargo.lock) ../Cargo.lock
+          ++ lib.optional (lib.pathExists ../patches) ../patches
         );
-      in
-        pkgs.runCommand "crane-workspace-src" {} ''
-          cp -rT ${base} $out
-          chmod -R u+w $out
-          # Workspace member stubs (skipped for crates in keepCrates).
-          ${stubLines}
-        '';
+      };
+      stubLines = lib.concatStringsSep "\n" (
+        lib.mapAttrsToList (
+          name: stubCmd:
+            if builtins.elem name keepCrates
+            then ""
+            else stubCmd
+        )
+        memberStubs
+      );
+    in
+      pkgs.runCommand "crane-workspace-src" {} ''
+        cp -rT ${base} $out
+        chmod -R u+w $out
+        # Workspace member stubs (skipped for crates in keepCrates).
+        ${stubLines}
+      '';
 
     # Workspace path deps per package (package itself + transitive workspace path deps):
     #   agentix-daemon:     api, router
     #   agentix-llama:      api, infer
     #   agentix-whisper:    api, infer
     #   agentix-ax:         harness
-    #   agentix-indexer:    (leaf)
-    #   agentix-mcp-server: search, indexer
+    #   agentix-store:      (leaf)
+    #   agentix-indexer:    store
+    #   agentix-mcp-server: search, indexer, store
 
     # agentix-daemon is now pure Rust (no C++ deps) — no CUDA feature or cudaArgs needed.
     agentixDaemonPkg = craneLib.buildPackage (commonArgs
@@ -271,7 +333,8 @@
     agentixMcpServerPkg = craneLib.buildPackage (commonArgs
       // {
         pname = "agentix-mcp-server";
-        src = mkWorkspaceSrc ["agentix-mcp-server" "agentix-search" "agentix-indexer"];
+        meta.mainProgram = "mcp-server";
+        src = mkWorkspaceSrc ["agentix-mcp-server" "agentix-search" "agentix-indexer" "agentix-store"];
         cargoArtifacts = agentixMcpDeps;
         cargoExtraArgs = "--package agentix-mcp-server";
       });
@@ -279,9 +342,28 @@
     agentixIndexerPkg = craneLib.buildPackage (commonArgs
       // {
         pname = "agentix-indexer";
-        src = mkWorkspaceSrc ["agentix-indexer"];
+        meta.mainProgram = "ingest";
+        src = mkWorkspaceSrc ["agentix-indexer" "agentix-store"];
         cargoArtifacts = agentixIndexerDeps;
         cargoExtraArgs = "--package agentix-indexer";
+      });
+
+    agentixStoreCheck = craneLib.cargoTest (commonArgs
+      // {
+        pname = "agentix-store-tests";
+        doCheck = true;
+        src = mkWorkspaceSrc ["agentix-store"];
+        cargoArtifacts = agentixStoreDeps;
+        cargoExtraArgs = "--package agentix-store";
+      });
+
+    agentixStoreServerPkg = craneLib.buildPackage (commonArgs
+      // {
+        pname = "agentix-store-server";
+        meta.mainProgram = "agentix-store-server";
+        src = mkWorkspaceSrc ["agentix-store"];
+        cargoArtifacts = agentixStoreDeps;
+        cargoExtraArgs = "--package agentix-store --bin agentix-store-server";
       });
 
     # All jail binaries live in the agentix-jails workspace member, so each
@@ -500,6 +582,9 @@
     packages.agentix-mcp-server = agentixMcpServerPkg;
 
     packages.agentix-indexer = agentixIndexerPkg;
+    packages.agentix-store = agentixStoreCheck;
+    packages.agentix-store-server = agentixStoreServerPkg;
+    checks.agentix-store = agentixStoreCheck;
 
     # Wrapper that sets LD_LIBRARY_PATH so libcuda.so.1 (NVIDIA driver API,
     # not in the Nix store) is found at runtime. Also fixes the nix run binary

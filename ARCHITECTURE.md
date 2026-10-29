@@ -30,10 +30,11 @@ agentix/                        (workspace root — agentix package)
 │                               depends on: agentix-infer, llama-cpp-2
 ├── agentix-daemon/             Axum HTTP server; routes to agentix-llama / cloud backends
 │                               depends on: agentix-api, agentix-router, agentix-infer, agentix-llama
-├── agentix-search/             PostgreSQL search library (BM25 + vector + reranking)
-│                               depends on: sqlx, fastembed, reqwest (no C++ inference)
+├── agentix-store/              Shared local LanceDB storage and metadata
+├── agentix-search/             LanceDB search adapters (BM25 + vector + reranking)
+│                               depends on: agentix-store, fastembed, reqwest (no C++ inference)
 ├── agentix-indexer/            repo ingestion pipeline (tree-sitter + embed)
-│                               depends on: agentix-search, tree-sitter-*
+│                               depends on: agentix-store, tree-sitter-*
 ├── agentix-mcp-server/         MCP stdio server exposing search tools
 │                               depends on: agentix-search, agentix-indexer, rmcp
 ├── agentix-harness/            agent loop library (no daemon dependency)
@@ -58,12 +59,13 @@ agentix-ax          →  agentix-api, agentix-harness
 agentix-agent       →  agentix-harness, agentix-api
 agentix-router      →  agentix-api                    (NO C++ deps — invariant)
 agentix-llama       →  agentix-infer, llama-cpp-2
-agentix-mcp-server  →  agentix-search, agentix-indexer
-agentix-indexer     →  agentix-search
+agentix-mcp-server  →  agentix-search, agentix-indexer, agentix-store
+agentix-search      →  agentix-store
+agentix-indexer     →  agentix-store
 ```
 
 Library crates (`agentix-api`, `agentix-router`, `agentix-harness`, `agentix-infer`,
-`agentix-search`) MUST NOT depend on `agentix-daemon`. No circular dependencies.
+`agentix-search`, `agentix-store`) MUST NOT depend on `agentix-daemon`. No circular dependencies.
 
 **C++ isolation invariant**: `agentix-router` MUST NOT depend on any C++ crate.
 Verified by inspecting `cargo metadata` — zero C++ transitive deps on that path.
@@ -244,18 +246,11 @@ without trust-escalating the agent.
 
 *No direct constitution principle — supports Principle VI (testability).*
 
-**Storage**: PostgreSQL 17 with `pg_search` (ParadeDB BM25) and `pgvector`
-(HNSW index). One service, one backup story.
+**Storage**: local LanceDB through agentix-store. Code, documents, GitHub issues/PRs/comments, repository registry and sync state share a persistent index directory. No PostgreSQL runtime service is required. Model/dimension/schema metadata prevents accidental incompatible reuse.
 
-**Fusion**: Reciprocal Rank Fusion (RRF) computed in SQL by the `hybrid_search`
-PostgreSQL function. The Rust layer issues one query and receives pre-ranked
-results with an `rrf_score` column. No application-side merging.
+**Fusion**: common application-side RRF (k=60), with 60 candidates per retriever and filters applied before candidate selection. Keyword uses local FTS; vector retrieval uses unquantized cosine IVF_HNSW_FLAT after index maintenance, and exact search for small or not-yet-indexed data.
 
-**Decision — SQL fusion over application-side**: RRF in a SQL function keeps
-the Rust code simple (one query, typed result rows) and makes the ranking
-formula visible and testable with plain SQL. The alternative — fetch BM25 and
-vector results separately and merge in Rust — was rejected because it requires
-two round trips and duplicates logic that the database can express more cleanly.
+**Durability and updates**: whole-file replacement is one committed merge after embeddings are prepared; project tags merge. Readers refresh committed versions. A nonblocking process writer lock prevents overlapping writes, with an explicit busy error. Metadata and searchable collections do not promise cross-table transactions. See specs/023-lancedb-backend/quickstart.md for migration and maintenance.
 
 **Embedding path**: ingest generates embeddings via Ollama during indexing.
 Chat inference and embedding inference are separate paths today (embedding
@@ -277,3 +272,22 @@ inconsistency to revisit when `agentix-infer` lands.
 | C++ isolation — search/indexer | tree-sitter kept in `agentix-indexer`; fastembed kept in `agentix-search` | Move all C++ to agentix-llama | tree-sitter and fastembed are bounded C++ builds; removing them would require rewriting parsers and reranking in pure Rust for no practical gain |
 | agentix-agent embedded storage | sled (key-value, no SQL) | SQLite, PostgreSQL | SQLite is disallowed by constitution; PostgreSQL is overkill for a single-user home assistant; sled gives durable atomic writes with five named trees and no migration files |
 | agentix-agent port 8765 | Separate Axum server on 8765 | Embed into agentix-daemon | Home assistant is a separate trust domain and lifecycle; coupling it to the inference gateway would complicate both deployment and future jail migration |
+
+### Shared storage API deployment
+
+`agentix-store-server` owns the server-local Lance directory and exposes HTTP v1 storage
+operations with optional bearer authentication. Laptop MCP processes keep their stdio MCP interface and use
+`AGENTIX_STORE_URL` with an optional runtime credential; query embedding and reranking remain in
+the MCP process. Ingestion uses the same transport, including package-fetch writes.
+One shared Store permits concurrent reads and serializes writes. Metadata updates use
+server-side compare-and-swap, preventing lost updates between independent clients.
+Repository summaries are computed on the storage server rather than transferring the
+corpus to every laptop. No local directory is created in remote mode.
+
+The dedicated storage binary is an explicit exception to the inference daemon's previous
+sole-listener rule; library crates do not bind listeners. The NixOS storage service has a
+separate user, persistent data directory and LoadCredential secret. HTTP requires TLS
+termination or a trusted private network. A shared token grants trusted full-index access;
+PROJECTS remains a visibility filter, not an authorization boundary. Jailed MCP launchers
+may inject the storage credential via environment and permit this endpoint through their
+existing network policy; this requires neither index mounts nor credential-file mounts.

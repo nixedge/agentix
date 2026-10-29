@@ -7,6 +7,7 @@ members = [
   "agentix-ax",
   "agentix-infer",
   "agentix-search",
+  "agentix-store",
   "agentix-indexer",
   "agentix-llama",
   "agentix-whisper",
