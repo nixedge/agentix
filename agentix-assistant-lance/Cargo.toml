@@ -1,0 +1,27 @@
+[package]
+name = "agentix-assistant-lance"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Rebuildable personal-memory LanceDB projection"
+
+[lints]
+workspace = true
+
+[dependencies]
+agentix-assistant-core = { path = "../agentix-assistant-core" }
+async-trait = "0.1"
+arrow-array = "58"
+arrow-schema = "58"
+fs2 = "0.4"
+futures = "0.3"
+lancedb = { version = "=0.40.0", default-features = false, features = ["remote"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt", "sync"] }
+uuid = { version = "1", features = ["serde"] }
+
+[dev-dependencies]
+agentix-assistant-sled = { path = "../agentix-assistant-sled" }
+chrono = "0.4"
+tempfile = "3"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

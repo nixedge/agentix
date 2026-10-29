@@ -54,6 +54,51 @@ dependencies = [
 ]
 
 [[package]]
+name = "agentix-assistant-core"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "serde",
+ "thiserror 2.0.20",
+ "uuid",
+]
+
+[[package]]
+name = "agentix-assistant-lance"
+version = "0.1.0"
+dependencies = [
+ "agentix-assistant-core",
+ "agentix-assistant-sled",
+ "arrow-array",
+ "arrow-schema",
+ "async-trait",
+ "chrono",
+ "fs2",
+ "futures",
+ "lancedb",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "agentix-assistant-sled"
+version = "0.1.0"
+dependencies = [
+ "agentix-assistant-core",
+ "async-trait",
+ "chrono",
+ "serde",
+ "serde_json",
+ "sled",
+ "tempfile",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "agentix-ax"
 version = "0.1.0"
 dependencies = [

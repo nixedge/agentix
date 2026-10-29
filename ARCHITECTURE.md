@@ -31,6 +31,11 @@ agentix/                        (workspace root — agentix package)
 ├── agentix-daemon/             Axum HTTP server; routes to agentix-llama / cloud backends
 │                               depends on: agentix-api, agentix-router, agentix-infer, agentix-llama
 ├── agentix-store/              Shared local LanceDB storage and metadata
+├── agentix-assistant-core/     personal records, commands and engine-free projection coordination
+├── agentix-assistant-sled/     authoritative personal records, receipts and projection outbox
+│                               depends on: agentix-assistant-core, sled
+├── agentix-assistant-lance/    rebuildable personal lexical index in a separate directory
+│                               depends on: agentix-assistant-core, lancedb (no Sled runtime dependency)
 ├── agentix-search/             LanceDB search adapters (BM25 + vector + reranking)
 │                               depends on: agentix-store, fastembed, reqwest (no C++ inference)
 ├── agentix-indexer/            repo ingestion pipeline (tree-sitter + embed)
@@ -62,6 +67,8 @@ agentix-llama       →  agentix-infer, llama-cpp-2
 agentix-mcp-server  →  agentix-search, agentix-indexer, agentix-store
 agentix-search      →  agentix-store
 agentix-indexer     →  agentix-store
+agentix-assistant-sled  →  agentix-assistant-core
+agentix-assistant-lance →  agentix-assistant-core
 ```
 
 Library crates (`agentix-api`, `agentix-router`, `agentix-harness`, `agentix-infer`,
@@ -110,6 +117,16 @@ Axum-based server on **Port 8765** (configurable via `bind_addr`). Exposed route
 | `/voice/stream` | POST | 501 stub — reserved for ESP32 PCM streaming |
 
 **Port registry**: Port 8765 is agentix-agent's exclusive port (LAN-only service).
+
+Feature025 introduces separate personal-record libraries, not new routes in this
+service yet. Sled atomically owns records, revision/idempotency receipts, membership
+indexes and projection jobs; a successful save follows an explicit flush. The
+LanceDB personal index is a replaceable lexical projection with an independent
+profile and single directory owner. Core worker/search/rebuild functions compose
+the two through traits; search candidates are rehydrated and revision-checked
+against Sled. Existing todos/sessions are not implicitly migrated. See
+`specs/025-personal-assistant/quickstart.md` for targeted checks and remaining
+backend/model/phone/recovery acceptance.
 
 **Complexity tracking justifications**:
 - *Second port* (8765 alongside daemon's 11434): agentix-agent is a separate service

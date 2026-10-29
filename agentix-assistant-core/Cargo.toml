@@ -1,0 +1,16 @@
+[package]
+name = "agentix-assistant-core"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Engine-independent personal assistant records and storage contracts"
+
+[lints]
+workspace = true
+
+[dependencies]
+async-trait = "0.1"
+chrono = { version = "0.4", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+uuid = { version = "1", features = ["v4", "serde"] }
