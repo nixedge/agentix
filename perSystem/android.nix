@@ -20,6 +20,15 @@
     packages.agentix-android = pkgs.callPackage ../agentix-android/nix {
       inherit gradle sdk aapt2;
     };
+    packages.agentix-android-sign = pkgs.writeShellApplication {
+      name = "agentix-android-sign";
+      runtimeInputs = [pkgs.coreutils pkgs.jdk17];
+      runtimeEnv = {
+        AGENTIX_ANDROID_BUILD_TOOLS = "${sdk}/build-tools/35.0.0";
+        JAVA_HOME = "${pkgs.jdk17}";
+      };
+      text = builtins.readFile ../agentix-android/nix/sign-apk.sh;
+    };
 
     devShells.android = pkgs.mkShell {
       packages = [gradle pkgs.jdk17 android.androidsdk pkgs.android-tools pkgs.alejandra pkgs.jq];

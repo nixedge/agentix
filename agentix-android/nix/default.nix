@@ -31,15 +31,14 @@ stdenv.mkDerivation (finalAttrs: {
     data = ./deps.json;
   };
 
-  # Use an ephemeral debug identity; release signing is a separate owner-controlled step.
   preBuild = ''
     export HOME="$TMPDIR/home"
-    mkdir -p "$HOME/.android"
+    mkdir -p "$HOME"
   '';
 
   installPhase = ''
     runHook preInstall
-    install -Dm644 app/build/outputs/apk/debug/app-debug.apk "$out/share/agentix-android/agentix-android-debug.apk"
+    install -Dm644 app/build/outputs/apk/debug/app-debug-unsigned.apk "$out/share/agentix-android/agentix-android-debug-unsigned.apk"
     mkdir -p "$out/share/agentix-android/reports"
     cp -r core/build/test-results "$out/share/agentix-android/reports/core-tests"
     cp app/build/reports/lint-results-debug.* "$out/share/agentix-android/reports/"

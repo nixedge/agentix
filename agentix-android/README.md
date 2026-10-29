@@ -12,7 +12,7 @@ From the **repository root**, not this subdirectory:
 nix build .#agentix-android
 ```
 
-The APK is `result/share/agentix-android/agentix-android-debug.apk`. The derivation runs `:core:test` and `:app:lintDebug`; their reports are under `result/share/agentix-android/reports/`.
+The unsigned APK is `result/share/agentix-android/agentix-android-debug-unsigned.apk`. The derivation runs `:core:test` and `:app:lintDebug`; their reports are under `result/share/agentix-android/reports/`. Gradle does not sign this build or generate a debug key.
 
 The flake pins Gradle 8.14.4, JDK 17, Android API 35, and build tools 35.0.0. The Android shell is separate from the Rust/CUDA development shell. Nix accepts the Android SDK license for this environment; SDK binaries are unfree upstream distributions. No host Android SDK or Java installation is required.
 
@@ -32,12 +32,23 @@ Enable USB debugging on an Android 8.0+ phone, connect it, and authorize the com
 
 ```bash
 nix develop .#android --command adb devices
-nix develop .#android --command adb install -r result/share/agentix-android/agentix-android-debug.apk
+android_state="$(cd .. && pwd)/.android-state"
+nix run .#agentix-android-sign -- \
+  result/share/agentix-android/agentix-android-debug-unsigned.apk \
+  "$android_state/apks/agentix-signed.apk" \
+  "$android_state/signing/debug.keystore" \
+  agentix-debug \
+  "$android_state/signing/keystore-password"
+nix develop .#android --command adb install -r "$android_state/apks/agentix-signed.apk"
 ```
 
 Application ID: `us.disasm.agentix`. Display name: `agentix-android`.
 
-The Nix build uses an ephemeral debug signing key. A later build may require uninstalling an earlier installation if Android reports a signature mismatch; uninstalling erases local settings and recordings. Establish a stable owner-controlled signing key before using the app for durable recording storage. Release signing and store publication are separate work.
+Create the output directory first. The wrapper requires an existing persistent keystore, its alias and a password file containing the password on its first line; it never creates or rotates keys. Supply these paths at runtime, including in CI, and keep both files out of the repository and Nix store. Back up the key securely: use the same key for every update. The wrapper aligns, signs and verifies a separate APK, leaving the unsigned build unchanged. It refuses existing output; choose a fresh filename for each build. See the [Android apksigner reference](https://developer.android.com/tools/apksigner).
+
+The example uses `.android-state` beside this repository's sibling worktrees, on their persistent host mount. Use mode0700 for its state/signing directories and0600 for the keystore/password file. Verify the mount before placing secrets there: a jail's ordinary `$HOME` may be ephemeral. An encrypted backup of the key and password is still needed independently of that host.
+
+Older builds used an ephemeral debug key. Moving from those builds requires a one-time replacement because their signatures differ. Uninstalling erases recordings, preferences and pending instructions: refresh and verify a private backup before replacing an existing installation, and restore it before launching the new app. Runtime permissions may need to be granted again. The APK remains debuggable; release hardening and store publication are separate work.
 
 On Devices, wake the Plaud, disconnect any official-app connection, and tap Scan. Grant permission, then tap Scan again to begin discovery. Scanning stops after 15 seconds, when leaving Devices, or when the activity is backgrounded. Android versions before 12 also require Location services for BLE scanning. A displayed project code is advertisement metadata, not a verified model/firmware result.
 

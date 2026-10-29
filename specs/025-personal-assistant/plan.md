@@ -4,6 +4,8 @@ Branch `025-personal-assistant`, created 2026-10-29 from the 023-lancedb-backend
 
 ## Module boundaries
 
+Android signing fix: disable the debug build's signing configuration; install the unsigned APK under an explicit unsigned filename. Package a small shell wrapper around pinned SDK zipalign/apksigner using writeShellApplication. The wrapper accepts runtime input/output, keystore, alias and password-file arguments, rejects store-resident secrets/output, aligns before signing, verifies before publishing, and refuses existing output. No key generation or secret interpolation occurs during Nix evaluation/build. Validate the canonical APK/core tests/lint, unsigned signature state, wrapper signing with the persistent local key, and the approved phone backup/replacement/restore. No Rust/domain changes are needed for this SDK wrapper.
+
 - `agentix-assistant-core`: typed records, commands, results, errors and repository/projection/inference contracts. Pure Rust domain/application library with no storage engines or listeners.
 - `agentix-assistant-sled`: the authoritative repository implementation, isolated serialization/key layout, transactional command handling, indexes, replay receipts and projection outbox. Depends on core, never the daemon/search adapter.
 - `agentix-assistant-lance`: personal-memory projection schema and lexical retrieval implementation; semantic retrieval awaits T011 evaluation. Depends on core plus the existing pinned LanceDB stack, never on Sled at runtime. Separate namespace/path from the code index and independent profile. Reviewed/reused suitable engine patterns from merged023; no additional remote server or code-index schema fork.
