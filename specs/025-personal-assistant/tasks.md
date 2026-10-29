@@ -16,9 +16,9 @@
 - [ ] T011 Evaluate personal-note embeddings independently of code embeddings and configure a pinned profile; test model/dimension/version mismatch and embedding outage.
 
 ## C — Conversational backend and phone
-- [ ] T012 Implement deterministic tool handlers over the core; connect recent messages and retrieved context to inference through interfaces, preserving router policy.
+- [x] T012 Implement deterministic tool handlers over the core; connect recent messages and retrieved context to inference through interfaces, preserving router policy.
 - [ ] T013 Implement request/conversation lifecycle and append-only message persistence; validate clarification and correction turns with scripted and actual local-model tests.
-- [ ] T014 Expose a versioned tell API in existing agentix-agent with bounded requests/timeouts and owner-access configuration; test actual storage effects/retries.
+- [x] T014 Expose a versioned tell API in existing agentix-agent with bounded requests/timeouts and owner-access configuration; test actual storage effects/retries.
 - [ ] T015 Evaluate Qwen2.5-7B-Instruct via agentix-llama on grocery/list/note/task/correction cases; record latency, correctness and memory. Backend swap remains an adapter concern.
 - [ ] T016 Connect Android's existing tell seam over WireGuard only after server acceptance; preserve the user's default assistant until real backend usefulness is verified.
 
@@ -28,3 +28,14 @@
 - [ ] T019 Define/review explicit legacy todo/session migration and test on copied fixtures; never mutate production as incidental setup.
 - [ ] T020 Add sourced facts/attachments and separate Google/calendar/mail delivery adapters as individually tested increments.
 - [ ] T021 Run full workspace/Nix gates and deploy/live/phone acceptance only for the completed integration scope; publish no claims from mocks alone.
+
+## C execution detail — approved before semantic T011
+- [x] T022 Define versioned tell/intent/turn/message contracts and additive journal schema before implementing C.
+- [x] T023 Implement real-Sled append-only conversation and durable immutable plan/response lifecycle with retry/reopen/concurrent admission coverage.
+- [x] T024 Implement bounded application state machine, exact tool resolution, context/history delivery and receipt-derived replies; test storage uncertainty and cancellation recovery.
+- [x] T025 Add opt-in protected HTTP route and local gateway adapter to agentix-agent, with real storage and HTTP contract tests and canonical Nix checks.
+- [x] T026 Run explicit synthetic acceptance against the installed Qwen baseline; record correctness and latency separately from scripted tests.
+- [ ] T027 After server acceptance, wire HTTPS Android tell client, explicit enablement/private owner token, durable retry envelope and contract tests; build APK and record physical acceptance limits.
+- [x] T028 Replace generic model replacement with owner-approved typed item-text/task-completion tools; validate target/revision and preserve unrelated fields in Rust, with actual-Sled regression tests. Actual-model evaluation is recorded under T026.
+
+T026 evidence is limited to eight synthetic operation/replay cases across three fresh stores; broader conversational acceptance remains open under T013/T015/T021. In particular, unsupported-email clarification can imply an unavailable capability despite causing no mutation. Keep T016/T027 Android integration gated until that quality gap is addressed. Runtime memory has not been measured.

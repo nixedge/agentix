@@ -12,6 +12,24 @@ pub struct AgentConfig {
     pub google: Option<GoogleConfig>,
     pub scheduler: SchedulerConfig,
     pub voice: Option<VoiceAgentConfig>,
+    pub assistant: Option<AssistantConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AssistantConfig {
+    pub db_path: String,
+    pub index_path: String,
+    #[serde(default = "default_token_env")]
+    pub token_env: String,
+    #[serde(default = "default_inference_timeout")]
+    pub inference_timeout_secs: u64,
+}
+
+fn default_token_env() -> String {
+    "AGENTIX_ASSISTANT_TOKEN".into()
+}
+fn default_inference_timeout() -> u64 {
+    30
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -77,6 +95,10 @@ impl AgentConfig {
         let mut config: AgentConfig =
             toml::from_str(&raw).with_context(|| "parsing config TOML")?;
         config.db_path = expand_home(&config.db_path);
+        if let Some(ref mut assistant) = config.assistant {
+            assistant.db_path = expand_home(&assistant.db_path);
+            assistant.index_path = expand_home(&assistant.index_path);
+        }
         if let Some(ref mut g) = config.google {
             g.credentials_path = expand_home(&g.credentials_path);
             g.token_cache_path = expand_home(&g.token_cache_path);

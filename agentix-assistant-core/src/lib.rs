@@ -1,9 +1,11 @@
 mod command;
+mod conversation;
 mod model;
 mod ports;
 mod projection;
 
 pub use command::{Command, CommandReceipt, CommandRequest, ProjectionJob};
+pub use conversation::*;
 pub use model::{Record, RecordBody, RecordKind, SCHEMA_VERSION};
 pub use ports::{Projection, Repository, SearchHit, SearchRequest};
 pub use projection::{
@@ -23,6 +25,10 @@ pub enum Error {
     AlreadyExists(uuid::Uuid),
     #[error("request ID was already used for another command")]
     RequestConflict,
+    #[error("assistant is busy or this conversation has an unresolved request")]
+    Busy,
+    #[error("local inference unavailable or returned an invalid decision")]
+    Inference,
     #[error("unsupported or missing storage schema: {0}")]
     Schema(String),
     #[error("personal projection unavailable: {0}")]

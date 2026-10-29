@@ -1,5 +1,6 @@
 [workspace]
 members = [
+  "agentix-assistant",
   "agentix-assistant-core",
   "agentix-assistant-sled",
   "agentix-assistant-lance",

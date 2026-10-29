@@ -1,0 +1,22 @@
+[package]
+name = "agentix-assistant"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Durable, bounded personal assistant application service"
+
+[lints]
+workspace = true
+
+[dependencies]
+agentix-assistant-core = { path = "../agentix-assistant-core" }
+chrono = "0.4"
+serde_json = "1"
+tokio = { version = "1", features = ["rt", "sync", "time"] }
+uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+agentix-assistant-sled = { path = "../agentix-assistant-sled" }
+async-trait = "0.1"
+tempfile = "3"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

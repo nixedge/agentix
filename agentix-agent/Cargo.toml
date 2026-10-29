@@ -13,6 +13,12 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
+agentix-assistant = { path = "../agentix-assistant" }
+agentix-assistant-core = { path = "../agentix-assistant-core" }
+agentix-assistant-sled = { path = "../agentix-assistant-sled" }
+agentix-assistant-lance = { path = "../agentix-assistant-lance" }
+agentix-router = { path = "../agentix-router" }
+subtle = "2"
 agentix-harness = { path = "../agentix-harness" }
 agentix-api     = { path = "../agentix-api" }
 

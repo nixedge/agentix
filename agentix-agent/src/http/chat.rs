@@ -224,6 +224,7 @@ mod tests {
             },
             google: None,
             voice: None,
+            assistant: None,
             scheduler: SchedulerConfig {
                 notification_interval_secs: 300,
                 gmail_scan_interval_secs: 900,

@@ -1,0 +1,310 @@
+use super::{gateway::LocalGateway, routes};
+use agentix_assistant::Assistant;
+use agentix_assistant_core::{
+    Conversations, Error, Inference, InferenceContext, Intent, RecordBody, Repository, TellRequest,
+    TellResponse, TellStatus,
+};
+use agentix_assistant_sled::SledRepository;
+use async_trait::async_trait;
+use axum::{
+    body::Body,
+    http::{Request, StatusCode},
+    Router,
+};
+use http_body_util::BodyExt;
+use serde_json::{json, Value};
+use std::sync::Arc;
+use tower::ServiceExt;
+use uuid::Uuid;
+use wiremock::{
+    matchers::{method, path},
+    Mock, MockServer, ResponseTemplate,
+};
+
+type TestResult = Result<(), Box<dyn std::error::Error>>;
+const TOKEN: &str = "synthetic-test-owner-token-0123456789";
+fn request(conversation: Uuid, text: &str) -> TellRequest {
+    TellRequest {
+        request_id: Uuid::new_v4(),
+        conversation_id: conversation,
+        text: text.into(),
+        timezone: "America/New_York".into(),
+    }
+}
+fn completion(intent: Value) -> Value {
+    json!({"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":intent.to_string()}}]})
+}
+async fn post(
+    app: &Router,
+    request: &TellRequest,
+    token: Option<&str>,
+) -> Result<(StatusCode, Value), Box<dyn std::error::Error>> {
+    let mut builder = Request::builder()
+        .method("POST")
+        .uri("/v1/assistant/tell")
+        .header("content-type", "application/json");
+    if let Some(token) = token {
+        builder = builder.header("authorization", format!("Bearer {token}"));
+    }
+    let response = app
+        .clone()
+        .oneshot(builder.body(Body::from(serde_json::to_vec(request)?))?)
+        .await?;
+    let status = response.status();
+    let body = response.into_body().collect().await?.to_bytes();
+    Ok((status, serde_json::from_slice(&body)?))
+}
+
+#[tokio::test]
+async fn authenticated_http_grocery_save_retry_conflict_and_actual_history() -> TestResult {
+    let directory = tempfile::tempdir()?;
+    let store = SledRepository::open(directory.path()).await?;
+    let gateway = MockServer::start().await;
+    Mock::given(method("POST")).and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(completion(json!({"action":"add_list_item","list_name":"groceries","list_id":null,"text":"pineapple"}))))
+        .expect(1).mount(&gateway).await;
+    let shared = Arc::new(store.clone());
+    let service = Arc::new(Assistant::new(
+        shared.clone(),
+        shared,
+        Arc::new(LocalGateway::new(&gateway.uri(), "qwen-test")?),
+    ));
+    let app = routes(service, TOKEN.into())?;
+    let original = request(Uuid::new_v4(), "Add pineapple to my grocery list.");
+    assert_eq!(
+        post(&app, &original, None).await?.0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        post(&app, &original, Some("wrong-owner-token")).await?.0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert!(store.records().await?.is_empty());
+    let (status, body) = post(&app, &original, Some(TOKEN)).await?;
+    assert_eq!(status, StatusCode::OK);
+    let saved: TellResponse = serde_json::from_value(body.clone())?;
+    assert_eq!(saved.status, TellStatus::Saved);
+    assert_eq!(saved.outcomes.len(), 2);
+    assert_eq!(post(&app, &original, Some(TOKEN)).await?.1, body);
+    let mut changed = original.clone();
+    changed.text = "changed envelope".into();
+    assert_eq!(
+        post(&app, &changed, Some(TOKEN)).await?.0,
+        StatusCode::CONFLICT
+    );
+    assert_eq!(store.records().await?.len(), 2);
+    assert_eq!(
+        store
+            .recent_messages(original.conversation_id, 100)
+            .await?
+            .len(),
+        2
+    );
+    let captured = gateway
+        .received_requests()
+        .await
+        .ok_or("missing gateway requests")?;
+    let sent: Value = serde_json::from_slice(&captured[0].body)?;
+    assert_eq!(sent["response_format"]["type"], "json_schema");
+    assert_eq!(sent["temperature"], 0.0);
+    assert_eq!(sent["max_tokens"], 512);
+    assert!(sent["messages"][0]["content"]
+        .as_str()
+        .ok_or("missing context")?
+        .contains("America/New_York"));
+    assert_eq!(sent["messages"][1]["content"], original.text);
+    Ok(())
+}
+
+struct MustNotInfer;
+#[async_trait]
+impl Inference for MustNotInfer {
+    async fn propose(&self, _: InferenceContext) -> agentix_assistant_core::Result<Intent> {
+        Err(Error::Inference)
+    }
+}
+
+#[tokio::test]
+async fn invalid_auth_body_envelopes_and_unsafe_configuration_never_write() -> TestResult {
+    let directory = tempfile::tempdir()?;
+    let store = SledRepository::open(directory.path()).await?;
+    let shared = Arc::new(store.clone());
+    let service = Arc::new(Assistant::new(
+        shared.clone(),
+        shared,
+        Arc::new(MustNotInfer),
+    ));
+    assert!(routes(service.clone(), "short".into()).is_err());
+    let app = routes(service, TOKEN.into())?;
+    let mut invalid = request(Uuid::new_v4(), " ");
+    assert_eq!(
+        post(&app, &invalid, Some(TOKEN)).await?.0,
+        StatusCode::BAD_REQUEST
+    );
+    invalid.text = "valid".into();
+    invalid.timezone = "invalid-timezone".into();
+    assert_eq!(
+        post(&app, &invalid, Some(TOKEN)).await?.0,
+        StatusCode::BAD_REQUEST
+    );
+    let oversized = Request::builder()
+        .method("POST")
+        .uri("/v1/assistant/tell")
+        .header("authorization", format!("Bearer {TOKEN}"))
+        .body(Body::from("x".repeat(20_000)))?;
+    assert_eq!(
+        app.oneshot(oversized).await?.status(),
+        StatusCode::PAYLOAD_TOO_LARGE
+    );
+    assert!(store.records().await?.is_empty());
+    assert!(LocalGateway::new("http://localhost", "gpt-4o").is_err());
+    assert!(LocalGateway::new("http://owner:secret@localhost", "qwen-test").is_err());
+    Ok(())
+}
+
+#[tokio::test]
+async fn malformed_or_truncated_model_output_cannot_claim_a_save() -> TestResult {
+    for (content, finish_reason) in [
+        ("I saved it!", "stop"),
+        ("{}", "length"),
+        ("{\"action\":\"invented_tool\"}", "stop"),
+    ] {
+        let directory = tempfile::tempdir()?;
+        let store = SledRepository::open(directory.path()).await?;
+        let gateway = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(
+                json!({"choices":[{"finish_reason":finish_reason,"message":{"content":content}}]}),
+            ))
+            .mount(&gateway)
+            .await;
+        let shared = Arc::new(store.clone());
+        let service = Arc::new(Assistant::new(
+            shared.clone(),
+            shared,
+            Arc::new(LocalGateway::new(&gateway.uri(), "qwen-test")?),
+        ));
+        let app = routes(service, TOKEN.into())?;
+        let (_, body) = post(
+            &app,
+            &request(Uuid::new_v4(), "Add pineapple."),
+            Some(TOKEN),
+        )
+        .await?;
+        assert_eq!(body["status"], "failed");
+        assert_eq!(body["outcomes"], json!([]));
+        assert!(store.records().await?.is_empty());
+    }
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "explicit synthetic acceptance against the owner's already-installed Qwen model; not a hermetic fixture test"]
+async fn installed_qwen_acceptance() -> TestResult {
+    struct SyntheticTrace(LocalGateway);
+    #[async_trait]
+    impl Inference for SyntheticTrace {
+        async fn propose(
+            &self,
+            context: InferenceContext,
+        ) -> agentix_assistant_core::Result<Intent> {
+            let decision = self.0.propose(context).await?;
+            println!("{}", json!({"synthetic_decision":decision}));
+            Ok(decision)
+        }
+    }
+    let directory = tempfile::tempdir()?;
+    let store = SledRepository::open(directory.path()).await?;
+    let url = std::env::var("AGENTIX_ACCEPTANCE_GATEWAY")?;
+    let model = std::env::var("AGENTIX_ACCEPTANCE_MODEL")?;
+    let shared = Arc::new(store.clone());
+    let service = Arc::new(
+        Assistant::new(
+            shared.clone(),
+            shared,
+            Arc::new(SyntheticTrace(LocalGateway::new(&url, &model)?)),
+        )
+        .with_inference_timeout(std::time::Duration::from_secs(90))?,
+    );
+    let app = routes(service, TOKEN.into())?;
+    let conversation = Uuid::new_v4();
+    let cases = [
+        (
+            "grocery_add",
+            "Add pineapple to my grocery list.",
+            TellStatus::Saved,
+        ),
+        (
+            "grocery_read",
+            "What is on my grocery list?",
+            TellStatus::Answer,
+        ),
+        (
+            "correction",
+            "No, make that mango instead of pineapple.",
+            TellStatus::Saved,
+        ),
+        (
+            "note",
+            "Save a note: the spare key is in the garage.",
+            TellStatus::Saved,
+        ),
+        (
+            "task",
+            "Add a task to replace the air filter. No due date.",
+            TellStatus::Saved,
+        ),
+        (
+            "task_completion",
+            "Mark the task to replace the air filter as complete.",
+            TellStatus::Saved,
+        ),
+        (
+            "ambiguous_time",
+            "Save a task to call Pat next Friday at eight.",
+            TellStatus::Clarification,
+        ),
+        (
+            "unsupported_email",
+            "Email my grocery list to Alex.",
+            TellStatus::Clarification,
+        ),
+    ];
+    for (case, text, expected) in cases {
+        let before = store.records().await?;
+        let request = request(conversation, text);
+        let started = std::time::Instant::now();
+        let (http_status, body) = post(&app, &request, Some(TOKEN)).await?;
+        let response: TellResponse = serde_json::from_value(body.clone())?;
+        println!(
+            "{}",
+            json!({"case":case,"elapsed_ms":started.elapsed().as_millis(),"http_status":http_status.as_u16(),"status":response.status,"reply":response.reply,"saved_outcomes":response.outcomes.len()})
+        );
+        assert_eq!(response.status, expected, "unexpected outcome for {case}");
+        assert_eq!(
+            post(&app, &request, Some(TOKEN)).await?.1,
+            body,
+            "request replay changed for {case}"
+        );
+        let records = store.records().await?;
+        match case {
+            "grocery_add" => assert_eq!(records.len(), 2),
+            "grocery_read" => assert!(response.records.iter().any(|record| matches!(&record.body, RecordBody::ListItem { text, .. } if text.to_lowercase().contains("pineapple")))),
+            "correction" => {
+                assert_eq!(records.len(), 2);
+                assert!(response.outcomes.iter().all(|outcome| matches!(outcome.record.body, RecordBody::ListItem { completed: false, .. }) && outcome.record.revision == 2));
+                assert!(records.iter().filter(|record| matches!(record.body, RecordBody::List { .. })).all(|list| before.contains(list)));
+                assert!(records.iter().any(|record| matches!(&record.body, RecordBody::ListItem { text, .. } if text.to_lowercase().contains("mango"))));
+                assert!(!records.iter().any(|record| matches!(&record.body, RecordBody::ListItem { text, .. } if text.to_lowercase().contains("pineapple"))));
+            }
+            "note" => assert!(records.iter().any(|record| matches!(&record.body, RecordBody::Note { text } if text.to_lowercase().contains("garage")))),
+            "task" => assert!(records.iter().any(|record| matches!(&record.body, RecordBody::Task { title, due_at: None, .. } if title.to_lowercase().contains("air filter")))),
+            "task_completion" => assert!(records.iter().any(|record| matches!(&record.body, RecordBody::Task { title, due_at: None, completed: true } if title.to_lowercase().contains("air filter")) && record.revision == 2)),
+            _ => {
+                assert!(response.outcomes.is_empty());
+                assert_eq!(records, before);
+            }
+        }
+    }
+    Ok(())
+}

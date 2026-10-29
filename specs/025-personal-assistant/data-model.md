@@ -23,3 +23,9 @@ All writes for a command are one atomic batch under the repository write boundar
 ## Later entities
 
 Conversation messages are separate append-only records with session identity and server-assigned ordering; do not keep replacing a whole conversation array. Facts carry assertion source, provenance and validity rather than treating model guesses as confirmed user facts. Reminder jobs have due time, target record revision, delivery identity and attempt state. Attachments have content checksum, media type and path reference; original bytes stay in private file storage. These schemas are introduced with their own acceptance tests in C/D, not populated with placeholder data in A.
+
+## Conversational turn journal (increment C)
+
+Additive schema-1 namespaces: `turn/<request UUID>` stores immutable TellRequest, acceptance time and tagged Received/Prepared/Completed state; `conversation/<UUID>` stores next sequence and unresolved request ID; `message/<conversation UUID>/<20-digit sequence>` stores immutable Message with role, request ID, UTC timestamp and text. The single Sled gate serializes journal and record access; begin/prepare/complete each commit one atomic batch and flush. PreparedPlan retains original command/record/request UUIDs and bounded deterministic reply/read snapshot; Completed stores TellResponse. Record command receipts retain their existing namespace/semantics.
+
+Recent message scans return a bounded ordered suffix. Completion validates the response against the stored plan and actual receipt prefix, appends one assistant message, records the immutable response and releases the active turn together. Replaying begin/prepare/complete is durable and cannot append duplicates. Storage errors leave recoverable state. Journal operations never call inference or network code under the database gate.

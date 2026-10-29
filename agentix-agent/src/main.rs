@@ -1,3 +1,4 @@
+mod assistant;
 mod config;
 mod db;
 mod google;
@@ -136,6 +137,7 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn run_daemon(config: AgentConfig) -> anyhow::Result<()> {
+    let personal = assistant::HostedAssistant::open(&config).await?;
     let prometheus_handle = metrics_exporter_prometheus::PrometheusBuilder::new()
         .install_recorder()
         .context("installing Prometheus recorder")?;
@@ -157,7 +159,14 @@ async fn run_daemon(config: AgentConfig) -> anyhow::Result<()> {
     let token = CancellationToken::new();
     scheduler::spawn(Arc::clone(&state), token.clone());
 
-    let app = http::router(Arc::clone(&state));
+    let mut app = http::router(Arc::clone(&state));
+    if let Some(personal) = &personal {
+        app = app.merge(assistant::routes(
+            Arc::clone(&personal.service),
+            personal.owner_token.clone(),
+        )?);
+        personal.spawn_projection_worker(token.clone());
+    }
     let listener = tokio::net::TcpListener::bind(&config.bind_addr)
         .await
         .with_context(|| format!("binding to {}", config.bind_addr))?;

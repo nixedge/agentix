@@ -19,7 +19,12 @@ name = "agentix-agent"
 version = "0.1.0"
 dependencies = [
  "agentix-api",
+ "agentix-assistant",
+ "agentix-assistant-core",
+ "agentix-assistant-lance",
+ "agentix-assistant-sled",
  "agentix-harness",
+ "agentix-router",
  "anyhow",
  "async-trait",
  "axum",
@@ -33,6 +38,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sled",
+ "subtle",
  "tempfile",
  "tokio",
  "tokio-util",
@@ -54,11 +60,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "agentix-assistant"
+version = "0.1.0"
+dependencies = [
+ "agentix-assistant-core",
+ "agentix-assistant-sled",
+ "async-trait",
+ "chrono",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "agentix-assistant-core"
 version = "0.1.0"
 dependencies = [
  "async-trait",
  "chrono",
+ "chrono-tz",
  "serde",
  "thiserror 2.0.20",
  "uuid",

@@ -21,6 +21,7 @@
     # cargo can resolve the full workspace even when building a single package.
     allManifests = [
       ../Cargo.toml
+      ../agentix-assistant/Cargo.toml
       ../agentix-assistant-core/Cargo.toml
       ../agentix-assistant-sled/Cargo.toml
       ../agentix-assistant-lance/Cargo.toml
@@ -56,6 +57,8 @@
         cp -rT ${cargoFiles} $out
         chmod -R u+w $out
         # Workspace member stubs
+        mkdir -p $out/agentix-assistant/src
+        cp ${stubLib} $out/agentix-assistant/src/lib.rs
         mkdir -p $out/agentix-assistant-core/src $out/agentix-assistant-sled/src
         cp ${stubLib} $out/agentix-assistant-core/src/lib.rs
         cp ${stubLib} $out/agentix-assistant-sled/src/lib.rs
@@ -164,6 +167,7 @@
     agentixAgentDeps = craneLib.buildDepsOnly (commonArgs
       // {
         pname = "agentix-agent-deps";
+        cargoArtifacts = assistantLanceDeps;
         src = depsOnlySrc;
         cargoExtraArgs = "--package agentix-agent";
       });
@@ -237,6 +241,7 @@
     # Stub shell commands for each workspace member.  Each command is self-contained
     # (creates its own subdirs) so agentix-jails' nested layout works without special-casing.
     memberStubs = {
+      agentix-assistant = "mkdir -p $out/agentix-assistant/src; cp ${stubLib} $out/agentix-assistant/src/lib.rs";
       agentix-assistant-core = "mkdir -p $out/agentix-assistant-core/src; cp ${stubLib} $out/agentix-assistant-core/src/lib.rs";
       agentix-assistant-sled = "mkdir -p $out/agentix-assistant-sled/src; cp ${stubLib} $out/agentix-assistant-sled/src/lib.rs";
       agentix-assistant-lance = "mkdir -p $out/agentix-assistant-lance/src; cp ${stubLib} $out/agentix-assistant-lance/src/lib.rs";
@@ -362,16 +367,16 @@
     assistantDeps = craneLib.buildDepsOnly (commonArgs
       // {
         pname = "agentix-assistant-deps";
-        cargoExtraArgs = "--package agentix-assistant-core --package agentix-assistant-sled --all-targets";
+        cargoExtraArgs = "--package agentix-assistant-core --package agentix-assistant-sled --package agentix-assistant --all-targets";
       });
 
     assistantCheck = craneLib.cargoTest (commonArgs
       // {
         pname = "agentix-assistant-tests";
         doCheck = true;
-        src = mkWorkspaceSrc ["agentix-assistant-core" "agentix-assistant-sled"];
+        src = mkWorkspaceSrc ["agentix-assistant-core" "agentix-assistant-sled" "agentix-assistant"];
         cargoArtifacts = assistantDeps;
-        cargoExtraArgs = "--package agentix-assistant-core --package agentix-assistant-sled";
+        cargoExtraArgs = "--package agentix-assistant-core --package agentix-assistant-sled --package agentix-assistant";
       });
 
     assistantLanceDeps = craneLib.buildDepsOnly (commonArgs
@@ -414,9 +419,18 @@
     agentixAgentPkg = craneLib.buildPackage (commonArgs
       // {
         pname = "agentix-agent";
-        src = mkWorkspaceSrc ["agentix-agent" "agentix-harness" "agentix-api"];
+        src = mkWorkspaceSrc ["agentix-agent" "agentix-harness" "agentix-api" "agentix-router" "agentix-assistant" "agentix-assistant-core" "agentix-assistant-sled" "agentix-assistant-lance"];
         cargoArtifacts = agentixAgentDeps;
         cargoExtraArgs = "--package agentix-agent";
+      });
+
+    assistantApiCheck = craneLib.cargoTest (commonArgs
+      // {
+        pname = "agentix-assistant-api-tests";
+        doCheck = true;
+        src = mkWorkspaceSrc ["agentix-agent" "agentix-harness" "agentix-api" "agentix-router" "agentix-assistant" "agentix-assistant-core" "agentix-assistant-sled" "agentix-assistant-lance"];
+        cargoArtifacts = agentixAgentDeps;
+        cargoExtraArgs = "--package agentix-agent assistant::";
       });
 
     agentixVoicePkg = craneLib.buildPackage (commonArgs
@@ -622,6 +636,8 @@
       inherit (commonArgs) LIBCLANG_PATH LD_LIBRARY_PATH;
     };
     packages.agentix-agent = agentixAgentPkg;
+    packages.assistant-api = assistantApiCheck;
+    checks.assistant-api = assistantApiCheck;
 
     packages.agentix-voice = agentixVoicePkg;
 
