@@ -118,3 +118,27 @@ nix run .#agentix-indexer -- optimize
 For offline PostgreSQL import, stop `agentix-store`, import locally into a fresh destination as the service account, then configure dataDir to that destination and start the service. Routine ingestion and maintenance should use the API while the service runs. Back up the complete directory with writes paused or an appropriate filesystem snapshot. The metadata compare-and-swap protocol prevents lost project-tag/counter updates between remote clients; whole-file replacements retain last-committed replacement semantics rather than merging competing edits.
 
 Build the server with `nix build .#agentix-store-server`. The service is named `agentix-store.service`. Laptop deployments update only their MCP binary/environment; no laptop Lance directory is required.
+
+### Inference update for large code chunks
+
+An older `agentix-llama` aborts when an embedding input exceeds its 4,096-token
+decode batch. Update the inference package as well as the ingest/MCP clients before
+large-repository ingestion. The fixed backend accommodates the indexer's intact
+8,000-byte code chunks with up to 8,192 tokens (bounded by the model context),
+validates input length before entering llama.cpp, and returns HTTP 400 for oversized
+inputs instead of aborting. The embedding model and vector dimensions stay the same.
+
+Build `nix build .#agentix-llama .#agentix-indexer .#agentix-mcp-server`. Update your
+existing Agentix input/package revision and rebuild the inference host so
+`agentix-llama.service` runs the new package. No additional NixOS module option or
+storage-service rebuild is required. Keep your existing CUDA configuration.
+
+After the updated inference service is running, the fixed ingest client resumes a
+partial Git revision without `--force`:
+
+```bash
+AGENTIX_STORE_URL=http://ai.lan.disasm.us:8091 \
+OLLAMA_HOST=http://ai.lan.disasm.us:11434 \
+ingest git https://github.com/IntersectMBO/cardano-ledger \
+  --branch master --project cardano-ledger
+```

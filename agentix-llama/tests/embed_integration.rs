@@ -73,6 +73,23 @@ async fn embed_with_local_model() {
         );
     }
 
+    // Oversized inputs used to abort the entire process inside llama.cpp.
+    let oversized = "hello ".repeat(9000);
+    let error = engine
+        .embed(&info.name, &oversized)
+        .await
+        .expect_err("oversized input must fail before native inference");
+    assert!(matches!(
+        error,
+        agentix_infer::InferError::ContextExceeded { .. }
+    ));
+    let recovered = engine
+        .embed(&info.name, "hello after rejected input")
+        .await
+        .expect("model must remain usable after rejected input");
+    assert_eq!(recovered.len(), vec.len());
+    assert!(recovered.iter().all(|value| value.is_finite()));
+
     // Verify model appears in list
     let models = engine.list().await;
     assert!(

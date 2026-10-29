@@ -142,8 +142,9 @@ impl InferBackend for LlamaCppBackend {
             "loading model",
         );
 
-        // Completion models get a larger context window; embedding models cap at 4096.
-        let max_ctx = if is_embedding { 4096u32 } else { self.max_ctx };
+        // Fit intact indexer code chunks (at most 8,000 bytes) without an oversized
+        // completion-model context allocation for each embedding model.
+        let max_ctx = if is_embedding { 8192u32 } else { self.max_ctx };
         let n_ctx_val = info.context_length.clamp(64, max_ctx).max(256);
         let size_bytes = info.size_bytes;
 
@@ -208,8 +209,13 @@ impl InferBackend for LlamaCppBackend {
                 for msg in rx {
                     match msg {
                         InferMessage::EmbedBatch { inputs, reply } => {
-                            let result =
-                                embed_batch_sync(&model, &mut ctx, &inputs, use_encoder_path);
+                            let result = embed_batch_sync(
+                                &model,
+                                &mut ctx,
+                                &inputs,
+                                use_encoder_path,
+                                n_ctx_val,
+                            );
                             let _ = reply.send(result);
                         }
                         InferMessage::Complete { req, tx } => {
@@ -242,6 +248,7 @@ fn embed_batch_sync(
     ctx: &mut llama_cpp_2::context::LlamaContext<'_>,
     inputs: &[String],
     use_encoder_path: bool,
+    batch_limit: u32,
 ) -> Result<Vec<Vec<f32>>, InferError> {
     let mut results = Vec::with_capacity(inputs.len());
 
@@ -253,6 +260,17 @@ fn embed_batch_sync(
         if tokens.is_empty() {
             results.push(vec![]);
             continue;
+        }
+
+        // llama.cpp asserts rather than returning an error above n_batch. Check
+        // both limits before entering native code so the service stays alive.
+        let token_limit = ctx.n_ctx().min(batch_limit);
+        if tokens.len() > token_limit as usize {
+            return Err(InferError::ContextExceeded {
+                prompt_tokens: u32::try_from(tokens.len()).unwrap_or(u32::MAX),
+                max_new_tokens: 0,
+                context_window: token_limit,
+            });
         }
 
         // Clear KV cache before each sequence so prior decode passes don't
@@ -374,8 +392,6 @@ fn complete_sync(
     samplers.push(LlamaSampler::dist(0xDEAD_BEEF));
     let mut sampler = LlamaSampler::chain_simple(samplers);
 
-    let mut n_pos = n_prompt;
-
     for i in 0..max_new {
         // sample() internally calls llama_sampler_accept; no separate accept call needed.
         let new_token = sampler.sample(ctx, -1);
@@ -421,7 +437,7 @@ fn complete_sync(
 
         // Decode the generated token to extend the KV cache.
         let mut next_batch = LlamaBatch::new(1, 1);
-        if let Err(e) = next_batch.add(new_token, n_pos as i32, &[0], true) {
+        if let Err(e) = next_batch.add(new_token, (n_prompt + i as usize) as i32, &[0], true) {
             let _ = tx.send(Err(InferError::Backend(format!("next batch add: {e:?}"))));
             return;
         }
@@ -429,7 +445,6 @@ fn complete_sync(
             let _ = tx.send(Err(InferError::Backend(format!("next decode: {e:?}"))));
             return;
         }
-        n_pos += 1;
     }
 }
 
