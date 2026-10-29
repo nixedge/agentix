@@ -84,7 +84,7 @@
         });
     dependencyArtifacts = lib.genAttrs (builtins.attrNames workspace.members) depsFor;
     workspaceLockCheck = import ../nix/workspace-lock-check.nix {inherit pkgs lib toolchain craneLib scopes;};
-    memberPackages = lib.mapAttrs (name: _:
+    buildMember = name: overrides:
       craneLib.buildPackage ((packageArgs name)
         // {
           cargoArtifacts = dependencyArtifacts.${name};
@@ -95,8 +95,9 @@
             dependencyArtifacts = dependencyArtifacts.${name};
             source = scopes.${name}.src;
           };
-        }))
-    workspace.members;
+        }
+        // overrides);
+    memberPackages = lib.mapAttrs (name: _: buildMember name {}) workspace.members;
     llamaCpuArgs = argsFor ["agentix-llama"];
     llamaCpuDeps = craneLib.buildDepsOnly (llamaCpuArgs
       // {
@@ -132,19 +133,19 @@
       });
     assistantLanceCheck = checkFor "agentix-assistant-lance" "";
     agentixStoreCheck = checkFor "agentix-store" "";
-    agentixStoreServerPkg = memberPackages.agentix-store.overrideAttrs (old: {
+    agentixStoreServerPkg = buildMember "agentix-store" {
       pname = "agentix-store-server";
-      cargoExtraArgs = "${old.cargoExtraArgs} --bin agentix-store-server";
+      cargoExtraArgs = "${extraArgs "agentix-store"} --bin agentix-store-server";
       meta.mainProgram = "agentix-store-server";
-    });
+    };
     agentixAgentPkg = memberPackages.agentix-agent;
     assistantApiCheck = checkFor "agentix-agent" "assistant::";
     agentixVoicePkg = memberPackages.agentix-voice;
     jailPackage = name:
-      memberPackages.agentix-jails.overrideAttrs (old: {
+      buildMember "agentix-jails" {
         pname = name;
-        cargoExtraArgs = "${old.cargoExtraArgs} --bin ${name}";
-      });
+        cargoExtraArgs = "${extraArgs "agentix-jails"} --bin ${name}";
+      };
     claudeJailUnwrapped = jailPackage "claude-jail";
     ghJailClientPkg = (jailPackage "gh-jail-client").overrideAttrs (_: {
       postInstall = ''mv $out/bin/gh-jail-client $out/bin/gh'';
@@ -289,6 +290,24 @@
       ];
     };
   in {
+    checks.package-binary-selection = let
+      selections = [
+        [agentixStoreServerPkg "agentix-store" "agentix-store-server"]
+        [claudeJailUnwrapped "agentix-jails" "claude-jail"]
+        [ghJailClientPkg "agentix-jails" "gh-jail-client"]
+        [ghJailServerPkg "agentix-jails" "gh-jail-server"]
+        [axJailUnwrapped "agentix-jails" "ax-jail"]
+        [codexJailUnwrapped "agentix-jails" "codex-jail"]
+      ];
+      correctSelection = selection:
+        lib.hasInfix
+        "--locked --package ${builtins.elemAt selection 1} --bin ${builtins.elemAt selection 2}"
+        (builtins.head selection).buildPhase;
+    in
+      assert lib.assertMsg (lib.all correctSelection selections) "Crane binary variants must select their package and binary in the generated build command";
+        pkgs.runCommand "package-binary-selection" {} ''
+          touch "$out"
+        '';
     checks.workspace-locks = workspaceLockCheck;
     checks.assistant-core = assistantCheck;
     checks.assistant-lance = assistantLanceCheck;
