@@ -100,3 +100,5 @@ location /v1/assistant/ {
 ```
 
 Use the service's actual configured bind address if different. Preserve the full `/v1/assistant/tell` path; `proxy_pass` above has no URI suffix. The agent service performs bearer-token checks and talks separately to the configured inference gateway (`http://ai.lan.disasm.us:11434` in the development config). No nginx configuration was changed by this feature work.
+
+A complete NixOS import is provided at `agentix-agent/examples/nixos-personal-assistant.nix`, with secret-manager/import instructions in the adjacent README. It generates the non-secret TOML, enables the existing service module, and adds the same-host nginx route without replacing existing TLS configuration. Evaluation verified the service ExecStart, runtime environment path, persistent state directory, nginx upstream and parsed generated TOML. It has not been deployed.
