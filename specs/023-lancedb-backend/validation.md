@@ -176,3 +176,65 @@ Evidence: `ledger-inference-workspace-tests.log`, `ledger-native-{embed,route}-t
 and `ledger-inference-*-build.{json,log}` in the ignored validation directory. The
 deployment/resume commands are in quickstart.md. The user's raw llama.log remains
 untracked and is not part of this change.
+
+## Completed live ledger validation after operator deployment
+
+The operator deployed the inference fix. A 9,001-token Jina request returned HTTP
+400 with context_window=8192; an immediately following valid request returned a
+1,536-dimensional embedding. The service remained usable throughout the large run.
+
+GitHub master revision `f4a3026c9baed7845709befc8d66989ac9ecb765` finished with
+**18,867 code chunks from 1,499 files and 505 documentation chunks**. The successful
+resume command took **422 seconds (7m02s)** including clone and code/docs ingestion;
+it reused the 2,486 chunks from the failed first attempt. This is not a clean full
+ingestion timing. It embedded 16,381 new code chunks and 505 doc chunks, skipped 177
+unchanged code files, logged no embedding retries, and persisted complete=true and
+docs_indexed=true. No code chunks have missing embeddings. Comparing the untruncated
+GitHub tree with indexed Cabal paths found all **29 package manifests**, with no
+missing/extra manifests; every package directory also contains indexed Haskell code.
+A subsequent completed-revision check skipped ingestion and took 4.237s including
+the fresh Git clone.
+
+Explicit index maintenance across the six collections took **3.835s**. Measurements
+use the real packaged stdio MCP, project/repo filters, warm remote Jina embeddings,
+no reranking, and six small queries repeated three times. These are observed samples,
+not a throughput or percentile SLO; latency includes the MCP tool round trip and
+remote inference where applicable.
+
+| Tool | Samples | Median | Range |
+| --- | ---: | ---: | ---: |
+| BM25 code | 6 | 17ms | 14–20ms |
+| Hybrid code | 9 | 90ms | 83–163ms |
+| Hybrid docs | 3 | 33ms | 29–65ms |
+
+Before maintenance, two BM25 requests took 74–91ms and three hybrid code requests
+took 167–247ms. Two simultaneous MCP processes completed their six-query sequences
+in about 0.41s each; their hybrid requests took 98–178ms. There were no protocol or
+storage errors, but each repeated the same known relevance miss described below.
+
+**Relevance finding retained, not counted as an all-pass result:** the query
+“calculate the minimum lovelace required for a transaction output” returned
+`babbageMinUTxOValue` second before maintenance, but it fell out of the top five
+after maintenance, reproducibly across all three repeats and both concurrent clients.
+Exact identifier/BM25 retrieval still finds the stored function. Requesting 100
+hybrid results finds the function at rank 63. This changes candidate breadth (the
+store normally uses max(60, requested_limit)), so it does not by itself isolate ANN
+recall from fusion effects. Maintenance rebuilt both lexical and vector indexes;
+do not attribute the difference solely to HNSW without an exact-vs-ANN comparison.
+
+The existing optional BGE reranker took 2.619–4.826s for the three semantic queries
+and did not recover that minimum-ADA function in the top five. Its normal pool is
+only 20 results, excluding the target in this case. The original loose substring
+checks passed with reranking, but manual target inspection shows the semantic miss
+remains. No ranker, candidate-pool default, embedding representation or service
+configuration was changed for this experiment. A useful next step is a curated
+query/target set and controlled retrieval/fusion/pool comparisons before enabling
+reranking globally. The pre-existing get_file reconstruction limitation also remains.
+
+Evidence under the ignored validation directory: `ledger-github-resume*`,
+`ledger-source-tree.json`, `ledger-package-{coverage.json,code-counts.jsonl}`,
+`ledger-{completion-state,final-repositories,final-doc-count,final-missing-vectors}.json`,
+`ledger-search-{before,after}-optimize*`, `ledger-search-timing-summary.json`,
+`ledger-{concurrent-a,concurrent-b,rerank,min-ada-candidates}*`, and
+`ledger-{oversized,recovery}-probe*`. Source and client packages remain unchanged;
+only this validation record and task completion were updated.
