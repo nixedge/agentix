@@ -22,12 +22,14 @@ The single-contract acceptance run passes all 28 cases in three suites: the 13-c
 
 The owner rejected parallel compatibility routes because nothing is in production. Backend and Android now share one current contract under the existing `/v1/assistant/` prefix; no extra nginx location or protocol negotiation is needed. All canonical Nix builds pass for this simplification: `.#assistant-core`, `.#assistant-api`, `.#agentix-agent` and `.#agentix-android`. T018 is complete. Physical-phone acceptance remains open.
 
+The owner's phone checkpoint exposed a missing `ACCESS_NETWORK_STATE` manifest permission when registering network-constrained sync jobs. Android14+ requires it for these jobs ([platform reference](https://developer.android.com/reference/android/app/job/JobInfo.Builder#setRequiredNetworkType(int))). The permission is now declared. The canonical Android rebuild passes JVM tests, lint and APK assembly (Gradle24seconds), and `aapt2 dump permissions` confirms the built APK contains it. The fix is app-only; runtime phone retry remains outstanding.
+
 The final APK was signed and verified outside the store with the existing persistent host key:
 
-`/home/sam/home/agentix/.android-state/apks/agentix-android-028-reminders-single-contract.apk`
+`/home/sam/home/agentix/.android-state/apks/agentix-android-028-reminders-network-permission.apk`
 
-APK SHA256: `58b20e352c6ea7d23e4d50b76d05d608f5c203f2687e23176d994a6ad8aa2ddb`. Earlier reminder APKs are superseded by this single-contract build.
+APK SHA256: `a646859cb10d608ae7fe38ec47ddc42d748845c3efd44eac66804a8d6f5a0457`. Earlier reminder APKs are superseded by this build.
 
 The unsigned package and core/lint reports are under `result-reminders-android/share/agentix-android/`. No signing secrets entered a derivation or repository.
 
-`adb devices -l` found no connected devices. No APK installation, uninstall, permission change, backend deployment, real schedule or notification was performed. Actual AlarmManager/NotificationManager dispatch, receiver recovery and power-state behavior require the [physical-phone checklist](quickstart.md#real-phone-acceptance-still-required). Pure Kotlin recovery policy and a successful Android build do not replace that evidence. T011/T014 platform acceptance and T017 remain open until it is recorded.
+The agent's earlier `adb devices -l` found no connected devices; the agent performed no installation, uninstall, permission change, backend deployment or real notification. The owner has started the phone checkpoint and reported the permission failure above. Actual AlarmManager/NotificationManager dispatch, receiver recovery and power-state behavior still require the [physical-phone checklist](quickstart.md#real-phone-acceptance-still-required). Pure Kotlin recovery policy and a successful Android build do not replace that evidence. T011/T014 platform acceptance and T017 remain open until it is recorded.
