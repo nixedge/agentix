@@ -84,8 +84,17 @@
         });
     dependencyArtifacts = lib.genAttrs (builtins.attrNames workspace.members) depsFor;
     workspaceLockCheck = import ../nix/workspace-lock-check.nix {inherit pkgs lib toolchain craneLib scopes;};
+    withRuntimeFixup = args:
+      args
+      // {
+        nativeBuildInputs =
+          args.nativeBuildInputs
+          ++ lib.optional
+          (builtins.elem pkgs.stdenv.cc.cc.lib args.buildInputs && !(builtins.elem pkgs.autoPatchelfHook args.nativeBuildInputs))
+          pkgs.autoPatchelfHook;
+      };
     buildMember = name: overrides:
-      craneLib.buildPackage ((packageArgs name)
+      craneLib.buildPackage ((withRuntimeFixup (packageArgs name))
         // {
           cargoArtifacts = dependencyArtifacts.${name};
           cargoExtraArgs = extraArgs name;
@@ -105,7 +114,7 @@
         inherit (scopes.agentix-llama) extraDummyScript;
         cargoExtraArgs = "--locked --package agentix-llama";
       });
-    llamaCpuPackage = craneLib.buildPackage (llamaCpuArgs
+    llamaCpuPackage = craneLib.buildPackage ((withRuntimeFixup llamaCpuArgs)
       // {
         cargoArtifacts = llamaCpuDeps;
         cargoExtraArgs = "--locked --package agentix-llama";
@@ -290,6 +299,29 @@
       ];
     };
   in {
+    checks.whisper-runtime = pkgs.runCommand "whisper-runtime" {nativeBuildInputs = [pkgs.curl];} ''
+      unset LD_LIBRARY_PATH
+      export AGENTIX_MODELS_DIR="$TMPDIR/models"
+      export AGENTIX_WHISPER_SOCKET="$TMPDIR/whisper.sock"
+      export AGENTIX_WHISPER_MODELS=""
+      ${agentixWhisperPkg}/bin/agentix-whisper > "$TMPDIR/whisper.log" 2>&1 &
+      whisper_pid=$!
+      trap 'kill "$whisper_pid" 2>/dev/null || true' EXIT
+      for attempt in $(seq 1 100); do
+        if curl --silent --fail --unix-socket "$AGENTIX_WHISPER_SOCKET" http://localhost/v1/models > "$TMPDIR/models.json"; then
+          curl --silent --fail --unix-socket "$AGENTIX_WHISPER_SOCKET" -X POST http://localhost/control/shutdown
+          wait "$whisper_pid"
+          touch "$out"
+          exit 0
+        fi
+        if ! kill -0 "$whisper_pid" 2>/dev/null; then
+          break
+        fi
+        sleep 0.1
+      done
+      cat "$TMPDIR/whisper.log"
+      exit 1
+    '';
     checks.package-binary-selection = let
       selections = [
         [agentixStoreServerPkg "agentix-store" "agentix-store-server"]
