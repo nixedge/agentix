@@ -15,6 +15,22 @@ nix run .#agentix-ourgroceries -- show LIST_ID
 
 The first prints existing shopping list IDs/names; the second prints a selected list. These commands contact the real service using the environment. Their output is personal data; they do not log or print credentials/session cookies. No live account was used in development tests.
 
+To install the CLI on the NixOS host:
+
+```nix
+environment.systemPackages = [
+  inputs.agentix.packages.${pkgs.stdenv.hostPlatform.system}.agentix-ourgroceries
+];
+```
+
+Installing it does not load the daemon's credentials into your shell. Reuse the runtime environment file for a read-only command:
+
+```bash
+sudo systemd-run --wait --pipe --collect \
+  -p EnvironmentFile=/run/secrets/agentix-agent.env \
+  /run/current-system/sw/bin/agentix-ourgroceries show LIST_ID
+```
+
 ## Enable in agentix-agent
 
 Add to the existing TOML, using an ID from discovery:
@@ -43,7 +59,27 @@ The deployed Android v1 client needs no change: OurGroceries replies use Answer 
 
 New grocery journal states are additive and validated; old local entries remain readable. Older Agentix binaries cannot read new grocery turn states, so keep the new binary when reopening a store containing those turns. No existing local groceries are imported, overwritten or deleted automatically.
 
-## Checks
+## Diagnose a failed read
+
+A browser list URL ending in `/your-lists/list/ID` supplies the list ID. A configured integration can still fail during login, household discovery or fetching/decoding that list. The assistant distinguishes missing configuration from a failed remote read.
+
+The Rust CLI prints redacted failure diagnostics to stderr. Run `show LIST_ID` with the same runtime environment file as the daemon to test a read without mutations. Diagnostics contain fixed stage/reason labels and HTTP status numbers, never credentials, cookies, response bodies or list contents. Successful `show` output does contain personal list data.
+
+To enable daemon diagnostics in NixOS:
+
+```nix
+services.agentix.agent.extraEnv.RUST_LOG = "warn,agentix_agent::assistant=info";
+```
+
+After deploying/restarting, issue a fresh grocery read and inspect:
+
+```bash
+journalctl -u agentix-agent -b --since '5 minutes ago' --no-pager
+```
+
+Startup logs confirm the adapter is configured. Failure stages include `sign_in`, `household_page`, `getList` and the overall `snapshot` timeout. For example, `missing_session_cookie` means the login response did not provide the expected session; `invalid_or_missing_team_id` means household-page parsing failed; `invalid_list_fields` means the list response could not be decoded. These identify the failing boundary without assuming credentials are wrong. Existing request IDs replay their stored result; use a fresh request after correcting a failure.
+
+## Build checks
 
 ```bash
 nix build .#ourgroceries

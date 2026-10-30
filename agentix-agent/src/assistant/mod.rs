@@ -48,6 +48,7 @@ impl HostedAssistant {
                 password,
                 Some(groceries.list_id.clone()),
             )?));
+            tracing::info!("OurGroceries integration configured");
         }
         let service = Arc::new(service);
         Ok(Some(Self {

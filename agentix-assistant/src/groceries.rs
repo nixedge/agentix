@@ -81,7 +81,15 @@ pub(crate) fn prepare(
         return Ok(None);
     }
     let Some(list) = list.filter(|_| configured) else {
-        return Ok(Some(read("OurGroceries is not configured or is currently unavailable. I did not change a local or remote grocery list.".into(), TellStatus::Failed)));
+        let reason = if configured {
+            "OurGroceries is configured, but I could not read the remote list."
+        } else {
+            "OurGroceries is not configured."
+        };
+        return Ok(Some(read(
+            format!("{reason} I did not change a local or remote grocery list."),
+            TellStatus::Failed,
+        )));
     };
     list.validate()?;
     let target = match intent {

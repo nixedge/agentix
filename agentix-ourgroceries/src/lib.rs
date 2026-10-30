@@ -13,6 +13,29 @@ use tokio::sync::Mutex;
 const ORIGIN: &str = "https://www.ourgroceries.com";
 const MAX_RESPONSE: usize = 2_097_152;
 
+fn failure(stage: &'static str, reason: &'static str) -> Error {
+    tracing::warn!(stage, reason, "OurGroceries request failed");
+    Error::Groceries
+}
+
+fn transport_failure(stage: &'static str, error: reqwest::Error) -> Error {
+    let reason = if error.is_timeout() {
+        "timeout"
+    } else if error.is_connect() {
+        "connection_or_tls"
+    } else if error.is_body() {
+        "response_body"
+    } else {
+        "http_transport"
+    };
+    failure(stage, reason)
+}
+
+fn status_failure(stage: &'static str, status: reqwest::StatusCode) -> Error {
+    tracing::warn!(stage, status = status.as_u16(), "OurGroceries HTTP failure");
+    Error::Groceries
+}
+
 struct Session {
     cookie: header::HeaderValue,
     team: String,
@@ -88,17 +111,21 @@ impl Client {
         })
     }
 
-    async fn bytes(mut response: reqwest::Response) -> Result<Vec<u8>> {
+    async fn bytes(mut response: reqwest::Response, stage: &'static str) -> Result<Vec<u8>> {
         if response
             .content_length()
             .is_some_and(|length| length > MAX_RESPONSE as u64)
         {
-            return Err(Error::Groceries);
+            return Err(failure(stage, "response_too_large"));
         }
         let mut bytes = Vec::new();
-        while let Some(chunk) = response.chunk().await.map_err(|_| Error::Groceries)? {
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|error| transport_failure(stage, error))?
+        {
             if bytes.len() + chunk.len() > MAX_RESPONSE {
-                return Err(Error::Groceries);
+                return Err(failure(stage, "response_too_large"));
             }
             bytes.extend_from_slice(&chunk);
         }
@@ -116,31 +143,33 @@ impl Client {
             ])
             .send()
             .await
-            .map_err(|_| Error::Groceries)?;
+            .map_err(|error| transport_failure("sign_in", error))?;
         if !(response.status().is_success() || response.status().is_redirection()) {
-            return Err(Error::Groceries);
+            return Err(status_failure("sign_in", response.status()));
         }
         let mut session_cookie = None;
         for cookie in response.headers().get_all(header::SET_COOKIE) {
             let pair = cookie
                 .to_str()
-                .map_err(|_| Error::Groceries)?
+                .map_err(|_| failure("sign_in", "invalid_cookie_header"))?
                 .split(';')
                 .next()
-                .ok_or(Error::Groceries)?;
+                .ok_or_else(|| failure("sign_in", "invalid_cookie_header"))?;
             if let Some(value) = pair.strip_prefix("ourgroceries-auth=") {
                 if value.is_empty()
                     || !value
                         .bytes()
                         .all(|b| b.is_ascii_graphic() && !matches!(b, b',' | b';' | b'"' | b'\\'))
                 {
-                    return Err(Error::Groceries);
+                    return Err(failure("sign_in", "invalid_session_cookie"));
                 }
-                session_cookie =
-                    Some(header::HeaderValue::from_str(pair).map_err(|_| Error::Groceries)?);
+                session_cookie = Some(
+                    header::HeaderValue::from_str(pair)
+                        .map_err(|_| failure("sign_in", "invalid_session_cookie"))?,
+                );
             }
         }
-        let cookie = session_cookie.ok_or(Error::Groceries)?;
+        let cookie = session_cookie.ok_or_else(|| failure("sign_in", "missing_session_cookie"))?;
         // Never follow a login redirect: even a same-origin path could be unexpected.
         let response = self
             .http
@@ -148,16 +177,18 @@ impl Client {
             .header(header::COOKIE, cookie.clone())
             .send()
             .await
-            .map_err(|_| Error::Groceries)?;
+            .map_err(|error| transport_failure("household_page", error))?;
         if !response.status().is_success() {
-            return Err(Error::Groceries);
+            return Err(status_failure("household_page", response.status()));
         }
-        let html = String::from_utf8(Self::bytes(response).await?).map_err(|_| Error::Groceries)?;
-        let team = team_id(&html)?;
+        let html = String::from_utf8(Self::bytes(response, "household_page").await?)
+            .map_err(|_| failure("household_page", "invalid_utf8"))?;
+        let team =
+            team_id(&html).map_err(|_| failure("household_page", "invalid_or_missing_team_id"))?;
         Ok(Session { cookie, team })
     }
 
-    async fn rpc(&self, command: &str, mut payload: Value) -> Result<Value> {
+    async fn rpc(&self, command: &'static str, mut payload: Value) -> Result<Value> {
         let mut session = self.session.lock().await;
         if session.is_none() {
             *session = Some(self.login().await?);
@@ -172,19 +203,20 @@ impl Client {
             .json(&payload)
             .send()
             .await
-            .map_err(|_| Error::Groceries)?;
+            .map_err(|error| transport_failure(command, error))?;
         if !response.status().is_success() {
             *session = None;
-            return Err(Error::Groceries);
+            return Err(status_failure(command, response.status()));
         }
-        let result = Self::bytes(response).await.and_then(|bytes| {
-            let value: Value = serde_json::from_slice(&bytes).map_err(|_| Error::Groceries)?;
+        let result = Self::bytes(response, command).await.and_then(|bytes| {
+            let value: Value =
+                serde_json::from_slice(&bytes).map_err(|_| failure(command, "invalid_json"))?;
             if !value.is_object()
                 || value
                     .get("error")
                     .is_some_and(|error| !error.is_null() && error != &Value::Bool(false))
             {
-                return Err(Error::Groceries);
+                return Err(failure(command, "remote_error_or_invalid_envelope"));
             }
             Ok(value)
         });
@@ -200,9 +232,9 @@ impl Client {
             response
                 .get("shoppingLists")
                 .cloned()
-                .ok_or(Error::Groceries)?,
+                .ok_or_else(|| failure("getOverview", "missing_shopping_lists"))?,
         )
-        .map_err(|_| Error::Groceries)?;
+        .map_err(|_| failure("getOverview", "invalid_shopping_lists"))?;
         if lists.len() > 2_000 {
             return Err(Error::Groceries);
         }
@@ -219,11 +251,15 @@ impl Client {
             .as_ref()
             .ok_or_else(|| Error::Invalid("no OurGroceries list selected".into()))?;
         let response = self.rpc("getList", json!({"listId":id})).await?;
-        let remote: RemoteList =
-            serde_json::from_value(response.get("list").cloned().ok_or(Error::Groceries)?)
-                .map_err(|_| Error::Groceries)?;
+        let remote: RemoteList = serde_json::from_value(
+            response
+                .get("list")
+                .cloned()
+                .ok_or_else(|| failure("getList", "missing_list"))?,
+        )
+        .map_err(|_| failure("getList", "invalid_list_fields"))?;
         if remote.id.as_ref().is_some_and(|remote_id| remote_id != id) {
-            return Err(Error::Groceries);
+            return Err(failure("getList", "list_id_mismatch"));
         }
         let list = GroceryList {
             team_id: self
@@ -251,7 +287,8 @@ impl Client {
                 })
                 .collect(),
         };
-        list.validate().map_err(|_| Error::Groceries)?;
+        list.validate()
+            .map_err(|_| failure("getList", "list_validation"))?;
         Ok(list)
     }
 

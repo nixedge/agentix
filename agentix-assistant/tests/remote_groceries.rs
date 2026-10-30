@@ -19,6 +19,46 @@ use wiremock::{
 };
 type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
 
+#[tokio::test]
+async fn unavailable_remote_is_distinct_from_missing_configuration() -> TestResult {
+    let (server, provider, _) = remote().await;
+    Mock::given(method("POST"))
+        .and(path("/your-lists/"))
+        .respond_with(ResponseTemplate::new(503))
+        .with_priority(1)
+        .mount(&server)
+        .await;
+    for configured in [false, true] {
+        let directory = tempfile::tempdir()?;
+        let store = SledRepository::open(directory.path()).await?;
+        let shared = Arc::new(store.clone());
+        let mut assistant = Assistant::new(
+            shared.clone(),
+            shared,
+            Arc::new(Script::new(vec![Intent::ShowGroceries])),
+        );
+        if configured {
+            assistant = assistant.with_groceries(provider.clone());
+        }
+        let assistant = Arc::new(assistant);
+        let response = assistant
+            .tell(request(Uuid::new_v4(), "read OurGroceries"))
+            .await?;
+        assert_eq!(response.status, TellStatus::Failed);
+        assert!(response.outcomes.is_empty());
+        assert!(response.records.is_empty());
+        assert_eq!(response.reply.contains("not configured"), !configured);
+        assert_eq!(
+            response.reply.contains("could not read the remote list"),
+            configured
+        );
+        assert!(store.records().await?.is_empty());
+        drop(assistant);
+        store.close().await?;
+    }
+    Ok(())
+}
+
 struct Script {
     intents: Mutex<VecDeque<Intent>>,
     contexts: Mutex<Vec<InferenceContext>>,

@@ -121,10 +121,17 @@ impl Assistant {
             TurnState::Received => {
                 let originals = self.repository.records().await?;
                 let remote = if let Some(provider) = &self.groceries {
-                    tokio::time::timeout(Duration::from_secs(25), provider.snapshot())
-                        .await
-                        .ok()
-                        .and_then(|result| result.ok())
+                    match tokio::time::timeout(Duration::from_secs(25), provider.snapshot()).await {
+                        Ok(result) => result.ok(),
+                        Err(_) => {
+                            tracing::warn!(
+                                stage = "snapshot",
+                                reason = "timeout",
+                                "OurGroceries request failed"
+                            );
+                            None
+                        }
+                    }
                 } else {
                     None
                 };

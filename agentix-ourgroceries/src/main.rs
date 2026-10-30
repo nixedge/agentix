@@ -3,6 +3,12 @@ use agentix_ourgroceries::Client;
 
 #[tokio::main]
 async fn main() {
+    tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .with_max_level(tracing::Level::WARN)
+        .with_ansi(false)
+        .without_time()
+        .init();
     if run().await.is_err() {
         eprintln!("OurGroceries request failed; check runtime credentials, connectivity and selected list.");
         std::process::exit(1);

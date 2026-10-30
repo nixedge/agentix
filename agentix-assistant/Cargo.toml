@@ -13,6 +13,7 @@ agentix-assistant-core = { path = "../agentix-assistant-core" }
 chrono = "0.4"
 serde_json = "1"
 tokio = { version = "1", features = ["rt", "sync", "time"] }
+tracing = "0.1"
 uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]

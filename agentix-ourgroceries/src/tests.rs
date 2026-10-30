@@ -11,6 +11,105 @@ use wiremock::{
 };
 
 #[derive(Clone)]
+struct LogCapture(Arc<StdMutex<Vec<u8>>>);
+
+impl std::io::Write for LogCapture {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+async fn diagnostics<F: std::future::Future>(future: F) -> (F::Output, String) {
+    use tracing::instrument::WithSubscriber;
+    let bytes = Arc::new(StdMutex::new(Vec::new()));
+    let capture = LogCapture(bytes.clone());
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .without_time()
+        .with_writer(move || capture.clone())
+        .finish();
+    let result = future.with_subscriber(subscriber).await;
+    let text = String::from_utf8(bytes.lock().unwrap().clone()).unwrap();
+    (result, text)
+}
+
+#[tokio::test]
+async fn failures_identify_stage_without_logging_remote_data() {
+    for (stage, reason, sign_in_status, page, rpc) in [
+        ("sign_in", "status=401", 401, "", json!({})),
+        (
+            "household_page",
+            "invalid_or_missing_team_id",
+            200,
+            "secret-page-content",
+            json!({}),
+        ),
+        (
+            "getList",
+            "invalid_list_fields",
+            200,
+            "g_teamId = \"private-team-id\";",
+            json!({"list":{"items":"secret-list-content"}}),
+        ),
+        (
+            "getList",
+            "remote_error_or_invalid_envelope",
+            200,
+            "g_teamId = \"private-team-id\";",
+            json!({"error":"secret-remote-error"}),
+        ),
+    ] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/sign-in"))
+            .respond_with(
+                ResponseTemplate::new(sign_in_status)
+                    .insert_header("Set-Cookie", "ourgroceries-auth=private-session-cookie"),
+            )
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/your-lists/"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(page))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/your-lists/"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(rpc))
+            .mount(&server)
+            .await;
+        let client = Client::at_origin(
+            &server.uri(),
+            "private-email@example.org".into(),
+            "private-password".into(),
+            Some("private-list-id".into()),
+        )
+        .unwrap();
+        let (result, log) = diagnostics(client.snapshot()).await;
+        assert!(result.is_err());
+        assert!(log.contains(stage), "{log}");
+        assert!(log.contains(reason), "{log}");
+        for secret in [
+            "private-email",
+            "private-password",
+            "private-session-cookie",
+            "private-team-id",
+            "private-list-id",
+            "secret-page-content",
+            "secret-list-content",
+            "secret-remote-error",
+        ] {
+            assert!(!log.contains(secret), "{log}");
+        }
+        assert!(server.received_requests().await.unwrap().len() <= 3);
+    }
+}
+
+#[derive(Clone)]
 struct Api {
     state: Arc<StdMutex<Value>>,
     writes: Arc<AtomicUsize>,
