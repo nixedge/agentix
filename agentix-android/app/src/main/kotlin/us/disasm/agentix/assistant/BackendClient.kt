@@ -16,8 +16,11 @@ import us.disasm.agentix.core.assistant.TellQueue
 import us.disasm.agentix.core.assistant.TellResult
 import us.disasm.agentix.core.assistant.OwnerAuthentication
 import us.disasm.agentix.settings.AssistantSettings
+import us.disasm.agentix.reminders.ReminderEngine
+import us.disasm.agentix.reminders.ReminderWire
 
 internal class BackendClient private constructor(context: Context) : AssistantClient {
+    private val context = context.applicationContext
     private val settings = AssistantSettings(context)
     private val queue = TellQueue(settings)
     private var inFlight = false
@@ -25,15 +28,19 @@ internal class BackendClient private constructor(context: Context) : AssistantCl
     fun snapshot() = settings.load()
 
     override suspend fun tell(command: TellCommand): AssistantReply = withContext(Dispatchers.IO) {
-        val (envelope, token) = synchronized(AssistantSettings.lock) {
+        val (endpoint, token) = synchronized(AssistantSettings.lock) {
             if (!settings.enabled()) return@withContext AssistantReply.NotConnected
             check(!inFlight) { "Assistant request is still running" }
             val token = OwnerAuthentication.authorization(settings.token())
-            val pending = queue.begin(command.text, settings.endpoint(), ZoneId.systemDefault().id)
             inFlight = true
-            pending to token
+            settings.endpoint() to token
         }
         try {
+            val deviceId = if (ReminderEngine.enabled(context)) ReminderEngine.deviceId(context) else null
+            val envelope = synchronized(AssistantSettings.lock) {
+                check(settings.endpoint() == endpoint) { "Assistant endpoint changed before request admission" }
+                queue.begin(command.text, endpoint, ZoneId.systemDefault().id, deviceId)
+            }
             val result = post(envelope, token)
             synchronized(AssistantSettings.lock) { queue.complete(envelope, result) }
             AssistantReply.Message(result.reply)
@@ -55,9 +62,11 @@ internal class BackendClient private constructor(context: Context) : AssistantCl
             connection.doOutput = true
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
             token?.let { connection.setRequestProperty("Authorization", it) }
-            val body = JSONObject().put("request_id", envelope.requestId.toString())
+            val request = JSONObject().put("request_id", envelope.requestId.toString())
                 .put("conversation_id", envelope.conversationId.toString()).put("text", envelope.text)
-                .put("timezone", envelope.timezone).toString().toByteArray(Charsets.UTF_8)
+                .put("timezone", envelope.timezone)
+            val body = JSONObject().put("device_id", envelope.deviceId?.toString() ?: JSONObject.NULL)
+                .put("request", request).toString().toByteArray(Charsets.UTF_8)
             connection.setFixedLengthStreamingMode(body.size)
             connection.outputStream.use { it.write(body) }
             check(connection.responseCode == 200) { "Assistant response is unresolved" }
@@ -75,7 +84,13 @@ internal class BackendClient private constructor(context: Context) : AssistantCl
                 }
                 output.toByteArray()
             }
-            val json = JSONObject(bytes.toString(Charsets.UTF_8))
+            val root = JSONObject(bytes.toString(Charsets.UTF_8))
+            val deviceId = if (root.isNull("device_id")) null else UUID.fromString(root.getString("device_id"))
+            require(deviceId == envelope.deviceId)
+            val receipts = root.getJSONArray("reminder_receipts")
+            require(receipts.length() <= 1 && (receipts.length() == 0 || deviceId != null))
+            val reminderReceipts = (0 until receipts.length()).map { ReminderWire.reminder(receipts.getJSONObject(it)) }
+            val json = root.getJSONObject("response")
             fun string(name: String) = json.get(name) as? String ?: error("Invalid response field")
             val outcomes = json.getJSONArray("outcomes")
             val records = json.getJSONArray("records")
@@ -86,8 +101,21 @@ internal class BackendClient private constructor(context: Context) : AssistantCl
                 check(receipt.getJSONObject("command").getString("id") == receipt.getJSONObject("record").getString("id"))
             }
             for (index in 0 until records.length()) validateRecord(records.getJSONObject(index))
-            return TellResult(UUID.fromString(string("request_id")), UUID.fromString(string("conversation_id")),
+            val result = TellResult(UUID.fromString(string("request_id")), UUID.fromString(string("conversation_id")),
                 string("status"), string("reply"), outcomes.length(), records.length())
+            require(result.requestId == envelope.requestId && result.conversationId == envelope.conversationId)
+            if (reminderReceipts.isNotEmpty()) {
+                require(result.status == "answer" && outcomes.length() == 0 && records.length() == 0)
+                val receipt = reminderReceipts.single()
+                ReminderEngine.synchronizeReceipt(context, receipt.id, receipt.revision)
+                val localTime = receipt.dueAt.atZone(ZoneId.of(receipt.timezone)).format(java.time.format.DateTimeFormatter.ofPattern("EEE MMM d 'at' h:mm a z"))
+                return result.copy(reply = "${receipt.text.take(256)} ($localTime): ${ReminderEngine.outcome(context, receipt.id, receipt.revision)}")
+            }
+            if (envelope.deviceId != null) {
+                runCatching { ReminderEngine.sync(context) }
+                ReminderEngine.requestSync(context)
+            }
+            return result
         } finally {
             connection.disconnect()
         }

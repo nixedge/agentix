@@ -1,19 +1,16 @@
-# Proposed Android reminder contract boundary
+# Android reminder contract boundary
 
-All routes share the existing daemon listener and owner authorization/WireGuard policy. Bounds, rejection codes and exact JSON fixtures must be pinned in T004 before production code. No existing v1 endpoint changes semantics.
+All routes share the existing daemon listener, `/v1/assistant/` prefix and owner authorization/WireGuard policy. The owner confirmed nothing is in production and rejected parallel compatibility routes. Backend and Android update together; there is one current wire contract, without negotiation or legacy-body fallback.
 
 | Route | Purpose | Important guarantees |
 |---|---|---|
-| `GET /v2/assistant/capabilities` | Advertise supported protocol and reminder/device support | An old server's missing route does not authorize reminder delivery |
-| `POST /v2/assistant/tell` | Device-bound turn, carrying the existing request fields plus explicit protocol/device identity | Replay fingerprint includes context; separate typed reminder receipts from note/task/list receipts |
-| `POST /v2/assistant/reminders/enroll` | Select the first installation under owner authorization | Reject implicit replacement or multiple destinations |
-| `GET /v2/assistant/reminders/snapshot` | Fetch a complete bounded view for the enrolled device | Backend/device identity and snapshot sequence validated before applying; no silent truncation |
-| `POST /v2/assistant/reminders/report` | Acknowledge exact revision/capability/alarm/post/cancellation observations | Stable report ID, duplicate replay and monotonic revision checks; no model involved |
+| `POST /v1/assistant/tell` | All assistant turns, with optional enrolled device identity | Immutable request/device context; separate reminder and record receipts |
+| `POST /v1/assistant/reminders/enroll` | Select the first installation under owner authorization | Reject implicit replacement or multiple destinations |
+| `GET /v1/assistant/reminders/snapshot` | Complete bounded view for the enrolled device | Validate namespace, sequence and revisions before applying |
+| `POST /v1/assistant/reminders/report` | Report exact revision/alarm/post/cancellation observations | Stable report identity and monotonic revision checks |
 
-An accepted reminder turn means durable backend intent. The updated app fetches/applies the sync snapshot and arms alarms before presenting phone-specific success. If it cannot arm, show saved-awaiting-phone or permission-blocked state, preserving the pending operation/effect identity needed for recovery. Client acknowledgements do not rewrite the original accepted turn result.
+Every tell uses `{device_id: UUID|null, request: TellRequest}` and returns `{device_id: UUID|null, response: TellResponse, reminder_receipts: [...]}`. A null device supports ordinary notes/tasks/lists/groceries. A bound enrolled device additionally enables reminder operations. Enrollment is explicit; it does not occur merely because an app submits an instruction. Changing device context on a reused request ID conflicts.
 
-New app compatibility: preserve any pre-upgrade pending v1 envelope and drain it through v1 unchanged. Negotiate v2 for newly admitted turns; do not mutate a pending request into a new protocol/device context. An old backend remains usable for its existing capabilities while reminders stay unavailable. An old app continues to use v1 with unchanged record kinds and response validation.
+Accepted reminder intent is durable backend state. The app fetches/applies the snapshot and arms alarms before presenting phone-specific success. Failure to arm remains blocked/pending, preserving request/effect identity. Reports do not rewrite the original turn result. HTTP success or a stale observation never proves the owner saw a notification.
 
-Reminder synchronization is authoritative only when a full response passes schema, namespace, sequence, size and revision validation. Use bounded text/count/body limits and capacity errors rather than partial snapshots. A failed request or changed endpoint never clears existing alarms as if a valid empty snapshot had arrived. An explicit destination switch is a separate user-visible operation.
-
-Versioned persistence and rollback behavior must be documented before live scheduling. No successful HTTP response or stale device observation can be used to claim the owner has actually seen a reminder.
+A snapshot is authoritative only after full schema, namespace, sequence, size and revision validation. A failed or truncated response never clears existing alarms. Destination replacement is a separate deliberate operation. Private persistence remains versioned and malformed data is refused; there is no automatic data reset or unrelated user-data migration.

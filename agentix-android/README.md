@@ -2,7 +2,7 @@
 
 A native Kotlin/Jetpack Compose client for the Agentix assistant, with optional Plaud Note NB-100 integration. It provides a selectable Android voice assistant, on-device instruction transcription, offline spoken replies, opt-in HTTPS assistant commands with durable retries, local phone note recording and read-only Bluetooth discovery.
 
-Plaud recording downloads, audio uploads, recorded-note transcription, task execution and reminder delivery are subsequent work. The backend can store notes/tasks, manage lists and mark tasks complete. The Devices screen does not pair, connect, reset, modify firmware, or delete recordings. Saving a server address does not contact the server.
+Plaud recording downloads, audio uploads, recorded-note transcription and task execution are subsequent work. The backend can store notes/tasks, manage lists and mark tasks complete. Opt-in one-off reminders use local phone alarms and Android notifications; see the [reminder deployment and phone checkpoint](../specs/028-reminders/quickstart.md). The Devices screen does not pair, connect, reset, modify firmware, or delete recordings. Saving a server address does not contact the server.
 
 ## Build with Nix
 
@@ -52,7 +52,7 @@ Older builds used an ephemeral debug key. Moving from those builds requires a on
 
 On Devices, wake the Plaud, disconnect any official-app connection, and tap Scan. Grant permission, then tap Scan again to begin discovery. Scanning stops after 15 seconds, when leaving Devices, or when the activity is backgrounded. Android versions before 12 also require Location services for BLE scanning. A displayed project code is advertisement metadata, not a verified model/firmware result.
 
-On Settings, configure the HTTPS base address (default `https://ai.lan.disasm.us`), optionally enter the runtime owner token, explicitly enable the assistant backend and Save. The route is `POST /v1/assistant/tell`. Configuration is private, excluded from backup and never logged; a saved address does not establish connectivity. The phone's existing WireGuard tunnel routes traffic; the app does not manage the VPN. Normal TLS certificate validation applies and redirects are rejected. The server must be deployed/configured separately; the supplied address returned502 during development, so live phone use has not been accepted.
+On Settings, configure the HTTPS base address (default `https://ai.lan.disasm.us`), optionally enter the runtime owner token, explicitly enable the assistant backend and Save. All turns use one contract at `POST /v1/assistant/tell`, with optional enrolled phone identity; reminder synchronization shares that prefix. Backend and app update together, without old-format fallback or protocol negotiation. Configuration is private, excluded from backup and never logged; a saved address does not establish connectivity. The phone's existing WireGuard tunnel routes traffic; the app does not manage the VPN. Normal TLS certificate validation applies and redirects are rejected. Keep the existing nginx assistant location. Reminder delivery on the physical phone remains an acceptance checkpoint.
 Leave Owner token blank when the server relies on WireGuard-only access. A blank token omits Authorization entirely; a supplied token must match the server and contain32–512 visible ASCII characters. The server still enforces bearer authentication whenever configured.
 
 ## Record directly on the phone
@@ -89,6 +89,12 @@ Type an instruction and select **Send instruction**, or speak an instruction; fi
 
 **Speak replies offline** uses an installed TTS voice matching the device language that does not require a network connection. If no offline voice is available, the reply remains visible and the app explains the condition. Stop speaking cancels output. The app never downloads voice data automatically. Partial transcripts and drafts stay in activity memory. An enabled backend retains the pending final instruction and latest definitive reply in private backup-excluded preferences for recovery. They are not logged or saved as audio recordings. Uninstalling loses local state; do not uninstall to resolve a pending operation.
 
+## One-off Android reminders
+
+On Agentix Assistant, allow reminder notifications and alarm access, then explicitly enable reminders. A successful command distinguishes backend persistence from a schedule armed on this phone. Armed alarms can notify offline; remote changes await synchronization. Cancellation applied locally invalidates stale alarms, while a backend-only cancellation cannot recall an offline phone's cached alarm. Posted means Android accepted the notification, without proving the owner saw it.
+
+Reminder synchronization uses native background jobs with backoff, plus app entry and assistant completion. Deadlines use local alarms independently of network jobs. Denied permissions, power management, idle quotas and force-stop can prevent timely delivery. See [setup, status, recovery and rollback](../specs/028-reminders/quickstart.md) before the real-phone checkpoint.
+
 ## Structure and extension points
 
 - `core/`: Android-free advertisement parsing, endpoint validation, WAV encoding/recovery, assistant command/turn and durable retry state, and JVM tests.
@@ -96,6 +102,7 @@ Type an instruction and select **Send instruction**, or speak an instruction; fi
 - `app/.../recording/`: microphone service, private audio store, playback, sharing, and Compose capture/Inbox screens.
 - `app/.../device/`: Android BLE discovery. Add the eventual protocol transport here while keeping packet parsing in core.
 - `app/.../settings/`: Android-private configuration persistence.
+- `core/.../reminders/` and `app/.../reminders/`: reminder revision policy, private atomic journal, native alarm/notification adapters, permission UI and synchronization.
 - `app/.../MainActivity.kt`: Compose shell and screens. Future assistant features should have their own packages and share only required services.
 - `nix/`: APK derivation and hash-pinned Gradle dependency snapshot.
 - `../specs/024-agentix-android/`: specification, plan, tasks, and hardware acceptance checklist.

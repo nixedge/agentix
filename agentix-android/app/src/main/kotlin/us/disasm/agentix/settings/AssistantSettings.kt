@@ -43,7 +43,8 @@ class AssistantSettings(context: Context) : TellJournal {
         val conversation = UUID.fromString(json.getString("conversation_id"))
         val pending = if (json.isNull("pending")) null else json.getJSONObject("pending").let {
             TellEnvelope(UUID.fromString(it.getString("request_id")), conversation,
-                it.getString("text"), it.getString("timezone"), it.getString("endpoint"))
+                it.getString("text"), it.getString("timezone"), it.getString("endpoint"),
+                if (it.isNull("device_id")) null else UUID.fromString(it.getString("device_id")))
         }
         val result = if (json.isNull("last_result")) null else json.getJSONObject("last_result").let {
             TellResult(UUID.fromString(it.getString("request_id")), conversation,
@@ -56,6 +57,7 @@ class AssistantSettings(context: Context) : TellJournal {
         val pending = state.pending?.let {
             JSONObject().put("request_id", it.requestId.toString()).put("text", it.text)
                 .put("timezone", it.timezone).put("endpoint", it.endpoint)
+                .put("device_id", it.deviceId ?: JSONObject.NULL)
         }
         val result = state.lastResult?.let {
             JSONObject().put("request_id", it.requestId.toString()).put("status", it.status)

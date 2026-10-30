@@ -18,6 +18,17 @@ class TellQueueTest {
     private fun response(input: TellEnvelope, status: String = "saved", outcomes: Int = 1) =
         TellResult(input.requestId, input.conversationId, status, "Saved your note.", outcomes, 0)
 
+    @Test fun enrollmentChangesCannotRetargetAnUnresolvedEnvelope() {
+        val disk = Memory()
+        val legacy = TellQueue(disk).begin("Save a note.", endpoint, "UTC")
+        val device = UUID.randomUUID()
+        assertEquals(legacy, TellQueue(disk).begin(legacy.text, endpoint, "Europe/London", device))
+        TellQueue(disk).complete(legacy, response(legacy))
+        val modern = TellQueue(disk).begin("Remind me in ten minutes.", endpoint, "UTC", device)
+        assertEquals(device, modern.deviceId)
+        assertEquals(modern, TellQueue(disk).begin(modern.text, endpoint, "Europe/London"))
+    }
+
     @Test fun uncertainOutcomeAndRecreationKeepTheEntireEnvelope() {
         val disk = Memory()
         val original = TellQueue(disk).begin("Add pineapple.", endpoint, "America/New_York")

@@ -1,5 +1,6 @@
 mod groceries;
 mod planner;
+mod reminders;
 mod schema;
 
 use agentix_assistant_core::{
@@ -20,6 +21,10 @@ pub struct Assistant {
     gate: Arc<Mutex<()>>,
     inference_timeout: Duration,
     groceries: Option<Arc<dyn agentix_assistant_core::Groceries>>,
+    reminders: Option<(
+        Arc<dyn agentix_assistant_core::Reminders>,
+        Arc<dyn agentix_assistant_core::ReminderInference>,
+    )>,
 }
 
 impl Assistant {
@@ -36,6 +41,7 @@ impl Assistant {
             gate: Arc::new(Mutex::new(())),
             inference_timeout: Duration::from_secs(30),
             groceries: None,
+            reminders: None,
         }
     }
 
@@ -93,6 +99,11 @@ impl Assistant {
         // An admitted turn owns its gate through durable completion, even if HTTP is cancelled.
         tokio::spawn(async move {
             let _guard = guard;
+            if let Some((store, _)) = &service.reminders {
+                if store.device_bound(request.request_id).await? {
+                    return Err(Error::RequestConflict);
+                }
+            }
             service.run(request).await
         })
         .await
