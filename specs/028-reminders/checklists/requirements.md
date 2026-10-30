@@ -6,8 +6,9 @@
 - [x] Preserve existing task semantics and isolate legacy notification stores.
 - [x] Measurable acceptance criteria, including actual background-phone delivery.
 - [x] Identify initial scope assumptions and defer implementation choices to planning.
-- [ ] Owner confirms first notification destination (FR-012).
-- [ ] Owner reviews one-off scope and deferred recurrence/snooze.
-- [ ] Resolve remaining clarification before marking requirements ready for planning.
+- [x] Owner confirms Android notifications as first destination (2026-10-30, FR-012).
+- [x] One-off scope and deferred recurrence/snooze recorded explicitly as first-increment assumptions.
+- [x] Distinguish backend cancellation from phone-applied cancellation and document offline propagation limits.
+- [x] Resolve delivery clarification and document researched platform limits before planning.
 
-Status: draft; implementation plan/tasks have not been started.
+Status: requirements ready for the proposed plan/tasks; implementation and phone acceptance remain outstanding.
