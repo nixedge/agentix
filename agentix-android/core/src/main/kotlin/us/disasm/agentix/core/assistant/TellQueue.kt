@@ -10,6 +10,7 @@ data class TellEnvelope(
     val text: String,
     val timezone: String,
     val endpoint: String,
+    val deviceId: UUID? = null,
 ) {
     init {
         require(requestId != UUID(0, 0) && conversationId != UUID(0, 0))
@@ -18,6 +19,7 @@ data class TellEnvelope(
         ZoneId.of(timezone)
         require(timezone in ZoneId.getAvailableZoneIds())
         require(AssistantEndpoint.normalize(endpoint) == endpoint)
+        require(deviceId == null || deviceId != UUID(0, 0))
     }
 }
 
@@ -61,13 +63,13 @@ interface TellJournal {
 
 /** The host serializes admission, configuration changes and completion. */
 class TellQueue(private val journal: TellJournal) {
-    fun begin(text: String, endpoint: String, timezone: String): TellEnvelope {
+    fun begin(text: String, endpoint: String, timezone: String, deviceId: UUID? = null): TellEnvelope {
         val state = journal.load()
         state.pending?.let {
             check(it.text == text && it.endpoint == endpoint) { "Resolve the pending instruction first" }
             return it
         }
-        val envelope = TellEnvelope(UUID.randomUUID(), state.conversationId, text, timezone, endpoint)
+        val envelope = TellEnvelope(UUID.randomUUID(), state.conversationId, text, timezone, endpoint, deviceId)
         journal.store(state.copy(pending = envelope))
         return envelope
     }

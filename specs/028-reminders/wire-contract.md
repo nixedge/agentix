@@ -1,0 +1,12 @@
+# Current assistant wire contract
+
+One contract under `/v1/assistant/`, on the existing listener with optional owner bearer authorization. There is no capability negotiation, protocol-version field or old-body fallback. Backend and Android update together. HTTP request bodies are limited to16KiB; identifiers are non-nil UUIDs, reminder text <=1024UTF-8 bytes, snapshots <=1000reminders and reports <=100items subject to the body limit. Android sends at most32reports per batch. Timestamps are UTC RFC3339 strings.
+
+- enroll (`POST reminders/enroll`): `{ "device_id":"UUID" }`; returns a full snapshot.
+- tell (`POST tell`): `{ "device_id":null,"request":{"request_id":"UUID","conversation_id":"UUID","text":"...","timezone":"America/New_York"} }`. An ordinary unenrolled turn uses null; an enrolled phone supplies its UUID string instead.
+- tell response: `{ "device_id":null,"response":<TellResponse>,"reminder_receipts":[<Reminder>] }`. The response echoes the request's nullable device identity. Reminder replies use Answer/Clarification/Failed and no fabricated record receipts. Ordinary replies retain genuine note/task/list/grocery receipts; both use this same envelope.
+- snapshot (`GET reminders/snapshot?device_id=UUID`): `{ "server_id":"UUID","device_id":"UUID","sequence":1,"reminders":[<Reminder>],"observations":[<Report>] }`. Full bounded snapshots only.
+- reminder: `{ "id":"UUID","revision":1,"text":"Laundry","due_at":"2026-10-30T12:00:00Z","timezone":"UTC","cancelled":false }`.
+- report (`POST reminders/report`): `{ "server_id":"UUID","device_id":"UUID","reports":[{"report_id":"UUID","reminder_id":"UUID","revision":1,"sequence":1,"state":"armed"}] }`; response `{ "accepted":["UUID"] }`. States: armed, blocked, post_pending, posted, uncertain, cancel_applied. Stale observations are acknowledged without changing current intent.
+
+Errors:400 invalid input;401 owner auth;409 changed device/request/revision context;413 oversized body;503 unresolved storage/inference or busy request (retry original identity). Removed routes return404. Reuse of a request ID with changed device context conflicts; changing enrollment never rewrites a pending instruction.

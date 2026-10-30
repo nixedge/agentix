@@ -33,11 +33,15 @@ impl HostedAssistant {
             "assistant requires separate personal and legacy/index paths"
         );
         let token = resolve_owner_token(settings, |variable| std::env::var(variable))?;
-        let gateway = gateway::LocalGateway::new(&config.gateway_url, &config.local_model)?;
+        let gateway = Arc::new(gateway::LocalGateway::new(
+            &config.gateway_url,
+            &config.local_model,
+        )?);
         let repository = SledRepository::open(&settings.db_path).await?;
         let projection = LanceProjection::open(&settings.index_path).await?;
         let shared = Arc::new(repository.clone());
-        let mut service = Assistant::new(shared.clone(), shared, Arc::new(gateway))
+        let mut service = Assistant::new(shared.clone(), shared.clone(), gateway.clone())
+            .with_reminders(shared, gateway)
             .with_projection(Arc::new(projection.clone()))
             .with_inference_timeout(Duration::from_secs(settings.inference_timeout_secs))?;
         if let Some(groceries) = &settings.ourgroceries {

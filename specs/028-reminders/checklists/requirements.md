@@ -11,4 +11,4 @@
 - [x] Distinguish backend cancellation from phone-applied cancellation and document offline propagation limits.
 - [x] Resolve delivery clarification and document researched platform limits before planning.
 
-Status: requirements ready for the proposed plan/tasks; implementation and phone acceptance remain outstanding.
+Status: requirements implemented; automated evidence and outstanding physical-phone acceptance are tracked in [verification.md](../verification.md).

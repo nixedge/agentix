@@ -10,15 +10,15 @@ use uuid::Uuid;
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Conversation {
-    next_sequence: u64,
-    active: Option<Uuid>,
+pub(super) struct Conversation {
+    pub(super) next_sequence: u64,
+    pub(super) active: Option<Uuid>,
 }
 
-fn turn_key(id: Uuid) -> Vec<u8> {
+pub(super) fn turn_key(id: Uuid) -> Vec<u8> {
     format!("turn/{id}").into_bytes()
 }
-fn conversation_key(id: Uuid) -> Vec<u8> {
+pub(super) fn conversation_key(id: Uuid) -> Vec<u8> {
     format!("conversation/{id}").into_bytes()
 }
 fn messages_prefix(id: Uuid) -> Vec<u8> {
@@ -28,7 +28,7 @@ fn message_key(id: Uuid, sequence: u64) -> Vec<u8> {
     format!("message/{id}/{sequence:020}").into_bytes()
 }
 
-fn load_turn(db: &sled::Db, id: Uuid) -> Result<Turn> {
+pub(super) fn load_turn(db: &sled::Db, id: Uuid) -> Result<Turn> {
     let turn: Turn = decode(
         &db.get(turn_key(id))
             .map_err(storage)?
@@ -41,7 +41,7 @@ fn load_turn(db: &sled::Db, id: Uuid) -> Result<Turn> {
     Ok(turn)
 }
 
-fn conversation(db: &sled::Db, id: Uuid) -> Result<Conversation> {
+pub(super) fn conversation(db: &sled::Db, id: Uuid) -> Result<Conversation> {
     let value: Conversation = db
         .get(conversation_key(id))
         .map_err(storage)?
@@ -57,7 +57,7 @@ fn conversation(db: &sled::Db, id: Uuid) -> Result<Conversation> {
     Ok(value)
 }
 
-fn append(
+pub(super) fn append(
     db: &sled::Db,
     batch: &mut sled::Batch,
     meta: &mut Conversation,

@@ -76,6 +76,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         assistantActive = VoiceInteractionService.isActiveService(this, ComponentName(this, AgentixVoiceService::class.java))
         PhoneCaptureState.refreshLibrary()
+        us.disasm.agentix.reminders.resumeReminders(applicationContext)
     }
 
     override fun onPause() {

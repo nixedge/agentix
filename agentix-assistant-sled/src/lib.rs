@@ -2,6 +2,7 @@ mod apply;
 mod conversations;
 mod keys;
 mod queries;
+mod reminders;
 
 use agentix_assistant_core::{Error, Result, SCHEMA_VERSION};
 use serde::{de::DeserializeOwned, Serialize};

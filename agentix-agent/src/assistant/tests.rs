@@ -48,11 +48,20 @@ async fn post(
     }
     let response = app
         .clone()
-        .oneshot(builder.body(Body::from(serde_json::to_vec(request)?))?)
+        .oneshot(builder.body(Body::from(serde_json::to_vec(
+            &json!({"device_id":null,"request":request}),
+        )?))?)
         .await?;
     let status = response.status();
     let body = response.into_body().collect().await?.to_bytes();
-    Ok((status, serde_json::from_slice(&body)?))
+    let body: Value = serde_json::from_slice(&body)?;
+    if status == StatusCode::OK {
+        assert!(body["device_id"].is_null());
+        assert_eq!(body["reminder_receipts"], json!([]));
+        Ok((status, body["response"].clone()))
+    } else {
+        Ok((status, body))
+    }
 }
 
 #[tokio::test]
@@ -166,6 +175,41 @@ async fn invalid_auth_body_envelopes_and_unsafe_configuration_never_write() -> T
         post(&app, &invalid, Some(TOKEN)).await?.0,
         StatusCode::BAD_REQUEST
     );
+    let current = request(Uuid::new_v4(), "Save a note.");
+    for (path, body, expected) in [
+        (
+            "/v1/assistant/tell",
+            serde_json::to_value(&current)?,
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            "/v1/assistant/tell",
+            json!({"protocol_version":2,"device_id":null,"request":current}),
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            "/v2/assistant/tell",
+            json!({"device_id":null,"request":current}),
+            StatusCode::NOT_FOUND,
+        ),
+        (
+            "/v1/assistant/capabilities",
+            json!({}),
+            StatusCode::NOT_FOUND,
+        ),
+        (
+            "/v2/assistant/capabilities",
+            json!({}),
+            StatusCode::NOT_FOUND,
+        ),
+    ] {
+        let input = Request::builder()
+            .method("POST")
+            .uri(path)
+            .header("authorization", format!("Bearer {TOKEN}"))
+            .body(Body::from(body.to_string()))?;
+        assert_eq!(app.clone().oneshot(input).await?.status(), expected);
+    }
     let oversized = Request::builder()
         .method("POST")
         .uri("/v1/assistant/tell")
@@ -773,5 +817,315 @@ async fn installed_qwen_grocery_selection() -> TestResult {
         );
         assert_eq!(actual, expected);
     }
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "explicit synthetic reminder selection against installed local Qwen; no live schedules or notifications"]
+async fn installed_qwen_reminder_selection() -> TestResult {
+    use agentix_assistant_core::{
+        Reminder, ReminderContext, ReminderInference, ReminderIntent, ReminderTime,
+    };
+    let gateway = LocalGateway::new(
+        &std::env::var("AGENTIX_ACCEPTANCE_GATEWAY")?,
+        &std::env::var("AGENTIX_ACCEPTANCE_MODEL")?,
+    )?;
+    let id = Uuid::parse_str("11111111-2222-4333-8444-555555555555")?;
+    let accepted_at = "2026-10-30T14:00:00Z".parse::<chrono::DateTime<chrono::Utc>>()?;
+    for (text, operation) in [
+        (
+            "Remind me in twenty minutes to take the laundry out.",
+            "create",
+        ),
+        ("What reminders do I have?", "list"),
+        ("Cancel the laundry reminder.", "cancel"),
+        (
+            "Move the laundry reminder to tomorrow at 3 PM.",
+            "reschedule",
+        ),
+        ("Remind me to call Sam at eight.", "clarify"),
+        ("Remind me every day at noon to take vitamins.", "clarify"),
+        (
+            "Save a task to replace the air filter tomorrow at 3 PM.",
+            "other",
+        ),
+        ("Add onions to our grocery list.", "other"),
+        ("Remember that the spare key is in the garage.", "other"),
+    ] {
+        let request = request(Uuid::new_v4(), text);
+        let context = InferenceContext {
+            messages: vec![agentix_assistant_core::Message {
+                conversation_id: request.conversation_id,
+                sequence: 1,
+                request_id: request.request_id,
+                role: agentix_assistant_core::MessageRole::User,
+                text: text.into(),
+                created_at: accepted_at,
+            }],
+            request,
+            accepted_at,
+            records: vec![],
+            context_incomplete: false,
+            groceries_configured: false,
+            groceries: None,
+        };
+        let result = gateway
+            .propose_reminder(ReminderContext {
+                context,
+                incomplete: false,
+                reminders: vec![Reminder {
+                    id,
+                    revision: 3,
+                    text: "take the laundry out".into(),
+                    due_at: accepted_at + chrono::Duration::hours(1),
+                    timezone: "UTC".into(),
+                    cancelled: false,
+                }],
+            })
+            .await?;
+        println!("{}", serde_json::json!({"case":text,"decision":result}));
+        assert_eq!(serde_json::to_value(&result)?["operation"], operation);
+        match result {
+            ReminderIntent::Create { time, .. } => {
+                assert_eq!(time, ReminderTime::After { seconds: 1200 })
+            }
+            ReminderIntent::Cancel {
+                id: target,
+                expected_revision,
+            } => {
+                assert_eq!(target, id);
+                assert_eq!(expected_revision, 3);
+            }
+            ReminderIntent::Reschedule {
+                id: target,
+                expected_revision,
+                time,
+            } => {
+                assert_eq!(target, id);
+                assert_eq!(expected_revision, 3);
+                assert_eq!(
+                    time,
+                    ReminderTime::Local {
+                        date: "2026-10-31".parse()?,
+                        time: "15:00:00".parse()?
+                    }
+                );
+            }
+            ReminderIntent::Clarify { question } if text.contains("every day") => {
+                assert!(question.contains("one-off"))
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn reminder_gateway_rejects_invented_revision_and_time_kind_disagreement() -> TestResult {
+    use agentix_assistant_core::{Reminder, ReminderContext, ReminderInference};
+    let id = Uuid::new_v4();
+    for action in [
+        json!({"operation":"reschedule","id":id,"expected_revision":4,"time":{"kind":"local","date":"2026-10-31","time":"15:00:00"}}),
+        json!({"operation":"reschedule","id":id,"expected_revision":3,"time":{"kind":"after","seconds":86400}}),
+    ] {
+        let server = MockServer::start().await;
+        for (name, output) in [
+            ("reminder_operation", json!({"operation":"reschedule"})),
+            ("reminder_time_kind", json!({"kind":"local"})),
+            ("reminder_action", action),
+        ] {
+            Mock::given(method("POST"))
+                .and(body_partial_json(
+                    json!({"response_format":{"json_schema":{"name":name}}}),
+                ))
+                .respond_with(ResponseTemplate::new(200).set_body_json(completion(output)))
+                .expect(1)
+                .mount(&server)
+                .await;
+        }
+        let gateway = LocalGateway::new(&server.uri(), "synthetic")?;
+        let accepted_at = "2026-10-30T14:00:00Z".parse()?;
+        let result = gateway
+            .propose_reminder(ReminderContext {
+                context: InferenceContext {
+                    request: request(
+                        Uuid::new_v4(),
+                        "Move the laundry reminder to tomorrow at 3 PM.",
+                    ),
+                    accepted_at,
+                    messages: vec![],
+                    records: vec![],
+                    context_incomplete: false,
+                    groceries_configured: false,
+                    groceries: None,
+                },
+                reminders: vec![Reminder {
+                    id,
+                    revision: 3,
+                    text: "laundry".into(),
+                    due_at: accepted_at,
+                    timezone: "UTC".into(),
+                    cancelled: false,
+                }],
+                incomplete: false,
+            })
+            .await;
+        assert!(matches!(result, Err(Error::Inference)));
+        let requests = server
+            .received_requests()
+            .await
+            .ok_or("missing mock requests")?;
+        let action: Value = serde_json::from_slice(&requests[2].body)?;
+        let choices = action["response_format"]["json_schema"]["schema"]["oneOf"]
+            .as_array()
+            .ok_or("missing choices")?;
+        let fields = &choices
+            .iter()
+            .find(|choice| choice["properties"]["operation"]["const"] == "reschedule")
+            .ok_or("missing edit schema")?["properties"];
+        assert_eq!(fields["id"]["const"], id.to_string());
+        assert_eq!(fields["expected_revision"]["const"], 3);
+        assert_eq!(fields["time"]["properties"]["kind"]["const"], "local");
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn device_http_auth_enrollment_reminder_replay_and_sync_use_real_store() -> TestResult {
+    use agentix_assistant_core::{
+        DeviceTurnRequest, DeviceTurnResponse, ReminderDeliveryState, ReminderReport, Reminders,
+    };
+    let directory = tempfile::tempdir()?;
+    let store = Arc::new(SledRepository::open(directory.path()).await?);
+    let gateway = MockServer::start().await;
+    for (name, output) in [
+        ("reminder_operation", json!({"operation":"create"})),
+        ("reminder_time_kind", json!({"kind":"after"})),
+        (
+            "reminder_action",
+            json!({"operation":"create","text":"laundry","time":{"kind":"after","seconds":1200}}),
+        ),
+    ] {
+        Mock::given(method("POST"))
+            .and(body_partial_json(
+                json!({"response_format":{"json_schema":{"name":name}}}),
+            ))
+            .respond_with(ResponseTemplate::new(200).set_body_json(completion(output)))
+            .expect(1)
+            .mount(&gateway)
+            .await;
+    }
+    let model = Arc::new(LocalGateway::new(&gateway.uri(), "qwen-test")?);
+    let service = Arc::new(
+        Assistant::new(store.clone(), store.clone(), model.clone())
+            .with_reminders(store.clone(), model),
+    );
+    let app = routes(service, Some(TOKEN.into()))?;
+    async fn call(
+        app: &Router,
+        path: &str,
+        body: Value,
+        auth: bool,
+    ) -> Result<(StatusCode, Value), Box<dyn std::error::Error>> {
+        let mut builder = Request::builder()
+            .method("POST")
+            .uri(path)
+            .header("content-type", "application/json");
+        if auth {
+            builder = builder.header("authorization", format!("Bearer {TOKEN}"));
+        }
+        let reply = app
+            .clone()
+            .oneshot(builder.body(Body::from(body.to_string()))?)
+            .await?;
+        let status = reply.status();
+        Ok((
+            status,
+            serde_json::from_slice(&reply.into_body().collect().await?.to_bytes())?,
+        ))
+    }
+    let device = Uuid::new_v4();
+    assert_eq!(
+        call(
+            &app,
+            "/v1/assistant/reminders/enroll",
+            json!({"device_id":device}),
+            false
+        )
+        .await?
+        .0,
+        StatusCode::UNAUTHORIZED
+    );
+    let (status, enrolled) = call(
+        &app,
+        "/v1/assistant/reminders/enroll",
+        json!({"device_id":device}),
+        true,
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        call(
+            &app,
+            "/v1/assistant/reminders/enroll",
+            json!({"device_id":Uuid::new_v4()}),
+            true
+        )
+        .await?
+        .0,
+        StatusCode::CONFLICT
+    );
+    let req = DeviceTurnRequest {
+        device_id: device,
+        request: request(
+            Uuid::new_v4(),
+            "Remind me in twenty minutes to take laundry out.",
+        ),
+    };
+    let (status, body) = call(
+        &app,
+        "/v1/assistant/tell",
+        serde_json::to_value(&req)?,
+        true,
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK);
+    let response: DeviceTurnResponse = serde_json::from_value(body.clone())?;
+    response.validate(&req)?;
+    assert_eq!(response.reminder_receipts.len(), 1);
+    assert!(response.response.outcomes.is_empty());
+    assert_eq!(
+        call(
+            &app,
+            "/v1/assistant/tell",
+            serde_json::to_value(&req)?,
+            true
+        )
+        .await?
+        .1,
+        body
+    );
+    assert_eq!(
+        post(&app, &req.request, Some(TOKEN)).await?.0,
+        StatusCode::CONFLICT
+    );
+    let item = &response.reminder_receipts[0];
+    let report = ReminderReport {
+        report_id: Uuid::new_v4(),
+        reminder_id: item.id,
+        revision: item.revision,
+        sequence: 1,
+        state: ReminderDeliveryState::Armed,
+    };
+    let (status, _) = call(
+        &app,
+        "/v1/assistant/reminders/report",
+        json!({"server_id":enrolled["server_id"],"device_id":device,"reports":[report]}),
+        true,
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(store.snapshot(device).await?.observations.len(), 1);
+    assert!(store.records().await?.is_empty());
     Ok(())
 }

@@ -28,4 +28,5 @@ fun AssistantSetupScreen(active: Boolean) {
         Text(stringResource(R.string.assistant_open))
     }
     Text(stringResource(R.string.assistant_no_wakeword))
+    us.disasm.agentix.reminders.ReminderSetup()
 }

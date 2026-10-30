@@ -2,8 +2,10 @@
 
 **Feature Branch**: `028-reminders`
 **Created**: 2026-10-29
-**Status**: Planned — Android notification destination selected on 2026-10-30
+**Status**: Implemented — automated verification and physical-phone acceptance tracked in verification.md
 **Input**: After merging OurGroceries, the owner identified a reminder system as the likely next feature.
+
+**Owner clarification (2026-10-30)**: Nothing is in production. Use one current assistant HTTP contract under the existing `/v1/assistant/` prefix; remove the parallel v2 routes, protocol negotiation and legacy request/response fallback. Backend and Android are updated together. Preserve user data and immutable request identities, rather than maintaining old wire formats.
 
 ## Scope and assumptions
 
@@ -102,4 +104,4 @@ The assistant distinguishes a saved task, a scheduled reminder, an accepted deli
 
 ## Stage boundary
 
-Android delivery is selected. One-off scope remains the stated first-increment assumption; recurrence and snooze are deferred. The plan and tasks describe the proposed implementation. No implementation or live-phone notification test has been performed at this planning checkpoint.
+Android delivery is implemented for one-off reminders; recurrence and snooze remain deferred. Automated implementation evidence and the outstanding live-phone checkpoint are recorded in [verification.md](verification.md). Physical-phone delivery has not yet been accepted.
