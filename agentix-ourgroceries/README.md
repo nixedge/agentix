@@ -11,9 +11,12 @@ Provision OURGROCERIES_EMAIL and OURGROCERIES_PASSWORD in the runtime environmen
 ```bash
 nix run .#agentix-ourgroceries -- lists
 nix run .#agentix-ourgroceries -- show LIST_ID
+nix run .#agentix-ourgroceries -- inspect LIST_ID
 ```
 
 The first prints existing shopping list IDs/names; the second prints a selected list. These commands contact the real service using the environment. Their output is personal data; they do not log or print credentials/session cookies. No live account was used in development tests.
+
+`inspect` prints the selected list's raw JSON before typed decoding, for diagnosing protocol mismatches. It excludes the outer RPC envelope and does not print credentials or the session cookie held by the client. Its output contains personal grocery data. It never performs a mutation.
 
 To install the CLI on the NixOS host:
 

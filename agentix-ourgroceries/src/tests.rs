@@ -250,6 +250,32 @@ async fn discovery_and_reads_use_current_remote_authority() {
 }
 
 #[tokio::test]
+async fn inspect_reads_malformed_list_without_decoding_or_writing() {
+    let (_server, client, api) = fixture().await;
+    api.state.lock().unwrap()["items"][0]["note"] =
+        json!({"text":"groceries-visible-for-debugging"});
+    let raw = client.inspect().await.unwrap();
+    assert_eq!(
+        raw["items"][0]["note"]["text"],
+        "groceries-visible-for-debugging"
+    );
+    assert!(raw.get("list").is_none());
+    let (result, log) = diagnostics(client.snapshot()).await;
+    assert!(result.is_err());
+    assert!(log.contains("list.items[].note"), "{log}");
+    assert!(log.contains("string_or_null"), "{log}");
+    assert!(log.contains("object"), "{log}");
+    assert!(!log.contains("groceries-visible-for-debugging"));
+    assert!(!serde_json::to_string(&raw)
+        .unwrap()
+        .contains("fixture-password"));
+    assert!(!serde_json::to_string(&raw)
+        .unwrap()
+        .contains("fixture-cookie"));
+    assert_eq!(api.writes.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
 async fn specific_mutations_preserve_other_fields_and_verify_readback() {
     let (_server, client, api) = fixture().await;
     let original = client.snapshot().await.unwrap().items[0].clone();

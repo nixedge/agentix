@@ -245,19 +245,26 @@ impl Client {
         Ok(lists)
     }
 
+    pub async fn inspect(&self) -> Result<Value> {
+        let id = self
+            .list_id
+            .as_ref()
+            .ok_or_else(|| Error::Invalid("no OurGroceries list selected".into()))?;
+        self.rpc("getList", json!({"listId":id}))
+            .await?
+            .get("list")
+            .cloned()
+            .ok_or_else(|| failure("getList", "missing_list"))
+    }
+
     async fn list(&self) -> Result<GroceryList> {
         let id = self
             .list_id
             .as_ref()
             .ok_or_else(|| Error::Invalid("no OurGroceries list selected".into()))?;
-        let response = self.rpc("getList", json!({"listId":id})).await?;
-        let remote: RemoteList = serde_json::from_value(
-            response
-                .get("list")
-                .cloned()
-                .ok_or_else(|| failure("getList", "missing_list"))?,
-        )
-        .map_err(|_| failure("getList", "invalid_list_fields"))?;
+        let raw = self.inspect().await?;
+        let remote: RemoteList =
+            serde_json::from_value(raw.clone()).map_err(|_| list_decode_failure(&raw))?;
         if remote.id.as_ref().is_some_and(|remote_id| remote_id != id) {
             return Err(failure("getList", "list_id_mismatch"));
         }
@@ -386,6 +393,89 @@ fn team_id(html: &str) -> Result<String> {
         .map_err(|_| Error::Groceries)?;
     grocery_id(&id).map_err(|_| Error::Groceries)?;
     Ok(id)
+}
+
+fn json_kind(value: Option<&Value>) -> &'static str {
+    match value {
+        None => "missing",
+        Some(Value::Null) => "null",
+        Some(Value::Bool(_)) => "boolean",
+        Some(Value::Number(_)) => "number",
+        Some(Value::String(_)) => "string",
+        Some(Value::Array(_)) => "array",
+        Some(Value::Object(_)) => "object",
+    }
+}
+
+fn list_decode_issue(raw: &Value) -> (&'static str, &'static str, &'static str) {
+    if !raw.is_object() {
+        return ("list", "object", json_kind(Some(raw)));
+    }
+    for (key, field) in [("id", "list.id"), ("name", "list.name")] {
+        if let Some(value) = raw
+            .get(key)
+            .filter(|value| !value.is_null() && !value.is_string())
+        {
+            return (field, "string_or_null", json_kind(Some(value)));
+        }
+    }
+    let Some(items) = raw.get("items").and_then(Value::as_array) else {
+        return ("list.items", "array", json_kind(raw.get("items")));
+    };
+    for item in items {
+        if !item.is_object() {
+            return ("list.items[]", "object", json_kind(Some(item)));
+        }
+        if item.get("name").is_some() && item.get("value").is_some() {
+            return (
+                "list.items[].text",
+                "one_name_or_value_field",
+                "both_fields",
+            );
+        }
+        for (value, field, expected) in [
+            (item.get("id"), "list.items[].id", "string"),
+            (
+                item.get("name").or_else(|| item.get("value")),
+                "list.items[].text",
+                "string",
+            ),
+            (
+                item.get("categoryId"),
+                "list.items[].categoryId",
+                "string_or_null",
+            ),
+            (item.get("note"), "list.items[].note", "string_or_null"),
+            (
+                item.get("crossedOff"),
+                "list.items[].crossedOff",
+                "boolean_if_present",
+            ),
+        ] {
+            let valid = match expected {
+                "string" => value.is_some_and(Value::is_string),
+                "string_or_null" => value.is_none_or(|value| value.is_null() || value.is_string()),
+                _ => value.is_none_or(Value::is_boolean),
+            };
+            if !valid {
+                return (field, expected, json_kind(value));
+            }
+        }
+    }
+    ("list", "supported_list_schema", "undetermined_mismatch")
+}
+
+fn list_decode_failure(raw: &Value) -> Error {
+    let (field, expected, actual) = list_decode_issue(raw);
+    tracing::warn!(
+        stage = "getList",
+        reason = "invalid_list_fields",
+        field,
+        expected,
+        actual,
+        "OurGroceries list decoding failed"
+    );
+    Error::Groceries
 }
 
 #[derive(Deserialize)]
