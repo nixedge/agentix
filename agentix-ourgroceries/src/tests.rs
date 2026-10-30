@@ -142,13 +142,14 @@ impl Respond for Api {
                 "insertItem" => {
                     assert_eq!(body["categoryId"], "uncategorized");
                     items.push(
-                        json!({"id":"new-2","name":body["value"],"categoryId":"uncategorized"}),
+                        json!({"id":"new-2","name":body["value"],"value":body["value"],"categoryId":"uncategorized"}),
                     );
                 }
                 "changeItemValue" => {
                     assert_eq!(body["categoryId"], "produce");
                     assert!(body.get("note").is_none());
                     items[0]["name"] = body["newValue"].clone();
+                    items[0]["value"] = body["newValue"].clone();
                 }
                 "setItemCrossedOff" => {
                     assert!(body["crossedOff"].is_boolean());
@@ -206,7 +207,7 @@ async fn fixture() -> (MockServer, Client, Api) {
     let api = Api {
         state: Arc::new(StdMutex::new(
             json!({"id":"list-1","name":"Kitchen","items":[
-                {"id":"item-1","name":"onions","categoryId":"produce","note":"red onions","crossedOff":false}
+                {"id":"item-1","name":"onions","value":"onions","categoryId":"produce","note":"red onions","crossedOff":false}
             ]}),
         )),
         writes: Arc::new(AtomicUsize::new(0)),
@@ -246,6 +247,64 @@ async fn discovery_and_reads_use_current_remote_authority() {
     assert!(!before.items[0].completed);
     api.state.lock().unwrap()["items"][0]["crossedOffAt"] = json!(9876);
     assert!(client.snapshot().await.unwrap().items[0].completed);
+    assert_eq!(api.writes.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn item_text_accepts_both_wire_fields_and_legacy_single_fields() {
+    let (_server, client, api) = fixture().await;
+    assert_eq!(client.snapshot().await.unwrap().items[0].text, "onions");
+    api.state.lock().unwrap()["items"][0]["name"] = json!("display name");
+    assert_eq!(client.snapshot().await.unwrap().items[0].text, "onions");
+    api.state.lock().unwrap()["items"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("name");
+    assert_eq!(client.snapshot().await.unwrap().items[0].text, "onions");
+    {
+        let mut state = api.state.lock().unwrap();
+        state["items"][0].as_object_mut().unwrap().remove("value");
+        state["items"][0]["name"] = json!("legacy name");
+    }
+    assert_eq!(
+        client.snapshot().await.unwrap().items[0].text,
+        "legacy name"
+    );
+    api.state.lock().unwrap()["items"][0]["value"] = Value::Null;
+    assert_eq!(
+        client.snapshot().await.unwrap().items[0].text,
+        "legacy name"
+    );
+    api.state.lock().unwrap()["items"][0]["name"] = Value::Null;
+    let (result, log) = diagnostics(client.snapshot()).await;
+    assert!(result.is_err());
+    assert!(log.contains("list.items[].text"));
+    assert_eq!(api.writes.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+#[ignore = "explicit local inspect JSON validation; no account access"]
+async fn local_inspect_snapshot_passes_protocol_and_core_validation() {
+    let path = std::env::var("AGENTIX_OURGROCERIES_INSPECT").unwrap();
+    let bytes = tokio::task::spawn_blocking(move || std::fs::read(path))
+        .await
+        .unwrap()
+        .unwrap();
+    let mut raw: Value = serde_json::from_slice(&bytes).unwrap();
+    grocery_id(raw["id"].as_str().unwrap()).unwrap();
+    let count = raw["items"].as_array().unwrap().len();
+    let (_server, client, api) = fixture().await;
+    // Bind the supplied response to the synthetic HTTP fixture's selected list.
+    raw["id"] = json!("list-1");
+    *api.state.lock().unwrap() = raw;
+    let list = client.snapshot().await.unwrap();
+    assert_eq!(list.items.len(), count);
+    list.validate().unwrap();
+    println!(
+        "Validated {count} supplied items; {} needed, {} purchased",
+        list.items.iter().filter(|item| !item.completed).count(),
+        list.items.iter().filter(|item| item.completed).count()
+    );
     assert_eq!(api.writes.load(Ordering::SeqCst), 0);
 }
 

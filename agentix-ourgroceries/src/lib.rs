@@ -282,17 +282,22 @@ impl Client {
             items: remote
                 .items
                 .into_iter()
-                .map(|item| GroceryItem {
-                    id: item.id,
-                    text: item.name,
-                    category_id: item.category_id,
-                    note: item.note,
-                    completed: item.crossed_off
-                        || item.crossed_off_at.as_ref().is_some_and(|at| {
-                            !at.is_null() && at != &json!(0) && at != &json!(false)
-                        }),
+                .map(|item| {
+                    Ok(GroceryItem {
+                        id: item.id,
+                        text: item
+                            .value
+                            .or(item.name)
+                            .ok_or_else(|| list_decode_failure(&raw))?,
+                        category_id: item.category_id,
+                        note: item.note,
+                        completed: item.crossed_off
+                            || item.crossed_off_at.as_ref().is_some_and(|at| {
+                                !at.is_null() && at != &json!(0) && at != &json!(false)
+                            }),
+                    })
                 })
-                .collect(),
+                .collect::<Result<Vec<_>>>()?,
         };
         list.validate()
             .map_err(|_| failure("getList", "list_validation"))?;
@@ -426,17 +431,23 @@ fn list_decode_issue(raw: &Value) -> (&'static str, &'static str, &'static str) 
         if !item.is_object() {
             return ("list.items[]", "object", json_kind(Some(item)));
         }
-        if item.get("name").is_some() && item.get("value").is_some() {
-            return (
-                "list.items[].text",
-                "one_name_or_value_field",
-                "both_fields",
-            );
+        for (key, field) in [
+            ("value", "list.items[].value"),
+            ("name", "list.items[].name"),
+        ] {
+            if let Some(value) = item
+                .get(key)
+                .filter(|value| !value.is_null() && !value.is_string())
+            {
+                return (field, "string_or_null", json_kind(Some(value)));
+            }
         }
         for (value, field, expected) in [
             (item.get("id"), "list.items[].id", "string"),
             (
-                item.get("name").or_else(|| item.get("value")),
+                item.get("value")
+                    .filter(|value| !value.is_null())
+                    .or_else(|| item.get("name").filter(|value| !value.is_null())),
                 "list.items[].text",
                 "string",
             ),
@@ -488,8 +499,8 @@ struct RemoteList {
 #[serde(rename_all = "camelCase")]
 struct RemoteItem {
     id: String,
-    #[serde(alias = "value")]
-    name: String,
+    name: Option<String>,
+    value: Option<String>,
     category_id: Option<String>,
     note: Option<String>,
     #[serde(default)]
