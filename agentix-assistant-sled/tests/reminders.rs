@@ -23,13 +23,12 @@ fn create() -> ReminderIntent {
 }
 
 #[tokio::test]
-async fn listing_uses_local_deadlines_last_observations_and_bounded_unicode_output() {
+async fn listing_speaks_three_local_deadlines_without_metadata_or_delivered_history() {
     let dir = tempfile::tempdir().unwrap();
     let store = SledRepository::open(dir.path()).await.unwrap();
     let device = Uuid::new_v4();
     let server_id = store.enroll(device).await.unwrap().server_id;
     let mut first = None;
-    let mut newest = None;
     for index in 0..21 {
         let req = request(device, "create synthetic reminder");
         store.begin_device_turn(req.clone()).await.unwrap();
@@ -47,7 +46,6 @@ async fn listing_uses_local_deadlines_last_observations_and_bounded_unicode_outp
         if first.is_none() {
             first = Some(result.reminder_receipts[0].clone());
         }
-        newest = Some(result.reminder_receipts[0].clone());
     }
     let first = first.unwrap();
     store
@@ -71,15 +69,14 @@ async fn listing_uses_local_deadlines_last_observations_and_bounded_unicode_outp
         .await
         .unwrap();
     response.validate(&req).unwrap();
-    assert!(response
-        .response
-        .reply
-        .contains(&first.local_due().unwrap()));
-    assert!(response.response.reply.contains("last reported Armed at "));
-    assert!(response
-        .response
-        .reply
-        .contains("More reminders are stored"));
+    let reply = &response.response.reply;
+    assert!(reply.contains(" at "));
+    assert!(reply.contains("18 more in Inbox."));
+    assert_eq!(reply.matches("洋").count(), 3 * 77);
+    assert!(!reply.contains(&first.id.to_string()));
+    assert!(!reply.contains(&first.local_due().unwrap()));
+    assert!(!reply.contains("Armed"));
+    assert!(!reply.contains("reported"));
     assert!(response.reminder_receipts.is_empty());
     assert_eq!(store.snapshot(device).await.unwrap().reminders.len(), 21);
     store
@@ -103,10 +100,141 @@ async fn listing_uses_local_deadlines_last_observations_and_bounded_unicode_outp
         .await
         .unwrap();
     assert!(!response.response.reply.contains(&first.id.to_string()));
-    assert!(response
-        .response
-        .reply
-        .contains(&newest.unwrap().id.to_string()));
+    assert!(!response.response.reply.contains("0: "));
+    assert!(response.response.reply.contains("17 more in Inbox."));
+}
+
+#[test]
+fn spoken_times_use_owner_calendar_without_raw_timestamps() {
+    let reference = "2026-10-31T23:30:00Z".parse().unwrap();
+    assert_eq!(
+        reminder_spoken_time(
+            "2026-11-01T00:00:00Z".parse().unwrap(),
+            reference,
+            "America/New_York"
+        )
+        .unwrap(),
+        "today at 8 PM"
+    );
+    assert_eq!(
+        reminder_spoken_time(
+            "2026-11-01T15:15:00Z".parse().unwrap(),
+            reference,
+            "America/New_York"
+        )
+        .unwrap(),
+        "tomorrow at 10:15 AM"
+    );
+    assert!(reminder_spoken_time(reference, reference, "bad/zone").is_err());
+}
+
+#[tokio::test]
+async fn dismissed_alarms_survive_reopen_reject_rearming_and_leave_spoken_list() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = SledRepository::open(dir.path()).await.unwrap();
+    let device = Uuid::new_v4();
+    let server = store.enroll(device).await.unwrap().server_id;
+    let req = request(device, "create");
+    store.begin_device_turn(req.clone()).await.unwrap();
+    let item = store
+        .finish_device_turn(req, create(), None)
+        .await
+        .unwrap()
+        .reminder_receipts[0]
+        .clone();
+    let ringing = ReminderReport {
+        report_id: Uuid::new_v4(),
+        reminder_id: item.id,
+        revision: 1,
+        sequence: 1,
+        state: ReminderDeliveryState::Ringing,
+    };
+    let dismissed = ReminderReport {
+        report_id: Uuid::new_v4(),
+        sequence: 2,
+        state: ReminderDeliveryState::Dismissed,
+        ..ringing.clone()
+    };
+    for report in [ringing.clone(), dismissed.clone()] {
+        store
+            .report(ReminderReports {
+                server_id: server,
+                device_id: device,
+                reports: vec![report],
+            })
+            .await
+            .unwrap();
+    }
+    store.close().await.unwrap();
+    let store = SledRepository::open(dir.path()).await.unwrap();
+    assert_eq!(
+        store.snapshot(device).await.unwrap().observations,
+        vec![dismissed.clone()]
+    );
+    for state in [
+        ReminderDeliveryState::Ringing,
+        ReminderDeliveryState::Armed,
+        ReminderDeliveryState::Posted,
+    ] {
+        let report = ReminderReport {
+            report_id: Uuid::new_v4(),
+            sequence: 3,
+            state,
+            ..dismissed.clone()
+        };
+        assert!(store
+            .report(ReminderReports {
+                server_id: server,
+                device_id: device,
+                reports: vec![report]
+            })
+            .await
+            .is_err());
+    }
+    store
+        .report(ReminderReports {
+            server_id: server,
+            device_id: device,
+            reports: vec![ringing],
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        store.snapshot(device).await.unwrap().observations,
+        vec![dismissed]
+    );
+    let req = request(device, "list");
+    store.begin_device_turn(req.clone()).await.unwrap();
+    assert_eq!(
+        store
+            .finish_device_turn(req, ReminderIntent::List, None)
+            .await
+            .unwrap()
+            .response
+            .reply,
+        "You have no pending reminders."
+    );
+    let req = request(device, "reschedule dismissed reminder");
+    store.begin_device_turn(req.clone()).await.unwrap();
+    let revised = store
+        .finish_device_turn(
+            req,
+            ReminderIntent::Reschedule {
+                id: item.id,
+                expected_revision: 1,
+                time: ReminderTime::After { seconds: 3600 },
+            },
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(revised.reminder_receipts[0].revision, 2);
+    assert!(store
+        .snapshot(device)
+        .await
+        .unwrap()
+        .observations
+        .is_empty());
 }
 
 #[tokio::test]

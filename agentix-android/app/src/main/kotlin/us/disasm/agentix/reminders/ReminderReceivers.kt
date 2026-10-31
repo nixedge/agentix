@@ -8,7 +8,7 @@ import android.content.Intent
 import android.os.PowerManager
 import java.util.concurrent.Executors
 
-private val reminderExecutor = Executors.newSingleThreadExecutor()
+internal val reminderExecutor = Executors.newSingleThreadExecutor()
 private val reminderSyncExecutor = Executors.newSingleThreadExecutor()
 
 fun resumeReminders(context: Context) {
@@ -45,7 +45,7 @@ class ReminderRecoveryReceiver : BroadcastReceiver() {
 class ReminderSyncJob : JobService() {
     override fun onStartJob(params: JobParameters): Boolean {
         reminderSyncExecutor.execute {
-            val retry = runCatching { ReminderEngine.sync(applicationContext) }.isFailure
+            val retry = runCatching { ReminderEngine.sync(applicationContext, retryUncertain = params.jobId == 28001) }.isFailure
             jobFinished(params, retry)
         }
         return true

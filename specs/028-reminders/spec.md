@@ -105,3 +105,12 @@ The assistant distinguishes a saved task, a scheduled reminder, an accepted deli
 ## Stage boundary
 
 Android delivery is implemented for one-off reminders; recurrence and snooze remain deferred. Automated implementation evidence and the outstanding live-phone checkpoint are recorded in [verification.md](verification.md). Physical-phone delivery has not yet been accepted.
+
+## Owner refinement — persistent alarms, Inbox and concise speech (2026-10-31)
+
+- FR-015: Newly due reminders play the system alarm tone repeatedly until explicit dismissal. Opening the app or notification drawer does not dismiss them. Respect alarm volume, audio focus and OS restrictions; no claim that audible playback proves the owner heard it.
+- FR-016: Persist ringing and dismissed observations for each namespace/id/revision. Dismissal is terminal for that revision, survives restart and synchronization, and cannot dismiss a newer revision. Applied cancellation/rescheduling stops obsolete playback. Existing posted notifications remain history rather than unexpectedly becoming alarms after upgrade.
+- FR-017: Inbox shows cached reminder text, local due time and upcoming/ringing/dismissed/blocked/history state alongside existing recordings. Notification taps open Inbox; dismissal is available there and in the alarm notification. Offline inspection and dismissal work without the backend.
+- FR-018: Spoken reminder lists contain at most the next three pending reminder texts and natural local deadlines, then a remaining count. Exclude cancelled/dismissed/posted history. Never speak UUIDs, raw timestamps or observation metadata; full delivery details belong in Inbox.
+
+Acceptance: test stale dismissals, dismissal/restart/snapshot replay, concurrent alarms, cancellation while ringing and historical notification upgrades in policy/store tests. Build/lint the actual Android adapter. Physical acceptance still requires checking continuous alarm audio while locked/background, explicit dismissal, offline/reboot recovery, alarm volume and Inbox navigation on the owner's phone.

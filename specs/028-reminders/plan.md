@@ -56,3 +56,15 @@ Test actual Sled atomic receipts, revision/due indexes, sync ordering/tombstones
 Canonical checks build backend/core/API and unsigned Android APK through Nix. Verify unrelated model package/dependency artifact identities stay unchanged. Sign with the existing persistent host key using the runtime wrapper; no uninstall/key replacement is part of this feature.
 
 An explicitly authorized phone checkpoint must test locked/background/idle delivery, backend/WireGuard loss after arming, reboot recovery, denied/revoked access, offline remote cancellation followed by sync, duplicate requests and closely spaced reminders. Record actual lateness and any OS throttling; do not claim platform-independent exactly-once or exact-deadline delivery.
+
+## Alarm/Inbox/speech refinement (2026-10-31)
+
+Add Ringing/Dismissed device observations to the single current contract. Posted remains notification-only history; Dismissed is terminal at a revision. Kotlin journal preserves locally dismissed state across stale observations, accepts authoritative dismissal after restoration, and rejects rearming terminal states. Backend observations enforce the same ordering. No new routes, dependencies or storage reset.
+
+AlarmManager receivers start a mediaPlayback foreground service. Use MediaPlayer with alarm audio attributes, looping system alarm tone, audio focus and a partial wake lock during playback. A silent alarm notification channel prevents notification sound from competing with looping playback. One persistent foreground notification represents all current alarms; its explicit dismiss action captures exact namespace/id/revisions. All current alarms share one audio loop. Playback start and state changes validate under the journal lock. Opening a notification does not stop playback. Reconciliation schedules due/recovering alarms through AlarmManager, including boot catch-up: Android 15 prohibits starting mediaPlayback services directly from BOOT_COMPLETED. The service refreshes local state so cancellation/dismissal stops obsolete sound. Permission/playback failure is blocked/uncertain rather than delivered.
+
+Inbox reads the private journal with reactive invalidation and displays bounded cached entries, expandable for history, preserving recording UI. Notification deep links select Inbox. Spoken list formatting belongs in deterministic Rust code with timezone conversion relative to the accepted request, a three-item cap and a remaining count. Detailed IDs/observations stay out of speech.
+
+Immediate status-sync jobs apply new schedules/cancellations and flush reports but do not reattempt uncertain playback. Periodic jobs (at least15minutes) and explicit app entry/manual sync permit recovery. A stale ringing observation cannot erase a newer local failed-playback state and trigger a tight retry loop.
+
+Platform research: official Android foreground-service types/restrictions and AudioFocusRequest/MediaPlayer references. Exact alarms for user-requested actions provide the background-start exemption; foreground media playback declares its dedicated permission/type. No full-screen intent, snooze, DND override or new cloud service.

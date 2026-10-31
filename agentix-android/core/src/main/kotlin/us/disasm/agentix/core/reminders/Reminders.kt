@@ -8,7 +8,8 @@ private fun identity(id: UUID) { require(id != UUID(0, 0)) }
 data class Reminder(val id: UUID, val revision: Long, val text: String, val dueAt: Instant, val timezone: String, val cancelled: Boolean) {
     init { identity(id); require(revision > 0 && text.isNotBlank() && text.toByteArray(Charsets.UTF_8).size <= 1024); ZoneId.of(timezone) }
 }
-enum class Delivery { ALARM_INTENT, ARMED, BLOCKED, POST_PENDING, POSTED, UNCERTAIN, CANCEL_APPLIED }
+enum class Delivery { ALARM_INTENT, ARMED, BLOCKED, POST_PENDING, POSTED, RINGING, DISMISSED, UNCERTAIN, CANCEL_APPLIED }
+fun Delivery.completed() = this in setOf(Delivery.POSTED, Delivery.DISMISSED, Delivery.CANCEL_APPLIED)
 data class Observation(val reportId: UUID, val reminderId: UUID, val revision: Long, val sequence: Long, val state: Delivery) {
     init { identity(reportId); identity(reminderId); require(revision > 0 && sequence > 0 && state != Delivery.ALARM_INTENT) }
 }
@@ -48,26 +49,34 @@ data class Journal(
             if (previous != null && item.revision == previous.reminder.revision) require(item == previous.reminder)
             val observed = snapshot.observations.find { it.reminderId == item.id }
             if (previous?.reminder == item) {
-                if (observed?.state == Delivery.POSTED && !item.cancelled) previous.copy(phase = Delivery.POSTED, reported = Delivery.POSTED) else previous
+                when {
+                    previous.phase == Delivery.DISMISSED -> previous
+                    observed?.state == Delivery.DISMISSED || observed?.state == Delivery.POSTED -> previous.copy(phase = observed.state, reported = observed.state)
+                    observed?.state == Delivery.RINGING && previous.phase in setOf(Delivery.ALARM_INTENT, Delivery.ARMED, Delivery.POST_PENDING) -> previous.copy(phase = Delivery.RINGING, reported = Delivery.RINGING)
+                    else -> previous
+                }
             } else {
                 val phase = when {
                     item.cancelled -> Delivery.ALARM_INTENT
                     observed?.state == Delivery.POSTED -> Delivery.POSTED
+                    observed?.state == Delivery.DISMISSED -> Delivery.DISMISSED
+                    observed?.state == Delivery.RINGING -> Delivery.RINGING
                     else -> Delivery.ALARM_INTENT
                 }
-                Entry(item, phase, if (phase == Delivery.POSTED) phase else null)
+                Entry(item, phase, if (phase.completed() || phase == Delivery.RINGING) phase else null)
             }
         }
-        require(entries.all { old -> updated.any { it.reminder.id == old.reminder.id } || old.phase in setOf(Delivery.POSTED, Delivery.CANCEL_APPLIED) }) { "Snapshot omitted a live reminder" }
+        require(entries.all { old -> updated.any { it.reminder.id == old.reminder.id } || old.phase.completed() }) { "Snapshot omitted a live reminder" }
         val observedNext = snapshot.observations.maxOfOrNull { Math.addExact(it.sequence, 1) } ?: 1
         return copy(serverId = snapshot.serverId, snapshotSequence = snapshot.sequence, nextReport = maxOf(nextReport, observedNext), entries = updated,
-            reports = reports.filter { o -> updated.any { it.reminder.id == o.reminderId && it.reminder.revision == o.revision && (it.phase != Delivery.POSTED || o.state == Delivery.POSTED) } })
+            reports = reports.filter { o -> updated.any { it.reminder.id == o.reminderId && it.reminder.revision == o.revision && (!it.phase.completed() || o.state == it.phase) } })
     }
     fun transition(id: UUID, revision: Long, phase: Delivery): Journal {
         val entry = entries.single { it.reminder.id == id }
         require(entry.reminder.revision == revision) { "Stale reminder revision" }
         require((phase == Delivery.CANCEL_APPLIED) == entry.reminder.cancelled || phase == Delivery.ALARM_INTENT)
-        require(entry.phase != Delivery.POSTED || phase == Delivery.POSTED || entry.reminder.cancelled) { "Delivered reminder cannot be rearmed" }
+        require(!entry.phase.completed() || phase == entry.phase || (entry.phase == Delivery.POSTED && phase == Delivery.DISMISSED)) { "Completed reminder cannot be rearmed" }
+        require(phase != Delivery.DISMISSED || entry.phase in setOf(Delivery.POST_PENDING, Delivery.RINGING, Delivery.POSTED, Delivery.DISMISSED, Delivery.BLOCKED, Delivery.UNCERTAIN)) { "Upcoming reminder cannot be dismissed" }
         val emit = phase != Delivery.ALARM_INTENT && entry.reported != phase
         val next = if (emit) Math.addExact(nextReport, 1) else nextReport
         val event = if (emit) Observation(UUID.randomUUID(), id, revision, nextReport, phase) else null
@@ -75,7 +84,18 @@ data class Journal(
             reports = if (event == null) reports else reports.filter { it.reminderId != id } + event)
     }
     fun acknowledge(ids: Set<UUID>) = copy(reports = reports.filter { it.reportId !in ids })
+    fun dismiss(server: UUID, targets: List<Pair<UUID, Long>>, now: Instant): Journal {
+        if (serverId != server) return this
+        var next = this
+        targets.forEach { (id, revision) ->
+            val entry = next.entries.find { it.reminder.id == id && it.reminder.revision == revision && !it.reminder.cancelled }
+            if (entry != null && (entry.phase in setOf(Delivery.POST_PENDING, Delivery.RINGING, Delivery.POSTED) || (entry.reminder.dueAt <= now && entry.phase in setOf(Delivery.BLOCKED, Delivery.UNCERTAIN)))) {
+                next = next.transition(id, revision, Delivery.DISMISSED)
+            }
+        }
+        return next
+    }
     fun eligible(id: UUID, revision: Long, now: Instant): Boolean = entries.any {
-        it.reminder.id == id && it.reminder.revision == revision && !it.reminder.cancelled && it.reminder.dueAt <= now && it.phase !in setOf(Delivery.POSTED, Delivery.CANCEL_APPLIED)
+        it.reminder.id == id && it.reminder.revision == revision && !it.reminder.cancelled && (it.reminder.dueAt <= now || it.phase == Delivery.RINGING) && !it.phase.completed()
     }
 }

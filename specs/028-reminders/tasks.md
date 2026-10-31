@@ -31,3 +31,10 @@
 - [x] T018 Apply owner-directed single-contract simplification: keep only `/v1/assistant/`, use one turn envelope with optional enrolled device identity, remove protocol negotiation/fallback, update backend/app/tests/examples/docs together, and rebuild/sign the matching app without resetting data.
 
 Implementation is present and local-model acceptance passes. T011 adapters are implemented and build/lint cleanly, with actual platform effect boundaries still awaiting a device. T014 store/policy coverage passes, with physical dispatch/recovery cases still open. T015 build/model results are recorded in verification.md. No phone mutation has been performed. Recurrence, snooze and multi-phone delivery remain outside the initial task set.
+
+## Owner refinement (2026-10-31)
+
+- [x] T019 Extend Rust/Kotlin observation policy with ringing/dismissed states, terminal dismissal and revision-safe recovery; cover actual-store and journal regression cases.
+- [x] T020 Implement looping foreground alarm playback, explicit revision-bound dismissal, manifest declarations and AlarmManager catch-up; add reactive reminder Inbox and notification navigation while preserving recordings.
+- [x] T021 Bound spoken lists to three pending items with natural local times and a remaining count; test timezone formatting, history exclusion and absence of spoken metadata.
+- [x] T022 Run scoped Rust checks and canonical Android/backend Nix builds, sign with the existing key, document artifact and remaining real-phone acceptance. No installation or deployment implied.

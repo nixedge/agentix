@@ -54,6 +54,8 @@ class MainActivity : ComponentActivity() {
     private lateinit var scanner: PlaudScanner
     private val playback = PhonePlayback()
     private var recordRequests by mutableStateOf(0)
+    private var reminderRequests by mutableStateOf(0)
+    private var selectedReminder by mutableStateOf<String?>(null)
     private var assistantActive by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -63,13 +65,15 @@ class MainActivity : ComponentActivity() {
         val settings = AssistantSettings(applicationContext)
         val recordings = PhoneRecordingStore(filesDir)
         if (savedInstanceState == null && opensRecording(intent)) recordRequests++
-        setContent { MaterialTheme { AgentixApp(scanner, settings, recordings, playback, recordRequests, assistantActive) } }
+        if (savedInstanceState == null) openReminder(intent)
+        setContent { MaterialTheme { AgentixApp(scanner, settings, recordings, playback, recordRequests, reminderRequests, selectedReminder, assistantActive) } }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         if (opensRecording(intent)) recordRequests++
+        openReminder(intent)
     }
 
     override fun onResume() {
@@ -90,6 +94,13 @@ class MainActivity : ComponentActivity() {
         super.onStop()
     }
 
+    private fun openReminder(intent: Intent?) {
+        if (intent?.data?.scheme == "agentix" && intent.data?.host == "reminder") {
+            selectedReminder = intent.data?.lastPathSegment
+            reminderRequests++
+        }
+    }
+
     private fun opensRecording(intent: Intent?): Boolean =
         intent?.action == ACTION_OPEN_RECORD ||
             (intent?.action == Intent.ACTION_VIEW && intent.data?.scheme == "agentix" && intent.data?.host == "record") ||
@@ -107,11 +118,17 @@ private fun AgentixApp(
     recordings: PhoneRecordingStore,
     playback: PhonePlayback,
     recordRequests: Int,
+    reminderRequests: Int,
+    selectedReminder: String?,
     assistantActive: Boolean,
 ) {
     var destination by rememberSaveable { mutableStateOf(0) }
+    val contentScroll = rememberScrollState()
     androidx.compose.runtime.LaunchedEffect(recordRequests) {
         if (recordRequests > 0) destination = 1
+    }
+    androidx.compose.runtime.LaunchedEffect(reminderRequests) {
+        if (reminderRequests > 0) { destination = 0; contentScroll.scrollTo(0) }
     }
     val destinations = listOf(R.string.inbox, R.string.record, R.string.devices, R.string.settings, R.string.assistant_title)
 
@@ -131,11 +148,14 @@ private fun AgentixApp(
                 }
             }
             Column(
-                Modifier.weight(1f).verticalScroll(rememberScrollState()),
+                Modifier.weight(1f).verticalScroll(contentScroll),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 when (destination) {
-                    0 -> RecordingInbox(recordings, playback)
+                    0 -> {
+                        us.disasm.agentix.reminders.ReminderInbox(selectedReminder)
+                        RecordingInbox(recordings, playback)
+                    }
                     1 -> RecordScreen(playback)
                     2 -> DevicesScreen(scanner)
                     3 -> SettingsScreen(settings)

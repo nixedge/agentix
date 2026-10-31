@@ -57,7 +57,12 @@ impl Assistant {
         let posted: std::collections::HashSet<_> = snapshot
             .observations
             .iter()
-            .filter(|o| o.state == ReminderDeliveryState::Posted)
+            .filter(|o| {
+                matches!(
+                    o.state,
+                    ReminderDeliveryState::Posted | ReminderDeliveryState::Dismissed
+                )
+            })
             .map(|o| o.reminder_id)
             .collect();
         let mut reminders = snapshot.reminders;

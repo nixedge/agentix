@@ -151,11 +151,17 @@ impl Reminders for SledRepository {
                     if old.is_some_and(|old| {
                         old.revision == report.revision
                             && old.sequence < report.sequence
-                            && old.state == ReminderDeliveryState::Posted
-                            && report.state != ReminderDeliveryState::Posted
+                            && ((old.state == ReminderDeliveryState::Posted
+                                && !matches!(
+                                    report.state,
+                                    ReminderDeliveryState::Posted
+                                        | ReminderDeliveryState::Dismissed
+                                ))
+                                || (old.state == ReminderDeliveryState::Dismissed
+                                    && report.state != ReminderDeliveryState::Dismissed))
                     }) {
                         return Err(Error::Invalid(
-                            "a posted reminder cannot be rearmed at the same revision".into(),
+                            "a completed reminder cannot be rearmed at the same revision".into(),
                         ));
                     }
                     if old.is_some_and(|old| {
@@ -271,14 +277,18 @@ impl Reminders for SledRepository {
                     ReminderIntent::Other => return Err(Error::Invalid("ordinary result required".into())),
                     ReminderIntent::Clarify {question} => { bounded_text(&question, 1024)?; status = TellStatus::Clarification; question },
                     ReminderIntent::List => {
-                        let mut items = value.reminders.values().filter(|r| !r.cancelled).collect::<Vec<_>>();
-                        items.sort_by_key(|r| (value.observations.get(&r.id).is_some_and(|o| o.state == ReminderDeliveryState::Posted), r.due_at));
-                        if items.is_empty() { "You have no active reminders.".into() }
-                        else { format!("Reminders: {}. Backend state; phone application is reported separately.{}", items.iter().take(20).map(|r| {
-                            let text:String=r.text.chars().take(40).collect();
-                            let state=value.observations.get(&r.id).map(|o| format!("last reported {:?}{}",o.state,value.observed_at.get(&r.id).map(|at| format!(" at {at}")).unwrap_or_default())).unwrap_or_else(|| "awaiting phone".into());
-                            format!("{text} at {} [{}] ({state})",r.local_due().unwrap_or_else(|_| r.due_at.to_rfc3339()),r.id)
-                        }).collect::<Vec<_>>().join("; "), if items.len()>20 {" More reminders are stored."} else {""}) }
+                        let mut items = value.reminders.values().filter(|r| !r.cancelled && !value.observations.get(&r.id).is_some_and(|o| matches!(o.state, ReminderDeliveryState::Posted | ReminderDeliveryState::Dismissed))).collect::<Vec<_>>();
+                        items.sort_by_key(|r| r.due_at);
+                        if items.is_empty() { "You have no pending reminders.".into() }
+                        else {
+                            let spoken = items.iter().take(3).map(|r| {
+                                let text:String=r.text.chars().take(80).collect();
+                                let clipped = if r.text.chars().count() > 80 { "…" } else { "" };
+                                Ok(format!("{text}{clipped}, {}", reminder_spoken_time(r.due_at, turn.accepted_at, &request.request.timezone)?))
+                            }).collect::<Result<Vec<_>>>()?;
+                            let more = if items.len() > 3 { format!(" {} more in Inbox.", items.len()-3) } else { String::new() };
+                            format!("{}.{}", spoken.join("; "), more)
+                        }
                     },
                     ReminderIntent::Create {text,time} => {
                         bounded_text(&text,1024)?;

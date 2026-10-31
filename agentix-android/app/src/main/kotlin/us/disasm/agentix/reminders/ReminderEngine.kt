@@ -14,22 +14,23 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.util.AtomicFile
-import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import org.json.JSONArray
 import org.json.JSONObject
-import us.disasm.agentix.MainActivity
-import us.disasm.agentix.R
 import us.disasm.agentix.settings.AssistantSettings
 import us.disasm.agentix.core.assistant.OwnerAuthentication
 import us.disasm.agentix.core.reminders.*
 import java.io.File
 import java.time.Instant
 import java.util.UUID
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 object ReminderEngine {
-    private const val CHANNEL = "personal-reminders"
+    internal const val CHANNEL = "personal-reminder-alarms"
+    private val updates = MutableStateFlow(0L)
+    val changes = updates.asStateFlow()
     private val gate = Any()
     private var faulted = false
     private fun file(context: Context) = AtomicFile(File(context.filesDir, "reminders-v1.json"))
@@ -56,7 +57,7 @@ object ReminderEngine {
     private fun store(context: Context, state: Journal) {
         check(!faulted) { "Reminder storage needs recovery" }
         val target = file(context); val stream = target.startWrite()
-        try { stream.write(ReminderWire.journal(state).toString().toByteArray(Charsets.UTF_8)); target.finishWrite(stream) }
+        try { stream.write(ReminderWire.journal(state).toString().toByteArray(Charsets.UTF_8)); target.finishWrite(stream); updates.value += 1 }
         catch (error: Exception) { target.failWrite(stream); faulted = true; throw IllegalStateException("Reminder state could not be persisted", error) }
     }
     fun deviceId(context: Context): UUID = synchronized(gate) { checkNotNull(load(context)).deviceId }
@@ -80,14 +81,14 @@ object ReminderEngine {
         store(context, next)
         old.entries.filter { entry -> next.entries.none { it.reminder == entry.reminder } }.forEach { cancel(context, old, it.reminder) }
     }
-    fun sync(context: Context) {
+    fun sync(context: Context, retryUncertain: Boolean = true) {
         if (!enabled(context)) return
         val state = synchronized(gate) { checkNotNull(load(context)) }
         val settings = AssistantSettings(context)
         check(state.endpoint == settings.endpoint()) { "Reminder backend changed" }
         val authorization = OwnerAuthentication.authorization(settings.token())
         val json = ReminderWire.request(state.endpoint, "/v1/assistant/reminders/snapshot?device_id=${state.deviceId}", authorization)
-        apply(context, ReminderWire.snapshot(json)); reconcile(context)
+        apply(context, ReminderWire.snapshot(json)); reconcile(context, retryUncertain = retryUncertain)
         repeat(4) {
             val current = synchronized(gate) { checkNotNull(load(context)) }
             val batch = current.reports.take(32)
@@ -102,8 +103,8 @@ object ReminderEngine {
         }
         requestSync(context)
     }
-    private fun channel(context: Context) {
-        context.getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel(CHANNEL, "Personal reminders", NotificationManager.IMPORTANCE_HIGH))
+    internal fun channel(context: Context) {
+        context.getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel(CHANNEL, "Reminder alarms", NotificationManager.IMPORTANCE_HIGH).apply { setSound(null, null) })
     }
     private fun operation(context: Context, state: Journal, item: Reminder): PendingIntent {
         val uri = Uri.Builder().scheme("agentix-reminder").authority(state.serverId.toString()).appendPath(item.id.toString()).appendPath(item.revision.toString()).build()
@@ -118,28 +119,33 @@ object ReminderEngine {
     private fun transition(context: Context, id: UUID, revision: Long, phase: Delivery): Journal {
         val next = checkNotNull(load(context)).transition(id, revision, phase); store(context, next); return next
     }
-    fun reconcile(context: Context, restoreAlarms: Boolean = false) = synchronized(gate) {
+    fun reconcile(context: Context, restoreAlarms: Boolean = false, retryUncertain: Boolean = true) = synchronized(gate) {
         if (!enabled(context)) return@synchronized
         channel(context)
         val initial = checkNotNull(load(context))
         if (initial.endpoint != AssistantSettings(context).endpoint()) return@synchronized
         var state = initial
-        initial.entries.filter { !it.reminder.cancelled && it.phase != Delivery.POSTED && (restoreAlarms || it.phase != Delivery.ARMED) && it.reminder.dueAt > Instant.now() }.forEach {
+        initial.entries.filter { !it.reminder.cancelled && !it.phase.completed() && it.phase != Delivery.RINGING && (restoreAlarms || it.phase != Delivery.ARMED) && it.reminder.dueAt > Instant.now() }.forEach {
             state = state.transition(it.reminder.id, it.reminder.revision, Delivery.ALARM_INTENT)
         }
         if (state != initial) store(context, state)
-        val due = mutableListOf<Reminder>()
         state.entries.toList().forEach { entry ->
             val item = entry.reminder
             if (item.cancelled) {
                 cancel(context, initial, item)
                 state = state.transition(item.id, item.revision, Delivery.CANCEL_APPLIED)
-            } else if (entry.phase != Delivery.POSTED) {
+            } else if (!entry.phase.completed()) {
                 if (!canNotify(context) || !canAlarm(context)) {
                     context.getSystemService(AlarmManager::class.java).cancel(operation(context, initial, item))
                     state = state.transition(item.id, item.revision, Delivery.BLOCKED)
-                } else if (item.dueAt <= Instant.now() || entry.phase == Delivery.POST_PENDING) {
-                    due.add(item)
+                } else if (item.dueAt <= Instant.now() || entry.phase == Delivery.POST_PENDING || entry.phase == Delivery.RINGING) {
+                    if (entry.phase == Delivery.UNCERTAIN && !retryUncertain) return@forEach
+                    // Recovery also goes through an exact alarm: boot/jobs cannot start media playback directly.
+                    if (!ReminderAlarmService.running || entry.phase !in setOf(Delivery.POST_PENDING, Delivery.RINGING)) {
+                        try {
+                            context.getSystemService(AlarmManager::class.java).setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + 100, operation(context, initial, item))
+                        } catch (_: SecurityException) { state = state.transition(item.id, item.revision, Delivery.BLOCKED) }
+                    }
                 } else if (entry.phase != Delivery.ARMED || restoreAlarms) {
                     try {
                         val millis = Math.addExact(item.dueAt.toEpochMilli(), if (item.dueAt.nano % 1000000 == 0) 0L else 1L)
@@ -150,24 +156,52 @@ object ReminderEngine {
             }
         }
         if (state != load(context)) store(context, state)
-        due.forEach { post(context, it.id, it.revision) }
     }
     private fun post(context: Context, id: UUID, revision: Long) {
         val current = checkNotNull(load(context))
         if (!current.eligible(id, revision, Instant.now())) return
         if (!canNotify(context) || !canAlarm(context)) { transition(context, id, revision, Delivery.BLOCKED); return }
-        val item = current.entries.single { it.reminder.id == id }.reminder
         transition(context, id, revision, Delivery.POST_PENDING)
         try {
-            val content = PendingIntent.getActivity(context, 0, Intent(context, MainActivity::class.java).setData(Uri.parse("agentix://reminder/$id")), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-            val notification = NotificationCompat.Builder(context, CHANNEL).setSmallIcon(R.drawable.ic_agentix).setContentTitle("Reminder")
-                .setContentText(item.text).setStyle(NotificationCompat.BigTextStyle().bigText(item.text)).setContentIntent(content)
-                .setWhen(item.dueAt.toEpochMilli()).setShowWhen(true)
-                .setVisibility(NotificationCompat.VISIBILITY_PRIVATE).setAutoCancel(true).setOnlyAlertOnce(true).build()
-            NotificationManagerCompat.from(context).notify(tag(current, id), 0, notification)
-            transition(context, id, revision, Delivery.POSTED)
+            ContextCompat.startForegroundService(context, Intent(context, ReminderAlarmService::class.java))
         } catch (_: SecurityException) { transition(context, id, revision, Delivery.BLOCKED) }
         catch (_: RuntimeException) { transition(context, id, revision, Delivery.UNCERTAIN) }
+    }
+    fun inbox(context: Context): Journal? = synchronized(gate) { load(context) }
+    private fun active(state: Journal) = state.entries.filter { !it.reminder.cancelled && it.phase in setOf(Delivery.POST_PENDING, Delivery.RINGING) }.sortedBy { it.reminder.dueAt }
+    internal fun activeAlarms(context: Context): Pair<UUID?, List<Entry>> = synchronized(gate) {
+        val state = load(context) ?: return@synchronized null to emptyList()
+        state.serverId to if (enabled(context) && state.endpoint == AssistantSettings(context).endpoint()) active(state) else emptyList()
+    }
+    internal fun stopIfIdle(context: Context, stop: () -> Unit) = synchronized(gate) {
+        val state = load(context)
+        if (state == null || !enabled(context) || state.endpoint != AssistantSettings(context).endpoint() || active(state).isEmpty()) stop()
+    }
+    // Recheck under the same lock used by dismissal/cancellation immediately before the sound effect.
+    internal fun startSound(context: Context, play: () -> Unit): Boolean = synchronized(gate) {
+        val state = checkNotNull(load(context))
+        val entries = active(state)
+        if (!enabled(context) || state.endpoint != AssistantSettings(context).endpoint() || entries.isEmpty()) return@synchronized false
+        check(canNotify(context) && canAlarm(context))
+        play()
+        var next = state
+        entries.filter { it.phase != Delivery.RINGING }.forEach { next = next.transition(it.reminder.id, it.reminder.revision, Delivery.RINGING) }
+        if (next != state) store(context, next)
+        true
+    }
+    internal fun soundFailed(context: Context) = synchronized(gate) {
+        val state = load(context) ?: return@synchronized
+        var next = state
+        active(state).forEach { next = next.transition(it.reminder.id, it.reminder.revision, Delivery.UNCERTAIN) }
+        if (next != state) store(context, next)
+        // Periodic/app-entry recovery retries; an immediate sync here would form a tight retry loop.
+    }
+    fun dismiss(context: Context, server: UUID, targets: List<Pair<UUID, Long>>) = synchronized(gate) {
+        val state = load(context) ?: return@synchronized
+        if (state.serverId != server || state.endpoint != AssistantSettings(context).endpoint()) return@synchronized
+        val next = state.dismiss(server, targets, Instant.now())
+        if (next != state) store(context, next)
+        requestSync(context)
     }
     fun fire(context: Context, uri: Uri?) = synchronized(gate) {
         if (!enabled(context) || uri?.scheme != "agentix-reminder" || uri.pathSegments.size != 2) return@synchronized
@@ -182,6 +216,8 @@ object ReminderEngine {
             Delivery.ARMED -> "Scheduled on this phone."
             Delivery.CANCEL_APPLIED -> "Cancellation applied on this phone."
             Delivery.POSTED -> "The reminder notification was posted on this phone."
+            Delivery.RINGING -> "The reminder alarm is active on this phone."
+            Delivery.DISMISSED -> "Dismissed on this phone."
             Delivery.BLOCKED -> "Saved, but notifications or alarm access are blocked on this phone."
             else -> "Saved; phone delivery is pending or uncertain."
         }

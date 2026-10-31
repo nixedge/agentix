@@ -12,6 +12,27 @@ pub fn reminder_local_reference(instant: DateTime<Utc>, zone: &str) -> Result<St
     Ok(instant.with_timezone(&tz).to_rfc3339())
 }
 
+pub fn reminder_spoken_time(
+    due: DateTime<Utc>,
+    reference: DateTime<Utc>,
+    zone: &str,
+) -> Result<String> {
+    let tz: chrono_tz::Tz = zone
+        .parse()
+        .map_err(|_| Error::Invalid("invalid reminder timezone".into()))?;
+    let local = due.with_timezone(&tz);
+    let today = reference.with_timezone(&tz).date_naive();
+    let day = if local.date_naive() == today {
+        "today".to_string()
+    } else if Some(local.date_naive()) == today.succ_opt() {
+        "tomorrow".to_string()
+    } else {
+        local.format("%A, %B %-d").to_string()
+    };
+    let time = local.format("%-I:%M %p").to_string().replace(":00", "");
+    Ok(format!("{day} at {time}"))
+}
+
 pub fn reminder_uuid(id: Uuid) -> Result<()> {
     if id.is_nil() {
         return Err(Error::Invalid("nil reminder/device identity".into()));
@@ -87,6 +108,8 @@ pub enum ReminderDeliveryState {
     Blocked,
     PostPending,
     Posted,
+    Ringing,
+    Dismissed,
     Uncertain,
     CancelApplied,
 }
