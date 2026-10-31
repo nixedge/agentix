@@ -40,7 +40,9 @@ Try “Remind me in two minutes to check the laundry.” The reply should say **
 - **Saved / awaiting phone** means durable backend intent, without evidence that the alarm is armed.
 - **Armed** is the phone's last report that Android accepted the local alarm. It does not continuously verify permissions or power state.
 - **Blocked** means notification or alarm access is unavailable. Restore access and open the app or select **Sync reminders**.
-- **Posted** means Android's notification API returned successfully. It does not establish that the owner saw or heard the notification.
+- **Ringing / Alarm active** means foreground alarm playback started. The system alarm tone loops using alarm volume until dismissed; audio focus, OS policies and volume can interrupt or silence it. This does not establish that the owner heard it.
+- **Dismissed** means explicit dismissal was persisted on the phone for that exact revision. It will not ring again after restart/sync. Use Dismiss in Inbox or Dismiss/Dismiss all in the ongoing alarm notification. Opening the notification or app does not dismiss it.
+- **Posted** is notification-only history from the earlier app. Updating will not replay those historical notifications as alarms.
 - **Pending / uncertain** preserves an interrupted or failed effect for reconciliation. Retrying uses stable alarm and notification identities; duplicates remain possible after a crash around posting.
 - **Cancelled on backend** awaits propagation. An offline phone can still notify from its previous revision. **Cancellation applied on this phone** means its obsolete alarm/tray entry has been cancelled locally; an already observed alert cannot be recalled.
 
@@ -52,7 +54,7 @@ The notification timestamp is the original scheduled instant, including catch-up
 
 The backend stores reminders, revisions, due keys, device-bound request receipts, delivery reports and cancellation tombstones in the existing Sled database. Its private reminder book has schema version 1. Every reminder mutation and its request receipt commit together and flush before success. Report receipt IDs are retained for idempotency; last observations include server receipt time. Phone storage is a private, backup-excluded atomic journal (`files/reminders-v1.json`, schema 1). Malformed or unknown data is refused rather than replaced with an empty schedule.
 
-Back up backend state and app-private files/preferences together before live acceptance. Do not reset either side's identity to fix an error. A changed backend namespace or endpoint is rejected; restore the original configuration. Installation replacement/multi-phone migration and automatic tombstone/report pruning are outside this increment. Capacity is 1,000 retained reminders, including cancelled/posted history, and 20 entries per spoken list, prioritizing pending reminders before posted history. At capacity, creation fails explicitly without dropping older reminders.
+Back up backend state and app-private files/preferences together before live acceptance. Do not reset either side's identity to fix an error. A changed backend namespace or endpoint is rejected; restore the original configuration. Installation replacement/multi-phone migration and automatic tombstone/report pruning are outside this increment. Capacity is 1,000 retained reminders, including cancelled/posted/dismissed history. Spoken lists contain at most three pending reminders and a remaining count, without IDs or observation metadata. Inbox contains cached reminder details and history alongside recordings (initially20 entries, expandable). Notification taps select Inbox and bring the selected reminder to the top. At capacity, creation fails explicitly without dropping older reminders.
 
 Update the backend and Android app together; earlier development wire formats are unsupported. Pending instructions retain their request/device identity across enrollment changes. Downgrading an app with active alarms or rolling back the server cannot safely undo phone effects: cancel and synchronize first, then retain backups. Restore a coordinated backup only with a deliberate recovery plan; restoring just one side can lose evidence or resurrect already-delivered work.
 
@@ -66,5 +68,8 @@ After deploying both components and authorizing a same-key update, record actual
 4. Reschedule/cancel before dispatch, stale receivers, and offline backend cancellation followed by phone synchronization.
 5. Denied/revoked notifications, blocked channel and revoked alarm access; restore access and verify catch-up.
 6. Retry an unresolved instruction; verify one schedule and its original relative deadline. Confirm existing notes/tasks/OurGroceries and recordings remain intact.
+7. Let the alarm loop for at least30seconds while locked. Open the notification drawer, then tap the notification: Inbox opens and the alarm continues. Dismiss it there; verify audio stops and dismissed history remains after reopening/sync/reboot.
+8. Ring two reminders together. Dismiss one in Inbox and confirm the other remains active; Dismiss all stops the captured set. Reschedule/cancel a ringing reminder and synchronize; obsolete playback stops. Test alarm volume and audio-focus interruption/recovery. Existing posted history must not ring merely because the APK was updated.
+9. Ask for upcoming reminders with more than three pending entries: hear only three texts and natural local times plus the remaining count, without IDs or delivery timestamps. Inspect all cached entries in Inbox.
 
 An APK build and synthetic model tests do not establish physical-phone delivery. See [verification evidence](verification.md).
