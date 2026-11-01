@@ -21,6 +21,9 @@ import us.disasm.agentix.core.assistant.AssistantReply
 import us.disasm.agentix.core.assistant.AssistantTurn
 import us.disasm.agentix.core.assistant.TellCommand
 import us.disasm.agentix.core.assistant.TurnPhase
+import us.disasm.agentix.core.assistant.GeminiRequest
+import us.disasm.agentix.core.assistant.geminiRequest
+import us.disasm.agentix.core.assistant.SpeechProfile
 import us.disasm.agentix.recording.CapturePhase
 import us.disasm.agentix.recording.PhoneCaptureState
 
@@ -49,8 +52,19 @@ internal class AssistantController(
     var speakReplies by mutableStateOf(preferences.getBoolean("speak_replies", true))
         private set
     private val speaker = OfflineSpeaker(context) { speechStatus = it }
+    val voiceProfile get() = speaker.profile
+    val voices get() = speaker.voices
+    val selectedVoice get() = speaker.selected
+    val voiceNotice get() = speaker.notice
+    fun voiceLabel(voice: us.disasm.agentix.core.assistant.SpeechVoice) = speaker.label(voice)
+    fun selectVoice(id: String) { if (phase != TurnPhase.LISTENING && phase != TurnPhase.PROCESSING) speaker.select(id) }
+    fun updateVoiceProfile(profile: SpeechProfile) { if (phase != TurnPhase.LISTENING && phase != TurnPhase.PROCESSING) speaker.updateProfile(profile) }
+    fun previewVoice() {
+        if (canUse() && phase != TurnPhase.LISTENING && phase != TurnPhase.PROCESSING) speaker.speak(context.getString(R.string.assistant_voice_sample))
+    }
 
     fun resume() {
+        if (!resumed) speaker.refresh()
         resumed = true
         refreshBackend()
     }
@@ -177,6 +191,24 @@ internal class AssistantController(
 
     private fun dispatch(id: Long, command: TellCommand) {
         phase = turn.phase
+        when (val gemini = geminiRequest(command.text, pendingText != null)) {
+            GeminiRequest.NotRequested -> Unit
+            else -> {
+                stopSpeaking()
+                recognition?.close(); recognition = null
+                val text = when (gemini) {
+                    GeminiRequest.MissingQuestion -> R.string.assistant_gemini_question
+                    GeminiRequest.TooLong -> R.string.assistant_gemini_too_long
+                    is GeminiRequest.Question -> if (GeminiHandoff.open(context, gemini.text)) R.string.assistant_gemini_opened else R.string.assistant_gemini_unavailable
+                    else -> R.string.assistant_gemini_unavailable
+                }
+                if (turn.complete(id)) {
+                    phase = turn.phase; reply = context.getString(text); message = R.string.assistant_reply
+                    if (speakReplies && text != R.string.assistant_gemini_opened) speaker.speak(reply)
+                }
+                return
+            }
+        }
         message = R.string.assistant_processing
         request = scope.launch {
             try {

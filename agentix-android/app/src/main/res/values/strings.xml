@@ -102,7 +102,12 @@
     <string name="assistant_request_failed">No final response was received. Any pending instruction is retained; retry it to check the outcome.</string>
     <string name="assistant_speaking">Speaking…</string>
     <string name="assistant_speech_done">Spoken reply finished.</string>
-    <string name="assistant_tts_missing">Offline speech output is unavailable for your device language. The reply is shown above.</string>
+    <string name="assistant_tts_missing">Offline speech output is unavailable for the selected voice profile. The reply is shown above.</string>
+    <string name="assistant_voice_sample">At your service. What would you like me to take care of?</string>
+    <string name="assistant_gemini_question">What would you like to ask Gemini? Add the question after “ask Gemini”.</string>
+    <string name="assistant_gemini_too_long">That question is too long to hand off. Please shorten it and try again.</string>
+    <string name="assistant_gemini_opened">Opened Gemini. Continue your conversation there; you may need to press Send.</string>
+    <string name="assistant_gemini_unavailable">Gemini cannot accept a text handoff on this phone. Your question is still in the text box.</string>
     <string name="backend_token">Owner token (optional)</string>
     <string name="backend_enable">Enable assistant backend</string>
     <string name="assistant_pending">An instruction is unresolved. Retry it before sending another. Stopping the wait does not undo server changes.</string>

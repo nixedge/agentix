@@ -1,5 +1,13 @@
 # Research and decisions
 
+## British speech and explicit Gemini handoff — 2026-11-01
+
+Use engine-returned installed offline voices only. Prefer en-GB for the British profile, with deterministic quality/latency ranking and an explicit voice picker/preview. Persist voice identity together with engine identity. Android voice metadata does not provide a standard gender field, so do not infer one or promise an actor's voice. Apply rate/pitch 0.95 for a measured delivery and show an honest fallback when no British voice is installed. References: [Voice metadata](https://developer.android.com/reference/android/speech/tts/Voice), [TextToSpeech selection and controls](https://developer.android.com/reference/android/speech/tts/TextToSpeech).
+
+Explicit `ask Gemini …` routes locally to a registered Google/Gemini text-sharing component. Use ACTION_SEND/EXTRA_TEXT, with registered PROCESS_TEXT as fallback, exact package visibility and exported/enabled/permission checks; do not guess private activity names or a prompt URL. Discovery on the owner's phone found an exported BardEntryPointActivity for text/plain sharing. No live prompt handoff has been attempted. Android's documented [text sharing contract](https://developer.android.com/training/sharing/send) supports transmitting text, but discovery and successful activity launch do not prove Gemini consumed it or submitted it. UI therefore says the owner may need to press Send.
+
+Gemini supports continued typed/voice conversations within its app. Google's assistant and voice activation depend on Google's configured assistant integration; this explicit handoff does not reproduce its wake-word support while Agentix is default. See [Gemini mobile assistant guidance](https://support.google.com/gemini/answer/14554984?hl=en). No Gemini API key, cloud recognizer fallback or forwarded Agentix context is introduced. External Android source was absent from the agentic-nix inventory; these primary platform references were consulted instead.
+
 ## Native Android client
 
 The user selected Kotlin after considering Rust/JNI and Elm/WebView. Keep UI and platform integration native; no cross-language bridge in this foundation. Name the application `agentix-android`, not a Plaud-specific name.

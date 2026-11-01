@@ -11,6 +11,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -23,6 +24,10 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -37,6 +42,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.KeyboardType
@@ -44,6 +51,7 @@ import us.disasm.agentix.device.PlaudScanner
 import us.disasm.agentix.settings.AssistantSettings
 import us.disasm.agentix.assistant.AgentixVoiceService
 import us.disasm.agentix.assistant.AssistantSetupScreen
+import us.disasm.agentix.assistant.AssistantActivity
 import us.disasm.agentix.recording.PhoneCaptureState
 import us.disasm.agentix.recording.PhonePlayback
 import us.disasm.agentix.recording.PhoneRecordingStore
@@ -123,6 +131,8 @@ private fun AgentixApp(
     assistantActive: Boolean,
 ) {
     var destination by rememberSaveable { mutableStateOf(0) }
+    var menuExpanded by remember { mutableStateOf(false) }
+    val context = LocalContext.current
     val contentScroll = rememberScrollState()
     androidx.compose.runtime.LaunchedEffect(destination) { contentScroll.scrollTo(0) }
     androidx.compose.runtime.LaunchedEffect(recordRequests) {
@@ -131,14 +141,26 @@ private fun AgentixApp(
     androidx.compose.runtime.LaunchedEffect(reminderRequests) {
         if (reminderRequests > 0) { destination = 0; contentScroll.scrollTo(0) }
     }
-    val destinations = listOf(0 to R.string.inbox, 5 to R.string.archive, 1 to R.string.record, 2 to R.string.devices, 3 to R.string.settings, 4 to R.string.assistant_title)
+    val destinations = listOf(0 to R.string.inbox, 5 to R.string.archive, 1 to R.string.record)
 
     Scaffold { insets ->
         Column(
             Modifier.fillMaxSize().padding(insets).padding(horizontal = 20.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text(stringResource(R.string.title), style = MaterialTheme.typography.headlineLarge)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(stringResource(R.string.title), style = MaterialTheme.typography.headlineLarge)
+                Box {
+                    IconButton(onClick = { menuExpanded = true }) {
+                        Icon(painterResource(R.drawable.ic_more_vert), contentDescription = "More options")
+                    }
+                    DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                        listOf(4 to R.string.assistant_title, 3 to R.string.settings, 2 to R.string.devices).forEach { (id, label) ->
+                            DropdownMenuItem(text = { Text(stringResource(label)) }, onClick = { destination = id; menuExpanded = false })
+                        }
+                    }
+                }
+            }
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 destinations.forEach { (index, title) ->
                     FilterChip(
@@ -153,7 +175,10 @@ private fun AgentixApp(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 when (destination) {
-                    0 -> InboxScreen(recordings, playback, archive = false, selected = selectedReminder)
+                    0 -> {
+                        TextButton(onClick = { context.startActivity(Intent(context, AssistantActivity::class.java)) }) { Text(stringResource(R.string.assistant_open)) }
+                        InboxScreen(recordings, playback, archive = false, selected = selectedReminder)
+                    }
                     1 -> RecordScreen(playback)
                     2 -> DevicesScreen(scanner)
                     3 -> SettingsScreen(settings)

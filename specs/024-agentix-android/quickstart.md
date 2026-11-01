@@ -1,5 +1,31 @@
 # Quickstart and validation
 
+## Current voice, navigation and Gemini update — 2026-11-01
+
+Implemented in sibling worktree `028-reminders`, retaining the unified Inbox/Archive and snooze work. This increment is app-only: no backend deployment or configuration change.
+
+Signed with the existing persistent host key outside the Nix store:
+
+```bash
+nix develop .#android --command adb install -r /home/sam/home/agentix/.android-state/apks/agentix-android-028-voice-gemini.apk
+```
+
+APK SHA256: `5c535fbafa4e4bc1f15ef7d9237394cae0189ccb10fbae0a54c2625a99b845ed`.
+
+Canonical `nix build .#agentix-android -o result-reminders-android` passed: all 49 core JVM tests, including six voice/handoff tests, seven Inbox tests and sixteen reminder tests. Android assembly and lint passed (0 errors, 16 warnings, 8 hints). Signing wrapper verified the APK signature. No Gradle dependencies, Rust sources or backend contracts changed. Git whitespace checks passed.
+
+Phone acceptance still required:
+
+1. Open Inbox. Use **Open assistant** immediately above it to reach the text field and Talk control. Verify the three-dot menu contains Agentix assistant, Settings and Devices; Inbox, Archive and Record remain directly accessible.
+2. In the assistant, select **British, measured**, choose an installed offline voice and press **Preview voice**. Rate and pitch are slightly lowered; the voice is supplied by Android's engine. Install British offline voice data using **Android speech settings** if the app reports a fallback. Confirm the choice survives reopening. This changes speech only, not reply wording.
+3. Type `agentix ask gemini Explain why the sky is blue`, then send. Gemini should open with that question; press Send there if necessary and continue the conversation in Gemini. Repeat with Talk and `ask Gemini …`. Return to Agentix and verify its default assistant selection is unchanged.
+4. Try `ask Gemini` without a question. It should ask for the question locally. Without an available Gemini text handler, the app should report failure and retain the draft. Ordinary mentions such as `add ask Gemini to my notes` still use Agentix. A pending backend request retains its original retry destination.
+5. Verify switching apps stops Agentix recognition/speech, and the normal Inbox/alarm/Snooze/Archive flows still work.
+
+Read-only inspection of the attached Pixel found Gemini's exported, enabled `text/plain` ACTION_SEND handler in `com.google.android.apps.bard` and Google's PROCESS_TEXT handler. This establishes installed handoff capability; no question was sent and no prompt-prefill, conversation or audible voice check was performed. No app was installed or default role changed by the agent. Agentix routes only explicit Ask Gemini commands and forwards only the question, without history, recordings or a backend tell. It does not implement a Hey Google wake phrase.
+
+The sections below preserve earlier foundation evidence; their disconnected-backend and original APK instructions describe that earlier scope.
+
 Run from `/home/sam/home/agentix/024-agentix-android`:
 
 ```bash

@@ -52,3 +52,11 @@ Define separate spec/tasks for protocol-version inspection, owner-approved bindi
 - [x] T026 Implement offline TTS, reply preference and honest disconnected preview; keep voice data ephemeral.
 - [x] T027 Build through Nix, run lifecycle/command JVM tests and lint; inspect packaged manifest; document installation and Pixel acceptance.
 - [ ] T028 Test default role, configured system gesture, language availability, microphone denial, lock/background/rotation cleanup, cancellation races, offline TTS and recording contention on the Pixel 10. Requires an attached physical phone.
+
+## Owner refinement — speech, navigation, Gemini handoff
+
+- [x] T029 Add tested offline British/measured voice selection and installed-voice picker/preview with persisted preferences, truthful fallback and lifecycle cleanup; preserve reply wording.
+- [x] T030 Move setup/settings/devices to three-dot menu and add direct Inbox Open assistant link to text/Talk conversation.
+- [x] T031 Add tested anchored Ask Gemini parsing, registered-component-only text handoff, package visibility and honest errors without backend tell or lost draft/pending identity.
+- [x] T032 Build/test/lint Android, sign same-key APK, commit and document installation plus physical voice/menu/Gemini prompt acceptance.
+- [ ] T033 On the phone, preview available British voices, exercise menu/navigation and verify Gemini receives a typed/spoken question and continues the conversation. Registered handler discovery alone does not complete acceptance.

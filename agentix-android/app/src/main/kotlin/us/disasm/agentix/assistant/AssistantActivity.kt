@@ -166,6 +166,7 @@ private fun AssistantConversation(
             }
             controller.speechStatus?.let { Text(stringResource(it)) }
             TextButton(onClick = controller::stopSpeaking) { Text(stringResource(R.string.assistant_stop_speaking)) }
+            VoiceControls(controller, busy)
             TextButton(onClick = appSettings) { Text(stringResource(R.string.assistant_app_permissions)) }
             TextButton(onClick = close) { Text(stringResource(R.string.assistant_close)) }
         }
