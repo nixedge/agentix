@@ -38,3 +38,9 @@ Implementation is present and local-model acceptance passes. T011 adapters are i
 - [x] T020 Implement looping foreground alarm playback, explicit revision-bound dismissal, manifest declarations and AlarmManager catch-up; add reactive reminder Inbox and notification navigation while preserving recordings.
 - [x] T021 Bound spoken lists to three pending items with natural local times and a remaining count; test timezone formatting, history exclusion and absence of spoken metadata.
 - [x] T022 Run scoped Rust checks and canonical Android/backend Nix builds, sign with the existing key, document artifact and remaining real-phone acceptance. No installation or deployment implied.
+
+## Owner-authorized snooze
+
+- [x] T023 Add persisted local snooze deadline/generation, exact action validation and format1→2 migration; test repeated/stale actions, snapshots/restart, cancellation/rescheduling and dismissal.
+- [x] T024 Add generation-aware AlarmManager recovery plus notification/Inbox Snooze10minutes actions and honest blocked/failed display; preserve existing alarms and data.
+- [x] T025 Build/test/lint Android through Nix, sign with existing key, commit and document app-only update plus outstanding physical snooze checkpoint.

@@ -20,23 +20,25 @@ import androidx.core.app.NotificationCompat
 import us.disasm.agentix.MainActivity
 import us.disasm.agentix.R
 import us.disasm.agentix.core.reminders.Entry
+import us.disasm.agentix.core.reminders.AlarmTarget
 import java.util.UUID
 
-class ReminderDismissReceiver : BroadcastReceiver() {
+class ReminderActionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val pending = goAsync()
         reminderExecutor.execute {
             try {
                 val uri = intent.data ?: return@execute
-                if (uri.scheme != "agentix-dismiss") return@execute
+                if (uri.scheme !in setOf("agentix-dismiss", "agentix-snooze")) return@execute
                 val server = UUID.fromString(uri.authority)
                 val targets = uri.getQueryParameters("target").map {
                     val parts = it.split('/')
-                    require(parts.size == 2)
-                    UUID.fromString(parts[0]) to parts[1].toLong()
+                    require(parts.size == 3)
+                    AlarmTarget(UUID.fromString(parts[0]), parts[1].toLong(), parts[2].toLong())
                 }
-                ReminderEngine.dismiss(context, server, targets)
-            } catch (_: Exception) { android.util.Log.w("AgentixReminders", "Reminder dismissal needs recovery") }
+                if (uri.scheme == "agentix-snooze") ReminderEngine.snooze(context, server, targets)
+                else ReminderEngine.dismiss(context, server, targets)
+            } catch (_: Exception) { android.util.Log.w("AgentixReminders", "Reminder action needs recovery") }
             finally { pending.finish() }
         }
     }
@@ -93,10 +95,13 @@ class ReminderAlarmService : Service() {
             .setCategory(NotificationCompat.CATEGORY_ALARM).setPriority(NotificationCompat.PRIORITY_HIGH)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE).setOngoing(true).setOnlyAlertOnce(true).setSilent(true)
         if (server != null && entries.isNotEmpty()) {
-            val uri = Uri.Builder().scheme("agentix-dismiss").authority(server.toString())
-            entries.forEach { uri.appendQueryParameter("target", "${it.reminder.id}/${it.reminder.revision}") }
-            val dismiss = PendingIntent.getBroadcast(this, 0, Intent(this, ReminderDismissReceiver::class.java).setData(uri.build()), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-            builder.addAction(0, if (entries.size > 1) "Dismiss all" else "Dismiss", dismiss)
+            fun action(scheme: String): PendingIntent {
+                val uri = Uri.Builder().scheme(scheme).authority(server.toString())
+                entries.forEach { uri.appendQueryParameter("target", "${it.reminder.id}/${it.reminder.revision}/${it.generation}") }
+                return PendingIntent.getBroadcast(this, 0, Intent(this, ReminderActionReceiver::class.java).setData(uri.build()), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            }
+            builder.addAction(0, if (entries.size > 1) "Snooze all 10 min" else "Snooze 10 min", action("agentix-snooze"))
+            builder.addAction(0, if (entries.size > 1) "Dismiss all" else "Dismiss", action("agentix-dismiss"))
         }
         return builder.build()
     }

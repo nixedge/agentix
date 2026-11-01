@@ -9,7 +9,7 @@
 
 ## Scope and assumptions
 
-Start with explicit, one-off personal reminders through the existing assistant. Creating a task with a due date remains distinct from requesting a notification. This increment covers create, list, reschedule and cancel, durable delivery state, recovery and honest feedback. Recurrence, location triggers, calendar synchronization, shared accounts, automatic migration of legacy todos and snooze are deferred assumptions for owner review.
+Start with explicit, one-off personal reminders through the existing assistant. Creating a task with a due date remains distinct from requesting a notification. This increment covers create, list, reschedule and cancel, durable delivery state, recovery and honest feedback, plus owner-authorized local ten-minute snooze. Recurrence, location triggers, calendar synchronization, shared accounts and automatic migration of legacy todos remain deferred.
 
 The existing personal-assistant specification (025 US5) supplies the reliability requirements. Keep the current local inference, personal storage, OurGroceries integration and ingress configuration. The legacy overdue-todo notifier is a separate existing feature; it must not also send the same new personal reminder.
 
@@ -104,13 +104,19 @@ The assistant distinguishes a saved task, a scheduled reminder, an accepted deli
 
 ## Stage boundary
 
-Android delivery is implemented for one-off reminders; recurrence and snooze remain deferred. Automated implementation evidence and the outstanding live-phone checkpoint are recorded in [verification.md](verification.md). Physical-phone delivery has not yet been accepted.
+Android delivery is implemented for one-off reminders with local ten-minute snooze; recurrence remains deferred. Automated implementation evidence and the outstanding live-phone checkpoint are recorded in [verification.md](verification.md). Physical-phone delivery has not yet been accepted.
 
 ## Owner refinement — persistent alarms, Inbox and concise speech (2026-10-31)
 
-- FR-015: Newly due reminders play the system alarm tone repeatedly until explicit dismissal. Opening the app or notification drawer does not dismiss them. Respect alarm volume, audio focus and OS restrictions; no claim that audible playback proves the owner heard it.
+- FR-015: Newly due reminders play the system alarm tone repeatedly until explicit dismissal or snooze. Opening the app or notification drawer does not dismiss them. Respect alarm volume, audio focus and OS restrictions; no claim that audible playback proves the owner heard it.
 - FR-016: Persist ringing and dismissed observations for each namespace/id/revision. Dismissal is terminal for that revision, survives restart and synchronization, and cannot dismiss a newer revision. Applied cancellation/rescheduling stops obsolete playback. Existing posted notifications remain history rather than unexpectedly becoming alarms after upgrade.
 - FR-017: Inbox shows cached reminder text, local due time and upcoming/ringing/dismissed/blocked/history state alongside existing recordings. Notification taps open Inbox; dismissal is available there and in the alarm notification. Offline inspection and dismissal work without the backend.
 - FR-018: Spoken reminder lists contain at most the next three pending reminder texts and natural local deadlines, then a remaining count. Exclude cancelled/dismissed/posted history. Never speak UUIDs, raw timestamps or observation metadata; full delivery details belong in Inbox.
 
 Acceptance: test stale dismissals, dismissal/restart/snapshot replay, concurrent alarms, cancellation while ringing and historical notification upgrades in policy/store tests. Build/lint the actual Android adapter. Physical acceptance still requires checking continuous alarm audio while locked/background, explicit dismissal, offline/reboot recovery, alarm volume and Inbox navigation on the owner's phone.
+
+## Owner refinement — ten-minute snooze (2026-10-31)
+
+Snooze is now in scope for an active one-off alarm. Offer **Snooze 10 minutes** in Inbox and the ongoing notification (Snooze all when multiple alarms are shown). Persist a phone-local deadline before stopping current playback, then arm a local alarm without network access. Preserve snooze across app/process/device restart and ordinary snapshots. Backend cancellation/rescheduling invalidates the previous snooze when applied. Dismissal can end a snoozed reminder permanently for that revision. Bind actions and receivers to the exact namespace/revision/local occurrence so stale actions cannot extend a snooze or affect a later ringing occurrence. Failure to arm is visible; do not claim the snooze is armed when permission is missing. Original backend deadline remains unchanged; recurrence, arbitrary durations and voice snooze commands remain deferred.
+
+Acceptance: snooze an active alarm offline, confirm silence and Inbox deadline, reject repeated/stale actions, recover the exact deadline after restart, re-ring at ten minutes, and verify dismiss/cancel/reschedule suppression. Preserve previously stored reminders, recordings and preferences.

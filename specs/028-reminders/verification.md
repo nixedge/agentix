@@ -56,3 +56,17 @@ Current signed APK (supersedes the network-permission APK above):
 SHA256: `2a8df651756e097ae0556174611c32e75f1a8f8b73e4ea7a22f121c3e9f5261c`.
 
 Signed and verified outside the store with the existing persistent host key. Update the backend and Android together to understand ringing/dismissed reports; no new TOML, credentials, listener or nginx route. The agent has not installed this APK, changed phone permissions, deployed the backend or created a real alarm. T011/T014/T017 physical acceptance remains open: locked/background looping, explicit dismissal, concurrent alarms, offline/reboot recovery, audio focus/volume and Inbox navigation must be measured on the phone. Force-stop/power-off and OS restrictions remain delivery limits.
+
+## Ten-minute local snooze
+
+Owner authorized snooze after the persistent-alarm implementation (current rebased parent1fe54af). This change is Android-only; existing backend report states/routes remain unchanged. Active notification and Inbox expose Snooze10minutes; a multi-alarm notification snoozes precisely its captured set. Snooze persists now+600seconds and advances a local occurrence generation before scheduling/stopping audio. Alarm and action identities include that generation, preventing delayed original receivers or stale buttons from triggering/extending/ending a later occurrence. Cancellation/rescheduling invalidates the local deadline when synchronized; pending snoozes can be dismissed directly in Inbox. Blocked arming remains visible.
+
+Canonical `nix build .#agentix-android` passed JVM tests, lint and APK assembly. All16reminder policy tests passed (five added for snooze): exact deadline/early dispatch, copied-entry recovery and stale snapshots, repeated/stale actions, concurrent sets, cancellation/rescheduling/dismissal, and format1 entry migration/format2 metadata validation. Lint0errors,14warnings,8hints; no dependencies or permissions were added. Actual Android file migration, notification-action dispatch, locked/offline ten-minute playback and reboot timing still require the phone checkpoint; JVM tests/build are not that evidence. Rust/backend checks were not repeated because those sources/contracts did not change.
+
+Current signed/verified APK, superseding the alarm-inbox APK:
+
+`/home/sam/home/agentix/.android-state/apks/agentix-android-028-reminders-snooze.apk`
+
+SHA256: `e16cb1fa903f101ea197cee86b3c7f7730fe183b06958e1dd6d15cb5726819b6`.
+
+Signed outside the store with the same persistent key. Install with `adb install -r` and retain existing data/settings; no backend deployment is required for this increment. The Android journal writes format2 in the existing filename, explicitly reads format1, and refuses unknown/malformed state without resetting. Old APKs cannot read format2. Original backend deadlines are unchanged; phone-local snooze deadlines appear in Inbox, not spoken backend lists. Voice snooze, custom durations and recurrence remain deferred. No phone install, permissions change, live alarm, backend deployment or push was performed by the agent.

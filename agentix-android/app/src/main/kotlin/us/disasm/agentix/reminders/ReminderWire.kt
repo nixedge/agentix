@@ -19,15 +19,18 @@ internal object ReminderWire {
             json.getJSONArray("reminders").objects().map(::reminder), json.getJSONArray("observations").objects().map(::observation))
     }
     fun journal(json: JSONObject): Journal {
-        require(json.getInt("version") == 1)
+        val version = json.getInt("version")
+        require(version in 1..2)
         return Journal(json.getString("endpoint"), UUID.fromString(json.getString("device_id")), if (json.isNull("server_id")) null else UUID.fromString(json.getString("server_id")),
             json.getLong("snapshot_sequence"), json.getLong("next_report"), json.getJSONArray("entries").objects().map {
-                Entry(reminder(it.getJSONObject("reminder")), Delivery.valueOf(it.getString("phase")), if (it.isNull("reported")) null else Delivery.valueOf(it.getString("reported")))
+                if (version == 2) require(it.has("generation") && it.has("snooze_until"))
+                Entry.restore(version, reminder(it.getJSONObject("reminder")), Delivery.valueOf(it.getString("phase")), if (it.isNull("reported")) null else Delivery.valueOf(it.getString("reported")),
+                    if (version == 1) null else it.getLong("generation"), if (version == 1 || it.isNull("snooze_until")) null else Instant.parse(it.getString("snooze_until")))
             }, json.getJSONArray("reports").objects().map(::observation))
     }
-    fun journal(value: Journal) = JSONObject().put("version", 1).put("endpoint", value.endpoint).put("device_id", value.deviceId).put("server_id", value.serverId ?: JSONObject.NULL)
+    fun journal(value: Journal) = JSONObject().put("version", 2).put("endpoint", value.endpoint).put("device_id", value.deviceId).put("server_id", value.serverId ?: JSONObject.NULL)
         .put("snapshot_sequence", value.snapshotSequence).put("next_report", value.nextReport)
-        .put("entries", JSONArray(value.entries.map { JSONObject().put("reminder", reminder(it.reminder)).put("phase", it.phase.name).put("reported", it.reported?.name ?: JSONObject.NULL) }))
+        .put("entries", JSONArray(value.entries.map { JSONObject().put("reminder", reminder(it.reminder)).put("phase", it.phase.name).put("reported", it.reported?.name ?: JSONObject.NULL).put("generation", it.generation).put("snooze_until", it.snoozeUntil?.toString() ?: JSONObject.NULL) }))
         .put("reports", JSONArray(value.reports.map(::observation)))
     fun request(endpoint: String, path: String, authorization: String?, body: JSONObject? = null, timeout: Int = 30000): JSONObject {
         val url = URL(endpoint.trimEnd('/') + path)

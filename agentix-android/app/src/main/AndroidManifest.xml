@@ -33,7 +33,7 @@
         android:theme="@style/Theme.Agentix"
         android:usesCleartextTraffic="false">
         <service android:name=".reminders.ReminderAlarmService" android:exported="false" android:foregroundServiceType="mediaPlayback" />
-        <receiver android:name=".reminders.ReminderDismissReceiver" android:exported="false" />
+        <receiver android:name=".reminders.ReminderActionReceiver" android:exported="false" />
         <receiver android:name=".reminders.ReminderAlarmReceiver" android:exported="false" />
         <receiver android:name=".reminders.ReminderRecoveryReceiver" android:exported="false">
             <intent-filter>
