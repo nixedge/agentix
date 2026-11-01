@@ -44,3 +44,9 @@ Implementation is present and local-model acceptance passes. T011 adapters are i
 - [x] T023 Add persisted local snooze deadline/generation, exact action validation and format1→2 migration; test repeated/stale actions, snapshots/restart, cancellation/rescheduling and dismissal.
 - [x] T024 Add generation-aware AlarmManager recovery plus notification/Inbox Snooze10minutes actions and honest blocked/failed display; preserve existing alarms and data.
 - [x] T025 Build/test/lint Android through Nix, sign with existing key, commit and document app-only update plus outstanding physical snooze checkpoint.
+
+## Unified Inbox / Archive
+
+- [x] T026 Add pure mixed Inbox/archive projection and bounded persistent archive registry; test resolved/firing precedence, archive/restore, ordering and identity isolation.
+- [x] T027 Replace separate lists with reusable recording/reminder cards in one feed, add Archive tab and live guarded reminder archive admission; preserve playback/share/snooze/dismiss.
+- [x] T028 Build/test/lint through Nix, sign same-key APK, commit and document update/physical UI acceptance.

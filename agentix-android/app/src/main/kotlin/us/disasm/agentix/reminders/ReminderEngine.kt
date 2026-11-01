@@ -21,6 +21,9 @@ import org.json.JSONObject
 import us.disasm.agentix.settings.AssistantSettings
 import us.disasm.agentix.core.assistant.OwnerAuthentication
 import us.disasm.agentix.core.reminders.*
+import us.disasm.agentix.core.inbox.InboxItem
+import us.disasm.agentix.core.inbox.InboxKind
+import us.disasm.agentix.core.inbox.reminderKey
 import java.io.File
 import java.time.Instant
 import java.util.UUID
@@ -179,6 +182,14 @@ object ReminderEngine {
         catch (_: RuntimeException) { transition(context, id, revision, Delivery.UNCERTAIN) }
     }
     fun inbox(context: Context): Journal? = synchronized(gate) { load(context) }
+    fun organize(context: Context, server: UUID, target: AlarmTarget, change: (InboxItem) -> Unit) = synchronized(gate) {
+        val state = checkNotNull(load(context))
+        check(state.serverId == server) { "Reminder backend changed" }
+        val entry = checkNotNull(state.entries.find { it.target() == target }) { "Reminder changed" }
+        check(!entry.firing()) { "Dismiss or snooze the active alarm before archiving" }
+        val item = InboxItem(reminderKey(server, entry.reminder.id, entry.reminder.revision), InboxKind.REMINDER, entry.deadline(), resolved = entry.reminder.cancelled || entry.phase.completed())
+        change(item)
+    }
     private fun active(state: Journal) = state.entries.filter { !it.reminder.cancelled && it.phase in setOf(Delivery.POST_PENDING, Delivery.RINGING) }.sortedBy { it.reminder.dueAt }
     internal fun activeAlarms(context: Context): Pair<UUID?, List<Entry>> = synchronized(gate) {
         val state = load(context) ?: return@synchronized null to emptyList()

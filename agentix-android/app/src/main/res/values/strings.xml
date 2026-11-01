@@ -3,12 +3,10 @@
     <string name="app_name">agentix-android</string>
     <string name="title">Agentix</string>
     <string name="inbox">Inbox</string>
+    <string name="archive">Archive</string>
     <string name="record">Record</string>
     <string name="devices">Devices</string>
     <string name="settings">Settings</string>
-    <string name="inbox_title">Your assistant inbox</string>
-    <string name="inbox_empty">No recordings or tasks yet.</string>
-    <string name="inbox_detail">Record a voice note on your phone. Server sync and task extraction will be added next.</string>
     <string name="devices_title">Find your Plaud</string>
     <string name="devices_detail">Wake your NB-100 and disconnect the official Plaud app before scanning. Discovery leaves your recordings and pairing unchanged.</string>
     <string name="scan">Scan for devices</string>

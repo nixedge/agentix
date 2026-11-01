@@ -22,7 +22,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,9 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import java.text.DateFormat
 import java.util.Date
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
 import us.disasm.agentix.R
 
 @Composable
@@ -90,59 +87,45 @@ private fun hasMicrophone(context: Context): Boolean =
     context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
 
 @Composable
-fun RecordingInbox(store: PhoneRecordingStore, playback: PhonePlayback) {
+fun RecordingCard(recording: PhoneRecording, playback: PhonePlayback, actions: @Composable () -> Unit) {
     val context = LocalContext.current
-    var library by remember { mutableStateOf(RecordingLibrary(emptyList(), false)) }
     var shareError by remember { mutableStateOf(false) }
-    LaunchedEffect(PhoneCaptureState.revision) {
-        library = withContext(Dispatchers.IO) { store.recoverAndList { PhoneCaptureState.activeFileName } }
-    }
-    DisposableEffect(playback) { onDispose { playback.stop() } }
-
-    Text(stringResource(R.string.inbox_title), style = MaterialTheme.typography.headlineSmall)
-    if (library.hasReadErrors) Text(stringResource(R.string.recording_load_failed), color = MaterialTheme.colorScheme.error)
-    playback.error?.let { Text(stringResource(it), color = MaterialTheme.colorScheme.error) }
     if (shareError) Text(stringResource(R.string.recording_share_failed), color = MaterialTheme.colorScheme.error)
-    if (library.recordings.isEmpty()) {
-        Text(stringResource(R.string.inbox_empty))
-        Text(stringResource(R.string.inbox_detail))
-    }
-    library.recordings.forEach { recording ->
-        Card(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(stringResource(R.string.recording_title, DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(recording.startedAtMillis))))
-                Text(stringResource(R.string.recording_details,
-                    DateUtils.formatElapsedTime(recording.durationMillis / 1000),
-                    Formatter.formatFileSize(context, recording.file.length())))
-                if (recording.recovered) Text(stringResource(R.string.recording_recovered))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(
-                        enabled = PhoneCaptureState.phase == CapturePhase.IDLE,
-                        onClick = {
-                            if (playback.playingFile == recording.file.name) playback.stop() else playback.play(recording.file)
-                        },
-                    ) {
-                        Text(stringResource(if (playback.playingFile == recording.file.name) R.string.recording_stop_playback else R.string.recording_play))
-                    }
-                    TextButton(onClick = {
-                        try {
-                            val uri = FileProvider.getUriForFile(context, "${context.packageName}.recordings", recording.file)
-                            val share = Intent(Intent.ACTION_SEND).apply {
-                                type = "audio/wav"
-                                putExtra(Intent.EXTRA_STREAM, uri)
-                                clipData = android.content.ClipData.newRawUri("Voice note", uri)
-                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                            }
-                            context.startActivity(Intent.createChooser(share, context.getString(R.string.recording_share)))
-                            shareError = false
-                        } catch (_: ActivityNotFoundException) {
-                            shareError = true
-                        } catch (_: IllegalArgumentException) {
-                            shareError = true
-                        }
-                    }) { Text(stringResource(R.string.recording_share)) }
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(stringResource(R.string.recording_title, DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(recording.startedAtMillis))))
+            Text(stringResource(R.string.recording_details,
+                DateUtils.formatElapsedTime(recording.durationMillis / 1000),
+                Formatter.formatFileSize(context, recording.file.length())))
+            if (recording.recovered) Text(stringResource(R.string.recording_recovered))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(
+                    enabled = PhoneCaptureState.phase == CapturePhase.IDLE,
+                    onClick = {
+                        if (playback.playingFile == recording.file.name) playback.stop() else playback.play(recording.file)
+                    },
+                ) {
+                    Text(stringResource(if (playback.playingFile == recording.file.name) R.string.recording_stop_playback else R.string.recording_play))
                 }
+                TextButton(onClick = {
+                    try {
+                        val uri = FileProvider.getUriForFile(context, "${context.packageName}.recordings", recording.file)
+                        val share = Intent(Intent.ACTION_SEND).apply {
+                            type = "audio/wav"
+                            putExtra(Intent.EXTRA_STREAM, uri)
+                            clipData = android.content.ClipData.newRawUri("Voice note", uri)
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        context.startActivity(Intent.createChooser(share, context.getString(R.string.recording_share)))
+                        shareError = false
+                    } catch (_: ActivityNotFoundException) {
+                        shareError = true
+                    } catch (_: IllegalArgumentException) {
+                        shareError = true
+                    }
+                }) { Text(stringResource(R.string.recording_share)) }
             }
+            actions()
         }
     }
 }

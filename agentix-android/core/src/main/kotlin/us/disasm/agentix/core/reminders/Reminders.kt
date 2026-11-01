@@ -32,6 +32,7 @@ data class Entry(val reminder: Reminder, val phase: Delivery = Delivery.ALARM_IN
     }
     fun target() = AlarmTarget(reminder.id, reminder.revision, generation)
     fun deadline() = snoozeUntil ?: reminder.dueAt
+    fun firing() = !reminder.cancelled && phase in setOf(Delivery.POST_PENDING, Delivery.RINGING)
     companion object {
         fun restore(version: Int, reminder: Reminder, phase: Delivery, reported: Delivery?, generation: Long?, snoozeUntil: Instant?): Entry {
             require(version in 1..2) { "Unknown reminder journal format" }

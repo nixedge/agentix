@@ -48,7 +48,7 @@ import us.disasm.agentix.recording.PhoneCaptureState
 import us.disasm.agentix.recording.PhonePlayback
 import us.disasm.agentix.recording.PhoneRecordingStore
 import us.disasm.agentix.recording.RecordScreen
-import us.disasm.agentix.recording.RecordingInbox
+import us.disasm.agentix.inbox.InboxScreen
 
 class MainActivity : ComponentActivity() {
     private lateinit var scanner: PlaudScanner
@@ -124,13 +124,14 @@ private fun AgentixApp(
 ) {
     var destination by rememberSaveable { mutableStateOf(0) }
     val contentScroll = rememberScrollState()
+    androidx.compose.runtime.LaunchedEffect(destination) { contentScroll.scrollTo(0) }
     androidx.compose.runtime.LaunchedEffect(recordRequests) {
         if (recordRequests > 0) destination = 1
     }
     androidx.compose.runtime.LaunchedEffect(reminderRequests) {
         if (reminderRequests > 0) { destination = 0; contentScroll.scrollTo(0) }
     }
-    val destinations = listOf(R.string.inbox, R.string.record, R.string.devices, R.string.settings, R.string.assistant_title)
+    val destinations = listOf(0 to R.string.inbox, 5 to R.string.archive, 1 to R.string.record, 2 to R.string.devices, 3 to R.string.settings, 4 to R.string.assistant_title)
 
     Scaffold { insets ->
         Column(
@@ -139,7 +140,7 @@ private fun AgentixApp(
         ) {
             Text(stringResource(R.string.title), style = MaterialTheme.typography.headlineLarge)
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                destinations.forEachIndexed { index, title ->
+                destinations.forEach { (index, title) ->
                     FilterChip(
                         selected = destination == index,
                         onClick = { destination = index },
@@ -152,14 +153,12 @@ private fun AgentixApp(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 when (destination) {
-                    0 -> {
-                        us.disasm.agentix.reminders.ReminderInbox(selectedReminder)
-                        RecordingInbox(recordings, playback)
-                    }
+                    0 -> InboxScreen(recordings, playback, archive = false, selected = selectedReminder)
                     1 -> RecordScreen(playback)
                     2 -> DevicesScreen(scanner)
                     3 -> SettingsScreen(settings)
                     4 -> AssistantSetupScreen(assistantActive)
+                    5 -> InboxScreen(recordings, playback, archive = true, selected = null)
                 }
             }
         }

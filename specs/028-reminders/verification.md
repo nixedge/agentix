@@ -70,3 +70,19 @@ Current signed/verified APK, superseding the alarm-inbox APK:
 SHA256: `e16cb1fa903f101ea197cee86b3c7f7730fe183b06958e1dd6d15cb5726819b6`.
 
 Signed outside the store with the same persistent key. Install with `adb install -r` and retain existing data/settings; no backend deployment is required for this increment. The Android journal writes format2 in the existing filename, explicitly reads format1, and refuses unknown/malformed state without resetting. Old APKs cannot read format2. Original backend deadlines are unchanged; phone-local snooze deadlines appear in Inbox, not spoken backend lists. Voice snooze, custom durations and recurrence remain deferred. No phone install, permissions change, live alarm, backend deployment or push was performed by the agent.
+
+## Unified Inbox and Archive — 2026-11-01
+
+Implemented in the existing028worktree, parent7c45745. Inbox is now one mixed feed of reminders and completed recordings, with firing alarms first and no separate type sections. Dismissed/cancelled/posted reminder history appears in Archive automatically. Other items support Archive/Restore; firing or starting alarms stay visible in Inbox with Archive disabled. Reminder archive admission validates live namespace/revision/generation and firing state under the journal gate before changing organization. Archiving does not alter deadlines/delivery state or delete/move recordings. Archived future alarms surface again when firing. Recording playback/share and reminder Snooze/Dismiss controls remain in the reusable cards.
+
+Manual organization is a separate versioned bounded AtomicFile registry (`inbox-archives-v1.json`). Restore applies to manual archives, not resolved reminder history. Unknown/malformed metadata is shown as an error rather than cleared: active alarm controls and resolved history remain available, while items with unknown manual archive status stay hidden. Existing reminder format2, recording files, preferences and pending turn identities are retained; no dependencies, permissions, backend contracts or deployment configuration changed.
+
+Final canonical `nix build .#agentix-android` passed JVM tests, lint and assembly. Seven new Inbox policy tests cover mixed partition/order, archive/restore, automatic resolved history, firing precedence and stale actions, snoozed/blocked items, namespace/revision isolation, and unavailable-registry handling. Existing16reminder policy tests pass. Final lint0errors/14warnings/8hints. Initial lint caught indentation remaining after extracting recording cards; corrected it and reran the same build successfully. Rust/backend checks were not repeated because their sources/contracts did not change. Actual UI taps, AtomicFile persistence on the phone, archived recording playback/share, and archived-reminder firing/race behavior remain physical acceptance checks (quickstart step11).
+
+Current same-key signed/verified APK, superseding the snooze APK:
+
+`/home/sam/home/agentix/.android-state/apks/agentix-android-028-reminders-unified-inbox.apk`
+
+SHA256: `504aa1613fe99913838f28c73f032e23a8d88b5b6b892c0419d34b94d2b23c19`.
+
+Install with `adb install -r`; app-only update, with no uninstall or backend deployment needed. Signing used the existing persistent host key outside the Nix store. No phone installation, permission change, live archive/alarm action, deployment or push was performed by the agent.
