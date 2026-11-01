@@ -5,6 +5,7 @@
   jdk17,
   sdk,
   aapt2,
+  wake,
 }:
 stdenv.mkDerivation (finalAttrs: {
   pname = "agentix-android";
@@ -20,7 +21,11 @@ stdenv.mkDerivation (finalAttrs: {
   JAVA_HOME = "${jdk17}";
   ANDROID_HOME = sdk;
   ANDROID_SDK_ROOT = sdk;
-  gradleFlags = ["-Pandroid.aapt2FromMavenOverride=${aapt2}"];
+  gradleFlags = [
+    "-Pandroid.aapt2FromMavenOverride=${aapt2}"
+    "-PagentixSherpaAar=${wake.aar}"
+    "-PagentixWakeModel=${wake.model}"
+  ];
   gradleBuildTask = ":app:assembleDebug";
   doCheck = true;
   gradleCheckTask = ":core:test :app:lintDebug";

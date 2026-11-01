@@ -5,4 +5,4 @@
     android:settingsActivity="us.disasm.agentix.MainActivity"
     android:supportsAssist="true"
     android:supportsLocalInteraction="false"
-    android:supportsLaunchVoiceAssistFromKeyguard="false" />
+    android:supportsLaunchVoiceAssistFromKeyguard="true" />

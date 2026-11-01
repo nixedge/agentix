@@ -11,6 +11,7 @@ import androidx.compose.runtime.setValue
 import us.disasm.agentix.R
 import us.disasm.agentix.core.assistant.*
 import java.util.Locale
+import us.disasm.agentix.wake.WakeWordRuntime
 
 internal class OfflineSpeaker(context: Context, private val status: (Int) -> Unit) {
     private val app = context.applicationContext
@@ -52,9 +53,9 @@ internal class OfflineSpeaker(context: Context, private val status: (Int) -> Uni
             engineName = tts.defaultEngine
             tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                 override fun onStart(utteranceId: String?) = report(utteranceId, R.string.assistant_speaking)
-                override fun onDone(utteranceId: String?) = report(utteranceId, R.string.assistant_speech_done)
+                override fun onDone(utteranceId: String?) = report(utteranceId, R.string.assistant_speech_done, finished = true)
                 @Deprecated("Required legacy callback")
-                override fun onError(utteranceId: String?) = report(utteranceId, R.string.assistant_tts_missing)
+                override fun onError(utteranceId: String?) = report(utteranceId, R.string.assistant_tts_missing, finished = true)
             })
             configure()
             val queued = pending
@@ -109,16 +110,33 @@ internal class OfflineSpeaker(context: Context, private val status: (Int) -> Uni
             return
         }
         generation++
-        try {
-            if (engine?.speak(text, TextToSpeech.QUEUE_FLUSH, null, generation.toString()) != TextToSpeech.SUCCESS) status(R.string.assistant_tts_missing)
-        } catch (_: RuntimeException) { status(R.string.assistant_tts_missing) }
+        val current = generation
+        WakeWordRuntime.hold(this) {
+            if (!closed && current == generation) {
+                try {
+                    if (engine?.speak(text, TextToSpeech.QUEUE_FLUSH, null, current.toString()) != TextToSpeech.SUCCESS) {
+                        WakeWordRuntime.release(this)
+                        status(R.string.assistant_tts_missing)
+                    }
+                } catch (_: RuntimeException) {
+                    WakeWordRuntime.release(this)
+                    status(R.string.assistant_tts_missing)
+                }
+            }
+        }
     }
-    private fun report(id: String?, message: Int) {
-        handler.post { if (!closed && id == generation.toString()) status(message) }
+    private fun report(id: String?, message: Int, finished: Boolean = false) {
+        handler.post {
+            if (!closed && id == generation.toString()) {
+                if (finished) WakeWordRuntime.release(this)
+                status(message)
+            }
+        }
     }
     fun stop() {
         pending = null; generation++
         try { engine?.stop() } catch (_: RuntimeException) { /* Engine disconnected. */ }
+        WakeWordRuntime.release(this)
     }
     fun close() {
         stop(); closed = true; cycle++

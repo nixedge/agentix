@@ -1,0 +1,9 @@
+# Wake listening state
+
+`wake_word` private preferences store one `enabled` boolean: owner enabled the feature previously. It is not evidence of a running service and never starts capture at app launch/boot. Explicit Start sets true after FGS promotion; explicit Stop sets false. Errors leave preference intact and require another explicit Start.
+
+Runtime states are stopped, starting, listening, paused, stopping and error, with one process-local status shown in setup/notification. The non-sticky service owns one worker at a time; the worker alone creates/stops/releases AudioRecord, native KeywordSpotter/OnlineStream and its bounded wake lock. Native objects never cross threads. Worker exits post quiet to the main thread only after cleanup.
+
+The serialized core gate holds a set of competing owners, optional quiet callbacks and a capture reservation. Reserve succeeds only with no capture/no holds. Hold while capturing queues work; quiet releases capture then admits still-held callbacks. Releasing an owner before quiet deletes its callback. Existing assistant/note capture arbitration remains in force after wake yields. Recognition, each backend coroutine and each speaker own separate holds; coroutine completion cannot release a newer request's hold. Speaker callbacks carry generation identity.
+
+Wake admission uses a monotonically changing generation and three-second monotonic cooldown. Stop/pause invalidates generation; worker outcomes must match the current cycle and recheck permissions/default role/holds. A short launch hold prevents another detector from starting while the protected assistant session opens. No keyword audio or derived text is persisted, uploaded or passed to the backend. The existing command turn begins only after wake capture releases and the assistant is unlocked/focused. Pending backend instructions retain existing identity/retry semantics.

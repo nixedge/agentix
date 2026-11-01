@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
+import android.os.Build
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -27,6 +28,9 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -37,6 +41,7 @@ class AssistantActivity : ComponentActivity() {
     private lateinit var controller: AssistantController
     private var voiceInvocation = false
     private var foreground = false
+    private var locked by mutableStateOf(true)
     private val permission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
         controller.permissionResult(it)
     }
@@ -46,9 +51,20 @@ class AssistantActivity : ComponentActivity() {
         enableEdgeToEdge()
         controller = AssistantController(this)
         voiceInvocation = savedInstanceState == null && intent?.action == ACTION_VOICE_TURN
+        configureWakeWindow(intent)
+        locked = getSystemService(KeyguardManager::class.java).isDeviceLocked
         setContent {
             MaterialTheme {
-                AssistantConversation(controller, ::talk, ::finish) {
+                if (locked) {
+                    Scaffold { insets ->
+                        Column(Modifier.fillMaxSize().padding(insets).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                            Text("Agentix assistant", style = MaterialTheme.typography.headlineLarge)
+                            Text("Unlock your phone to speak a command.")
+                            Button(onClick = ::unlock) { Text("Unlock") }
+                            TextButton(onClick = ::finish) { Text("Close") }
+                        }
+                    }
+                } else AssistantConversation(controller, ::talk, ::finish) {
                     startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
                 }
             }
@@ -58,7 +74,9 @@ class AssistantActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        configureWakeWindow(intent)
         controller.cancel()
+        locked = getSystemService(KeyguardManager::class.java).isDeviceLocked
         voiceInvocation = intent.action == ACTION_VOICE_TURN
         if (foreground && hasWindowFocus()) consumeVoiceInvocation()
     }
@@ -66,7 +84,8 @@ class AssistantActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         foreground = true
-        if (hasWindowFocus()) {
+        locked = getSystemService(KeyguardManager::class.java).isDeviceLocked
+        if (hasWindowFocus() && !locked) {
             controller.resume()
             consumeVoiceInvocation()
         }
@@ -75,15 +94,18 @@ class AssistantActivity : ComponentActivity() {
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus && foreground) {
-            controller.resume()
-            consumeVoiceInvocation()
+            locked = getSystemService(KeyguardManager::class.java).isDeviceLocked
+            if (!locked) {
+                controller.resume()
+                consumeVoiceInvocation()
+            }
         } else if (!hasFocus) {
             controller.pause()
         }
     }
 
     private fun consumeVoiceInvocation() {
-        if (!voiceInvocation) return
+        if (!voiceInvocation || locked) return
         voiceInvocation = false
         talk()
     }
@@ -113,6 +135,26 @@ class AssistantActivity : ComponentActivity() {
     companion object {
         // Only our protected voice session can launch this non-exported activity with this action.
         const val ACTION_VOICE_TURN = "us.disasm.agentix.VOICE_TURN"
+    }
+
+    private fun configureWakeWindow(intent: Intent?) {
+        val wake = intent?.getBooleanExtra(AgentixVoiceService.WAKE, false) == true
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(wake)
+            setTurnScreenOn(wake)
+        }
+    }
+
+    private fun unlock() {
+        getSystemService(KeyguardManager::class.java).requestDismissKeyguard(this, object : KeyguardManager.KeyguardDismissCallback() {
+            override fun onDismissSucceeded() {
+                locked = getSystemService(KeyguardManager::class.java).isDeviceLocked
+                if (foreground && hasWindowFocus() && !locked) {
+                    controller.resume()
+                    consumeVoiceInvocation()
+                }
+            }
+        })
     }
 }
 

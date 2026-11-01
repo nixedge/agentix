@@ -23,12 +23,13 @@ if [[ -e "$output" || -L "$output" ]]; then
 fi
 work=$(mktemp -d -- "$(dirname -- "$output")/.agentix-sign.XXXXXXXX")
 trap 'rm -rf -- "$work"' EXIT
-"$AGENTIX_ANDROID_BUILD_TOOLS/zipalign" -f -p 4 "$input" "$work/aligned.apk"
+"$AGENTIX_ANDROID_BUILD_TOOLS/zipalign" -f -P 16 4 "$input" "$work/aligned.apk"
 "$AGENTIX_ANDROID_BUILD_TOOLS/apksigner" sign \
   --ks "$keystore" --ks-key-alias "$alias" \
   --ks-pass "file:$password_file" --v4-signing-enabled false \
   --out "$work/signed.apk" "$work/aligned.apk"
 "$AGENTIX_ANDROID_BUILD_TOOLS/apksigner" verify "$work/signed.apk"
+"$AGENTIX_ANDROID_BUILD_TOOLS/zipalign" -c -P 16 4 "$work/signed.apk"
 # A hard link publishes only a verified APK and fails if output appeared meanwhile.
 ln -- "$work/signed.apk" "$output"
 echo "Signed and verified: $output"

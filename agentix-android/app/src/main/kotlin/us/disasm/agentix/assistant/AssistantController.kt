@@ -26,6 +26,7 @@ import us.disasm.agentix.core.assistant.geminiRequest
 import us.disasm.agentix.core.assistant.SpeechProfile
 import us.disasm.agentix.recording.CapturePhase
 import us.disasm.agentix.recording.PhoneCaptureState
+import us.disasm.agentix.wake.WakeWordRuntime
 
 internal class AssistantController(
     private val context: Context,
@@ -210,6 +211,8 @@ internal class AssistantController(
             }
         }
         message = R.string.assistant_processing
+        val wakeHold = Any()
+        WakeWordRuntime.hold(wakeHold)
         request = scope.launch {
             try {
                 val result = client.tell(command)
@@ -231,6 +234,8 @@ internal class AssistantController(
                     message = R.string.assistant_request_failed
                     refreshBackend()
                 }
+            } finally {
+                WakeWordRuntime.release(wakeHold)
             }
         }
     }

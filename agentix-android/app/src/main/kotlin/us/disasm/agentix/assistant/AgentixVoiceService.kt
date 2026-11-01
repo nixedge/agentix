@@ -12,6 +12,29 @@ class AgentixVoiceService : VoiceInteractionService() {
     override fun onReady() {
         super.onReady()
         setDisabledShowContext(VoiceInteractionSession.SHOW_WITH_ASSIST or VoiceInteractionSession.SHOW_WITH_SCREENSHOT)
+        current = this
+    }
+
+    override fun onShutdown() {
+        if (current === this) current = null
+        super.onShutdown()
+    }
+
+    override fun onDestroy() {
+        if (current === this) current = null
+        super.onDestroy()
+    }
+
+    companion object {
+        private var current: AgentixVoiceService? = null
+        internal const val WAKE = "agentix_wake_word"
+        internal fun showWakeSession(): Boolean {
+            val service = current ?: return false
+            return try {
+                service.showSession(Bundle().apply { putBoolean(WAKE, true) }, 0)
+                true
+            } catch (_: RuntimeException) { false }
+        }
     }
 }
 
@@ -32,6 +55,7 @@ private class AgentixSession(context: android.content.Context) : VoiceInteractio
             startAssistantActivity(
                 Intent(context, AssistantActivity::class.java)
                     .setAction(AssistantActivity.ACTION_VOICE_TURN)
+                    .putExtra(AgentixVoiceService.WAKE, args?.getBoolean(AgentixVoiceService.WAKE, false) == true)
                     .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
             )
         } catch (_: RuntimeException) {

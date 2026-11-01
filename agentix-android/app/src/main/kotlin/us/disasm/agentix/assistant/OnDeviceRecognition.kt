@@ -10,6 +10,7 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import java.util.Locale
+import us.disasm.agentix.wake.WakeWordRuntime
 
 internal interface RecognitionEvents {
     fun ready() {}
@@ -26,10 +27,16 @@ internal class OnDeviceRecognition(
     private val handler = Handler(Looper.getMainLooper())
     private var recognizer: SpeechRecognizer? = null
     private var closed = false
+    private var starting = false
     private val timeout = Runnable { fail(SpeechRecognizer.ERROR_SPEECH_TIMEOUT) }
 
     fun start(request: Intent? = null) {
-        if (closed || recognizer != null) return
+        if (closed || recognizer != null || starting) return
+        starting = true
+        WakeWordRuntime.hold(this) { if (!closed) startWhenQuiet(request) }
+    }
+
+    private fun startWhenQuiet(request: Intent?) {
         if (!available(context)) {
             fail(SpeechRecognizer.ERROR_CLIENT)
             return
@@ -90,7 +97,6 @@ internal class OnDeviceRecognition(
     fun close() {
         if (closed) return
         closed = true
-        AssistantMicrophone.release(this)
         handler.removeCallbacks(timeout)
         val engine = recognizer
         recognizer = null
@@ -100,6 +106,8 @@ internal class OnDeviceRecognition(
             // Release even if the recognition provider disconnected.
         } finally {
             try { engine?.destroy() } catch (_: RuntimeException) { /* Already disconnected. */ }
+            AssistantMicrophone.release(this)
+            WakeWordRuntime.release(this)
         }
     }
 

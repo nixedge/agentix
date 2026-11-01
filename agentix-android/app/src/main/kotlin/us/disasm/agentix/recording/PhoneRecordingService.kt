@@ -27,6 +27,7 @@ import us.disasm.agentix.MainActivity
 import us.disasm.agentix.R
 import us.disasm.agentix.assistant.AssistantMicrophone
 import us.disasm.agentix.core.audio.PcmWave
+import us.disasm.agentix.wake.WakeWordRuntime
 
 enum class CapturePhase { IDLE, STARTING, RECORDING, STOPPING }
 
@@ -46,6 +47,8 @@ class PhoneRecordingService : Service() {
     private val handler = Handler(Looper.getMainLooper())
     @Volatile private var stopRequested = false
     private var worker: Thread? = null
+    private var waitingForWake = false
+    private var destroyed = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -53,9 +56,15 @@ class PhoneRecordingService : Service() {
         when (intent?.action) {
             ACTION_STOP -> {
                 stopRequested = true
-                if (worker == null) stopSelf() else PhoneCaptureState.phase = CapturePhase.STOPPING
+                if (worker == null) {
+                    waitingForWake = false
+                    PhoneCaptureState.phase = CapturePhase.IDLE
+                    WakeWordRuntime.release(this)
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopSelf()
+                } else PhoneCaptureState.phase = CapturePhase.STOPPING
             }
-            ACTION_START -> if (worker == null) begin()
+            ACTION_START -> if (worker == null && !waitingForWake) begin()
             else -> if (worker == null) stopSelf()
         }
         return START_NOT_STICKY
@@ -100,16 +109,31 @@ class PhoneRecordingService : Service() {
             stopRequested = false
             PhoneCaptureState.phase = CapturePhase.STARTING
             PhoneCaptureState.message = null
-            val store = PhoneRecordingStore(filesDir)
-            val partial = store.newPartial()
-            PhoneCaptureState.activeFileName = partial.name
-            worker = Thread({ capture(store, partial) }, "agentix-phone-capture").also { it.start() }
+            waitingForWake = true
+            WakeWordRuntime.hold(this) {
+                waitingForWake = false
+                if (!stopRequested && !destroyed) {
+                    try {
+                        val store = PhoneRecordingStore(filesDir)
+                        val partial = store.newPartial()
+                        PhoneCaptureState.activeFileName = partial.name
+                        worker = Thread({ capture(store, partial) }, "agentix-phone-capture").also { it.start() }
+                    } catch (_: RuntimeException) { failedToStart() }
+                }
+            }
         } catch (_: RuntimeException) {
-            PhoneCaptureState.phase = CapturePhase.IDLE
-            PhoneCaptureState.activeFileName = null
-            PhoneCaptureState.message = R.string.record_failed
-            stopSelf()
+            failedToStart()
         }
+    }
+
+    private fun failedToStart() {
+        waitingForWake = false
+        PhoneCaptureState.phase = CapturePhase.IDLE
+        PhoneCaptureState.activeFileName = null
+        PhoneCaptureState.message = R.string.record_failed
+        WakeWordRuntime.release(this)
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
     }
 
     @SuppressLint("MissingPermission")
@@ -177,6 +201,7 @@ class PhoneRecordingService : Service() {
                 worker = null
                 PhoneCaptureState.activeFileName = null
                 PhoneCaptureState.phase = CapturePhase.IDLE
+                WakeWordRuntime.release(this)
                 PhoneCaptureState.message = resultMessage
                 PhoneCaptureState.refreshLibrary()
                 stopForeground(STOP_FOREGROUND_REMOVE)
@@ -186,7 +211,13 @@ class PhoneRecordingService : Service() {
     }
 
     override fun onDestroy() {
+        destroyed = true
         stopRequested = true
+        if (worker == null) {
+            waitingForWake = false
+            PhoneCaptureState.phase = CapturePhase.IDLE
+            WakeWordRuntime.release(this)
+        }
         super.onDestroy()
     }
 

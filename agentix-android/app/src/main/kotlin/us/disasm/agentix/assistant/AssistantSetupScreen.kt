@@ -27,6 +27,6 @@ fun AssistantSetupScreen(active: Boolean) {
     Button(onClick = { context.startActivity(Intent(context, AssistantActivity::class.java)) }) {
         Text(stringResource(R.string.assistant_open))
     }
-    Text(stringResource(R.string.assistant_no_wakeword))
+    us.disasm.agentix.wake.WakeWordSetup(active)
     us.disasm.agentix.reminders.ReminderSetup()
 }

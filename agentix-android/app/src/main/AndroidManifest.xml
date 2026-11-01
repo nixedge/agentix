@@ -34,6 +34,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Agentix"
         android:usesCleartextTraffic="false">
+        <service android:name=".wake.WakeWordService" android:exported="false" android:foregroundServiceType="microphone" />
         <service android:name=".reminders.ReminderAlarmService" android:exported="false" android:foregroundServiceType="mediaPlayback" />
         <receiver android:name=".reminders.ReminderActionReceiver" android:exported="false" />
         <receiver android:name=".reminders.ReminderAlarmReceiver" android:exported="false" />
