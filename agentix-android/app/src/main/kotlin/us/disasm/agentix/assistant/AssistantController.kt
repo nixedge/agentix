@@ -52,7 +52,12 @@ internal class AssistantController(
         private set
     var speakReplies by mutableStateOf(preferences.getBoolean("speak_replies", true))
         private set
-    private val speaker = OfflineSpeaker(context) { speechStatus = it }
+    private val speaker = AssistantSpeaker(context) { speechStatus = it }
+    val speechOutput get() = speaker.output
+    val canPreviewVoice get() = speaker.canPreview
+    fun chooseSpeechOutput(output: us.disasm.agentix.core.assistant.SpeechOutput) {
+        if (phase != TurnPhase.LISTENING && phase != TurnPhase.PROCESSING) { stopSpeaking(); speaker.choose(output) }
+    }
     val voiceProfile get() = speaker.profile
     val voices get() = speaker.voices
     val selectedVoice get() = speaker.selected

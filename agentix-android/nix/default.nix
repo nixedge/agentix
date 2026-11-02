@@ -6,6 +6,7 @@
   sdk,
   aapt2,
   wake,
+  kokoro,
 }:
 stdenv.mkDerivation (finalAttrs: {
   pname = "agentix-android";
@@ -25,6 +26,7 @@ stdenv.mkDerivation (finalAttrs: {
     "-Pandroid.aapt2FromMavenOverride=${aapt2}"
     "-PagentixSherpaAar=${wake.aar}"
     "-PagentixWakeModel=${wake.model}"
+    "-PagentixKokoroModel=${kokoro}"
   ];
   gradleBuildTask = ":app:assembleDebug";
   doCheck = true;

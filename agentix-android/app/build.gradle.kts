@@ -19,6 +19,8 @@ android {
 
     buildFeatures { compose = true }
     sourceSets.getByName("main").assets.srcDir(providers.gradleProperty("agentixWakeModel").get())
+    sourceSets.getByName("main").assets.srcDir(providers.gradleProperty("agentixKokoroModel").get())
+    androidResources { noCompress += "litertlm" }
     buildTypes {
         getByName("debug") {
             signingConfig = null
@@ -37,6 +39,7 @@ android {
 kotlin { jvmToolchain(17) }
 
 dependencies {
+    implementation("com.google.mediapipe:tasks-audio:1.2.0")
     implementation(files(providers.gradleProperty("agentixSherpaAar").get()))
     implementation(project(":core"))
     implementation(platform("androidx.compose:compose-bom:2025.05.01"))
