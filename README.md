@@ -153,9 +153,22 @@ just stats
 just index /path/to/your/repo
 ```
 
-This walks the repo, extracts symbols for TypeScript, JavaScript, Python, Rust, and Haskell
+This walks the repo, extracts symbols for TypeScript, JavaScript, Python, Rust, Haskell, Java, and Kotlin
 files using tree-sitter (functions, classes, structs, etc.), and falls back to overlapping
 line windows for other file types. Files that haven't changed since the last run are skipped.
+
+Android repositories include `.kt` and `.kts` sources (including `build.gradle.kts`),
+Java, XML manifests/resources, `.gradle` scripts, and `.properties` configuration.
+Kotlin uses symbol chunks; XML, Groovy Gradle scripts, and properties use line windows.
+Build output and `.gradle`, `.kotlin`, and `.idea` caches are excluded, along with files
+covered by Git ignore rules. Keep private configuration such as `local.properties` ignored.
+Use `search_code` or `bm25_search` with `language="kotlin"` for Kotlin code,
+`language="xml"` for manifests/resources, `language="groovy"` for `.gradle`, or
+`language="properties"` for properties. These files belong to code search, not `search_docs`.
+
+After updating the indexer, run `just index /path/to/repo` again to add newly supported
+Android files. For a Git revision already marked complete, rerun its original
+`ingest git <url> --rev <revision>` command with `--force`.
 
 Re-index everything from scratch:
 ```bash

@@ -44,6 +44,149 @@ async fn remote_code_docs_ingestion_retag_and_prune_use_shared_store() -> Result
 }
 
 #[tokio::test]
+async fn android_sources_and_configuration_are_searchable_locally() -> Result<()> {
+    exercise_android(false).await
+}
+
+#[tokio::test]
+async fn android_sources_and_configuration_are_searchable_remotely() -> Result<()> {
+    exercise_android(true).await
+}
+
+async fn exercise_android(remote: bool) -> Result<()> {
+    let tmp = tempfile::tempdir()?;
+    let repo = tmp.path().join("android");
+    std::fs::create_dir_all(repo.join(".git"))?;
+    std::fs::write(repo.join(".gitignore"), "ignored/\nlocal.properties\n")?;
+    let fixtures = [
+        ("app/src/main/kotlin/InboxScreen.kt", "kotlin", "composeinboxmarker", "@Composable\nfun InboxScreen() {\n    Text(\"composeinboxmarker\")\n}\n"),
+        ("app/src/main/kotlin/Reminder.kt", "kotlin", "remindermethodmarker", "class Reminder {\n    fun dismiss() {\n        println(\"remindermethodmarker\")\n    }\n}\n"),
+        ("app/src/main/java/Legacy.java", "java", "legacyjavamarker", "class Legacy {\n    void open() {\n        System.out.println(\"legacyjavamarker\");\n    }\n}\n"),
+        ("build.gradle.kts", "kotlin", "kotlingradlemarker", "plugins {\n    id(\"kotlingradlemarker\")\n}\n"),
+        ("settings.gradle", "groovy", "groovygradlemarker", "rootProject.name = 'groovygradlemarker'\n"),
+        ("gradle.properties", "properties", "androidpropertymarker", "androidpropertymarker=true\n"),
+        ("app/src/main/AndroidManifest.xml", "xml", "manifestactivitymarker", "<manifest>\n    <application android:label=\"manifestactivitymarker\" />\n</manifest>\n"),
+        ("app/src/main/res/values/strings.xml", "xml", "androidresourcemarker", "<resources>\n    <string name=\"app_name\">androidresourcemarker</string>\n</resources>\n"),
+    ];
+    for (file, _, _, content) in fixtures {
+        let path = repo.join(file);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(path, content)?;
+    }
+    for file in [
+        "app/build/generated/Generated.kt",
+        ".gradle/cache/Cache.kt",
+        ".kotlin/sessions/Session.kt",
+        ".idea/workspace.xml",
+        "ignored/Private.kt",
+        "local.properties",
+    ] {
+        let path = repo.join(file);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(path, "generatednoisemarker")?;
+    }
+    let index = tmp.path().join("index");
+    let local = Store::open(&index, "fixture", 4).await?;
+    let storage = if remote {
+        Some(http::StorageServer::start(local, Some(http::TOKEN.into()))?)
+    } else {
+        None
+    };
+    let remote = storage.as_ref().map(|s| s.url.as_str());
+    let server = Embeddings::start()?;
+    let path = repo.to_str().context("UTF8 Android fixture path")?;
+    run(
+        &index,
+        &server,
+        remote,
+        &["code", path, "--project", "android"],
+    )?;
+    let reader = Store::open(&index, "fixture", 4).await?;
+    let repo_filter = agentix_store::repo_filter(path);
+    let project = project_filter(&["android".into()]);
+    for (file, language, marker, source) in fixtures {
+        let filter = format!("{repo_filter} AND ({project}) AND language = '{language}'");
+        let hits = reader.keyword("code_chunks", marker, &filter, 10).await?;
+        ensure!(!hits.is_empty(), "missing Android search result for {file}");
+        for (row, _) in hits {
+            assert_eq!(row["file_path"], file);
+            let start = row["start_line"].as_u64().context("chunk start")? as usize;
+            let end = row["end_line"].as_u64().context("chunk end")? as usize;
+            ensure!(start > 0 && end >= start && end <= source.lines().count());
+            let expected = source
+                .lines()
+                .skip(start - 1)
+                .take(end - start + 1)
+                .collect::<Vec<_>>()
+                .join("\n");
+            assert_eq!(
+                row["content"].as_str().context("chunk content")?.trim_end(),
+                expected
+            );
+        }
+    }
+    let functions = reader.keyword("code_chunks", "composeinboxmarker", &format!("{repo_filter} AND ({project}) AND language = 'kotlin' AND symbol_kind = 'function'"), 10).await?;
+    assert_eq!(functions.len(), 1);
+    ensure!(functions[0].0["content"]
+        .as_str()
+        .context("Compose function")?
+        .contains("@Composable"));
+    let methods = reader
+        .keyword(
+            "code_chunks",
+            "remindermethodmarker",
+            &format!("{repo_filter} AND language = 'kotlin' AND symbol_kind = 'method'"),
+            10,
+        )
+        .await?;
+    assert_eq!(methods.len(), 1);
+    assert!(reader
+        .keyword(
+            "code_chunks",
+            "composeinboxmarker",
+            &project_filter(&["other".into()]),
+            10
+        )
+        .await?
+        .is_empty());
+    let rows = reader.rows("code_chunks", &repo_filter).await?;
+    ensure!(
+        rows.iter().all(|row| fixtures
+            .iter()
+            .any(|(file, _, _, _)| row["file_path"] == *file)),
+        "unexpected Android generated/cache file indexed"
+    );
+    let calls = server.requests.load(Ordering::Relaxed);
+    run(
+        &index,
+        &server,
+        remote,
+        &["code", path, "--project", "android"],
+    )?;
+    assert_eq!(
+        server.requests.load(Ordering::Relaxed),
+        calls,
+        "unchanged Android files re-embedded"
+    );
+    std::fs::remove_file(repo.join("app/src/main/kotlin/InboxScreen.kt"))?;
+    run(
+        &index,
+        &server,
+        remote,
+        &["code", path, "--project", "android"],
+    )?;
+    assert!(reader
+        .keyword("code_chunks", "composeinboxmarker", &repo_filter, 10)
+        .await?
+        .is_empty());
+    Ok(())
+}
+
+#[tokio::test]
 async fn git_ingestion_resumes_partial_rows_and_requires_requested_docs_completion() -> Result<()> {
     let tmp = tempfile::tempdir()?;
     let repo = tmp.path().join("git-source");

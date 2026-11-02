@@ -14,9 +14,39 @@ const MAX_CHUNK_BYTES: usize = 8_000;
 const MAX_CHUNKS_PER_FILE: usize = 256;
 
 const CODE_EXTENSIONS: &[&str] = &[
-    "hs", "lhs", "hsc", "chs", "rs", "py", "ts", "tsx", "js", "jsx", "nix", "go", "java", "scala",
-    "ml", "mli", "c", "cpp", "h", "hpp", "sql", "sh", "toml", "yaml", "yml", "json", "tex",
+    "hs",
+    "lhs",
+    "hsc",
+    "chs",
+    "rs",
+    "py",
+    "ts",
+    "tsx",
+    "js",
+    "jsx",
+    "nix",
+    "go",
+    "java",
+    "kt",
+    "kts",
+    "scala",
+    "ml",
+    "mli",
+    "c",
+    "cpp",
+    "h",
+    "hpp",
+    "sql",
+    "sh",
+    "toml",
+    "yaml",
+    "yml",
+    "json",
+    "tex",
     "cabal",
+    "xml",
+    "gradle",
+    "properties",
 ];
 
 const SKIP_DIRS: &[&str] = &[
@@ -31,6 +61,9 @@ const SKIP_DIRS: &[&str] = &[
     ".direnv",
     "coverage",
     ".next",
+    ".gradle",
+    ".kotlin",
+    ".idea",
     "out",
 ];
 
@@ -226,6 +259,9 @@ fn detect_language(path: &Path) -> String {
         "go" => "go",
         "java" => "java",
         "kt" | "kts" => "kotlin",
+        "xml" => "xml",
+        "gradle" => "groovy",
+        "properties" => "properties",
         "scala" => "scala",
         "ml" | "mli" => "ocaml",
         "c" | "h" => "c",
@@ -438,6 +474,49 @@ mod tests {
     }
 
     // ── make_chunks ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn android_file_discovery_respects_ignores_and_excludes_generated_output() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let repo = tmp.path();
+        std::fs::create_dir(repo.join(".git"))?;
+        std::fs::write(repo.join(".gitignore"), "ignored/\nlocal.properties\n")?;
+        let expected = [
+            ("app/src/main/kotlin/MainActivity.kt", "kotlin"),
+            ("app/src/test/kotlin/ActivityTest.KT", "kotlin"),
+            ("build.gradle.kts", "kotlin"),
+            ("settings.gradle", "groovy"),
+            ("gradle.properties", "properties"),
+            ("gradle/wrapper/gradle-wrapper.properties", "properties"),
+            ("app/src/main/AndroidManifest.xml", "xml"),
+            ("app/src/main/res/values/strings.xml", "xml"),
+            ("app/src/main/java/Legacy.java", "java"),
+        ];
+        for path in expected.iter().map(|(path, _)| *path).chain([
+            "app/build/generated/Generated.kt",
+            ".gradle/cache/Cache.kt",
+            ".kotlin/sessions/Session.kt",
+            ".idea/workspace.xml",
+            "ignored/Secret.kt",
+            "local.properties",
+            "app/src/main/assets/voice.onnx",
+        ]) {
+            let path = repo.join(path);
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::write(path, "fixture")?;
+        }
+        let mut files = collect_files(repo, &[]);
+        files.sort();
+        let mut wanted: Vec<_> = expected.iter().map(|(path, _)| repo.join(path)).collect();
+        wanted.sort();
+        assert_eq!(files, wanted);
+        for (path, language) in expected {
+            assert_eq!(detect_language(Path::new(path)), language);
+        }
+        Ok(())
+    }
 
     #[test]
     fn make_chunks_unknown_language_falls_back_to_lines() {
