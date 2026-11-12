@@ -7,12 +7,19 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 use std::{env, fs, thread};
 
+mod gpu;
+
 #[derive(Parser)]
 #[command(
     name = "codex-jail",
     about = "Run codex in a bubblewrap sandbox with nix daemon access"
 )]
 struct Args {
+    /// Grant local NVIDIA compute/DRM render devices and read-only host drivers.
+    /// Disabled by default; grants GPU compute access, not remote GPU access.
+    #[arg(long)]
+    gpu: bool,
+
     /// Bind path read-only at its real path inside the jail. Repeatable.
     #[arg(long = "ro", value_name = "PATH")]
     ro_paths: Vec<PathBuf>,
@@ -163,7 +170,14 @@ fn git_global_config(key: &str) -> Option<String> {
 
 fn main() -> Result<()> {
     let args = Args::parse();
+    let code = run(args, gpu::GpuAccess::discover)?;
+    std::process::exit(code);
+}
 
+fn run(
+    args: Args,
+    discover_gpu: impl FnOnce(&HashMap<String, String>) -> Result<gpu::GpuAccess>,
+) -> Result<i32> {
     let home = PathBuf::from(env::var("HOME").context("HOME not set")?);
     let cwd = env::current_dir().context("cannot determine current directory")?;
     let bin_dir = PathBuf::from(
@@ -178,6 +192,13 @@ fn main() -> Result<()> {
         capture_direnv_env(&cwd).unwrap_or_default()
     } else {
         HashMap::new()
+    };
+
+    // Validate explicit GPU access before starting proxies or changing jail home.
+    let gpu = if args.gpu {
+        Some(discover_gpu(&direnv_env)?)
+    } else {
+        None
     };
 
     let gitconfig_dir = tempfile::Builder::new()
@@ -394,6 +415,11 @@ fn main() -> Result<()> {
         bind(&mut b, "--bind", path, path);
     }
 
+    // Mount after home/worktree overlays so explicit GPU paths remain visible.
+    if let Some(gpu) = &gpu {
+        gpu.mount(&mut b);
+    }
+
     b.push("--clearenv".into());
 
     setenv(&mut b, "HOME", &home.to_string_lossy());
@@ -469,7 +495,7 @@ fn main() -> Result<()> {
     }
 
     for (k, v) in env::vars() {
-        if k.starts_with("CODEX_") {
+        if k.starts_with("CODEX_") && k != "CODEX_JAIL_VULKAN_LIB_DIR" {
             setenv(&mut b, &k, &v);
         }
     }
@@ -486,7 +512,11 @@ fn main() -> Result<()> {
     for (k, v) in &direnv_env {
         if matches!(
             k.as_str(),
-            "PATH" | "SSH_AUTH_SOCK" | "GH_PROXY_SOCKET" | "GIT_CONFIG_GLOBAL"
+            "PATH"
+                | "SSH_AUTH_SOCK"
+                | "GH_PROXY_SOCKET"
+                | "GIT_CONFIG_GLOBAL"
+                | "CODEX_JAIL_VULKAN_LIB_DIR"
         ) {
             continue;
         }
@@ -509,6 +539,11 @@ fn main() -> Result<()> {
     }
 
     setenv(&mut b, "TMPDIR", "/tmp");
+
+    // Apply after clearenv and direnv so the validated paths win last.
+    if let Some(gpu) = &gpu {
+        gpu.set_environment(&mut b);
+    }
 
     b.push("--chdir".into());
     b.push(cwd.as_os_str().into());
@@ -546,7 +581,7 @@ fn main() -> Result<()> {
         .with_context(|| format!("running {bwrap_path}"))?;
     drop(gh_proxy);
     drop(gitconfig_dir);
-    std::process::exit(status.code().unwrap_or(1));
+    Ok(status.code().unwrap_or(1))
 }
 
 fn push(b: &mut Vec<OsString>, args: &[&str]) {
@@ -629,10 +664,8 @@ fn capture_direnv_env(dir: &Path) -> Result<HashMap<String, String>> {
 fn parse_github_slug(url: &str) -> Option<String> {
     let slug = if let Some(rest) = url.strip_prefix("git@github.com:") {
         rest
-    } else if let Some(rest) = url.strip_prefix("https://github.com/") {
-        rest
     } else {
-        return None;
+        url.strip_prefix("https://github.com/")?
     };
     Some(slug.trim_end_matches(".git").to_string())
 }

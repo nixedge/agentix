@@ -284,6 +284,35 @@ but cannot operate without its socket.
 omitting the Codex prompt. `--ro`, `--rw`, and `--all-worktrees` control
 additional mounts. Codex arguments follow a separate `--`.
 
+`--gpu` explicitly grants the launching machine's NVIDIA compute devices and
+DRM render nodes, with read-only host drivers. It is disabled by default and
+currently applies only to codex-jail. Run it from the actual GPU host, outside
+an existing jail; it cannot grant access to a remote GPU.
+
+```bash
+codex-jail --all-worktrees --gpu
+# Use this feature checkout's launcher without installing or deploying it:
+nix run .#codex-jail -- --all-worktrees --gpu
+```
+
+Use `--ro /path/to/models` only when model files outside the mounted repository
+family need to be exposed. GPU validation itself does not require model files.
+
+The host must already provide accessible NVIDIA control/UVM/GPU nodes or DRM
+render nodes and a working driver. Missing devices, permissions and driver
+libraries produce separate startup errors. The launcher does not configure
+the host, load modules, change permissions, or provide a CPU fallback.
+No display/audio socket, SSH agent or additional credentials are forwarded.
+MIG partitions, graphics presentation and GPU resource quotas are outside
+this whole-GPU compute profile. GPU workloads share the owner's GPU resources.
+
+The default development shell uses CUDA 12 for existing llama builds.
+Consumers such as feature 033's cudarc `cuda-13010` need a separately compatible
+runtime; this checkout provides `nix develop .#gpu-validation` with NVRTC 13.1
+and matching builtins. See the [GPU quickstart](specs/034-codex-jail-gpu/quickstart.md)
+for exact host restart and headless CUDA/Vulkan compute validation commands. Launcher
+fixtures verify argument assembly; they do not prove physical GPU compute.
+
 The jail uses an isolated global Git config with the host's name/email,
 signing disabled, and GitHub SSH remotes rewritten to HTTPS. It does not
 import host credential helpers. Private Git-over-HTTPS authentication is

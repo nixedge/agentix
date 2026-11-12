@@ -162,6 +162,9 @@
     ghJailServerPkg = jailPackage "gh-jail-server";
     axJailUnwrapped = jailPackage "ax-jail";
     codexJailUnwrapped = jailPackage "codex-jail";
+    gpuVulkanShader = pkgs.runCommand "agentix-gpu-answer.spv" {nativeBuildInputs = [pkgs.shaderc];} ''
+      glslc --target-env=vulkan1.0 ${../agentix-jails/src/gpu_vulkan_smoke/answer.comp} -o "$out"
+    '';
     axJailSanityCheck = pkgs.writeShellScriptBin "ax-jail-check" ''
       #!/usr/bin/env bash
       set -euo pipefail
@@ -414,6 +417,7 @@
         '';
 
         codex-jail = pkgs.writeShellScriptBin "codex-jail" ''
+          export CODEX_JAIL_VULKAN_LIB_DIR="${pkgs.vulkan-loader}/lib"
           export CODEX_JAIL_BIN_DIR="${codexJailBinDir}/bin"
           export CODEX_JAIL_BWRAP="${pkgs.bubblewrap}/bin/bwrap"
           export CODEX_JAIL_GH_SERVER="${ghJailServerPkg}/bin/gh-jail-server"
@@ -422,6 +426,18 @@
           export NIX_CONFIG="extra-experimental-features = nix-command flakes"
           exec ${codexJailUnwrapped}/bin/codex-jail "$@"
         '';
+
+        gpu-cuda-smoke = pkgs.runCommand "gpu-cuda-smoke" {nativeBuildInputs = [toolchain pkgs.stdenv.cc];} ''
+          mkdir -p "$out/bin"
+          rustc --edition=2021 ${../agentix-jails/examples/gpu_cuda_smoke.rs} -o "$out/bin/gpu-cuda-smoke"
+        '';
+
+        gpu-vulkan-smoke-shader = gpuVulkanShader;
+        gpu-vulkan-smoke = buildMember "agentix-jails" {
+          pname = "gpu-vulkan-smoke";
+          cargoExtraArgs = "${extraArgs "agentix-jails"} --features gpu-vulkan-smoke --bin gpu-vulkan-smoke";
+          AGENTIX_VULKAN_SMOKE_SHADER = gpuVulkanShader;
+        };
       };
   };
 }

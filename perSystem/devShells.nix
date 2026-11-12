@@ -25,10 +25,22 @@
       sha256 = "sha256-JjIVw8rdbhZ0B0GnYkq0y7bI53doi9UzHs+/VoHC+O0=";
     };
   in {
+    # Acceptance environment for dynamically loaded CUDA 13.1/NVRTC consumers.
+    # The default CUDA 12 shell remains dedicated to existing llama builds.
+    devShells.gpu-validation = pkgs.mkShell {
+      AGENTIX_VULKAN_SMOKE_SHADER = config.packages.gpu-vulkan-smoke-shader;
+      packages = [toolchain pkgs.vulkan-tools pkgs.cudaPackages_13_1.cuda_nvrtc.lib];
+      shellHook = ''
+        export LD_LIBRARY_PATH="/run/opengl-driver/lib:${pkgs.vulkan-loader}/lib:${pkgs.cudaPackages_13_1.cuda_nvrtc.lib}/lib:''${LD_LIBRARY_PATH:-}"
+      '';
+    };
+
     devShells.default = pkgs.mkShell {
+      AGENTIX_VULKAN_SMOKE_SHADER = config.packages.gpu-vulkan-smoke-shader;
       packages = with pkgs; [
         # Rust toolchain (stable from fenix)
         toolchain
+        bubblewrap
         pkg-config
         onnxruntime
         openssl

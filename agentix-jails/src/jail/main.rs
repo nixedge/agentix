@@ -579,10 +579,8 @@ fn passthrough(b: &mut Vec<OsString>, key: &str) {
 fn parse_github_slug(url: &str) -> Option<String> {
     let slug = if let Some(rest) = url.strip_prefix("git@github.com:") {
         rest
-    } else if let Some(rest) = url.strip_prefix("https://github.com/") {
-        rest
     } else {
-        return None;
+        url.strip_prefix("https://github.com/")?
     };
     Some(slug.trim_end_matches(".git").to_string())
 }

@@ -115,6 +115,9 @@ fn no_auth_does_not_start_proxy() -> Result<()> {
         r#"
 for arg in "$@"; do
     [ "$arg" != GH_PROXY_SOCKET ] || exit 90
+    [ "$arg" != --dev-bind ] || exit 91
+    [ "$arg" != /run/opengl-driver ] || exit 92
+    [ "$arg" != CODEX_JAIL_VULKAN_LIB_DIR ] || exit 93
 done
 "#,
     )?;
@@ -124,6 +127,7 @@ done
         .env("CODEX_JAIL_BIN_DIR", root)
         .env("CODEX_JAIL_BWRAP", root.join("bwrap"))
         .env("CODEX_JAIL_GH_SERVER", "/does/not/exist")
+        .env("CODEX_JAIL_VULKAN_LIB_DIR", "/fixture-loader/lib")
         .args(["--no-github-auth", "--repo", "example/project"])
         .output()?;
     assert!(
@@ -132,6 +136,19 @@ done
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(!String::from_utf8_lossy(&output.stderr).contains("could not start gh proxy"));
+    Ok(())
+}
+
+#[test]
+fn gpu_help_explains_local_opt_in() -> Result<()> {
+    let output = Command::new(env!("CARGO_BIN_EXE_codex-jail"))
+        .arg("--help")
+        .output()?;
+    assert!(output.status.success());
+    let help = String::from_utf8_lossy(&output.stdout);
+    assert!(help.contains("--gpu"));
+    assert!(help.contains("Disabled by default"));
+    assert!(help.contains("not remote GPU access"));
     Ok(())
 }
 

@@ -217,6 +217,62 @@ Stateless across runs; reset on each `AgentLoop::run` call.
 
 *Realizes Principle IV.*
 
+### codex-jail opt-in GPU compute
+
+The owner authorized `--gpu` for local inference development in feature 034
+(`specs/034-codex-jail-gpu/spec.md`). This is an explicit permission expansion:
+GPU device ioctls reach the host kernel driver and workloads consume shared
+GPU memory/compute. It is off by default and does not affect other launchers.
+Namespace isolation, OAuth mounts, GitHub proxy policy and SSH opt-in remain
+as defined by the existing launcher. No GPU-specific credentials are forwarded.
+
+| Mount or setting | Access | Purpose |
+|---|---|---|
+| `/dev/nvidiaN` (numeric suffix only), `/dev/nvidiactl`, `/dev/nvidia-uvm` | Individual `--dev-bind` | Whole-GPU CUDA compute; each node must be an accessible character device |
+| `/dev/dri/renderDN` (numeric suffix only) | Individual `--dev-bind` | Headless DRM/Vulkan compute; primary `cardN` nodes excluded |
+| `/run/opengl-driver`, when present | Read-only | Actual NixOS host driver, including Vulkan ICD manifests; existing read-only `/nix` retains store symlink targets |
+| Selected CUDA/Vulkan/ICD library directories and non-store symlink target directories | Read-only | Driver dependencies and `$ORIGIN` sibling loading; discovered in host driver path, selected library paths or fixed conventional Linux library directories |
+| Validated Vulkan ICD manifest files | Read-only | Loader registration; selected through `VK_DRIVER_FILES`/legacy override or fixed system ICD directories |
+| `/proc/driver/nvidia`, when NVIDIA compute is selected | Read-only | Driver and GPU enumeration information; no management capability device nodes granted |
+| A render node's canonical PCI subtree under `/sys/devices` | Read-only | Per-GPU PCI/device metadata needed by DRM drivers; class and character-device links recreated to the actual subtree |
+| `LD_LIBRARY_PATH`, `VK_DRIVER_FILES`, `VK_ICD_FILENAMES`, `CUDA_VISIBLE_DEVICES`, `CUDA_DEVICE_ORDER` | Selected values only | Preserve relevant host/direnv runtime settings; discovered drivers precede existing library entries; final GPU settings follow `--clearenv` and direnv |
+
+Device discovery reads only immediate entries of `/dev` and `/dev/dri`, using
+strict device-name filters. ICD discovery reads immediate JSON entries from
+`/run/opengl-driver/share/vulkan/icd.d`, `/etc/vulkan/icd.d`, and
+`/usr/share/vulkan/icd.d`, unless an explicit existing absolute-file override
+is supplied. No store enumeration is used. Device access is checked by opening
+the character node read/write without issuing ioctls. Any discovered backend
+with missing required nodes/libraries or denied access fails before proxy startup.
+Driver library files must be readable. Nonstandard library locations must use
+dedicated `lib`/`lib64` directories outside sensitive host trees; broad directories
+such as `/run` and user homes are rejected, including symlink targets. The
+wrapper's internal loader lookup variable is not forwarded into sessions.
+Directory binds also cover their descendants. The launcher omits child ICD and
+library binds already covered by a driver directory or the existing `/nix` mount;
+rebinding symlinked files inside a read-only NixOS driver tree can fail while
+bubblewrap creates its destination. A real-bubblewrap regression covers this layout.
+
+No whole `/dev` or `/run` bindings, primary DRM cards, modesetting devices,
+UVM profiling nodes, MIG/Fabric administration capabilities, display sockets
+or audio devices are added. MIG partition capability selection is unsupported.
+The launcher does not invoke modprobe, chmod, user/group changes or host setup.
+Discovery checks are preflight only: races, driver ABI/ICD compatibility and
+actual kernel execution still require physical hardware acceptance.
+
+NVRTC/toolkits are Nix development/runtime dependencies, never vendored host
+drivers. `devShells.gpu-validation` supplies NVRTC 13.1 for the cudarc 0.19.10
+`cuda-13010` consumer without replacing the existing CUDA 12 build environment.
+`agentix-jails/examples/gpu_cuda_smoke.rs` validates compilation, PTX module
+load, kernel execution, synchronization and a checked result on real hardware.
+The optional `gpu-vulkan-smoke` binary uses ash 0.38 and a Nix-compiled SPIR-V
+shader for headless hardware compute. It enables no Vulkan instance/device
+extensions or layers, creates no surfaces, rejects software devices, and checks
+shader output after a memory barrier and fence. ash is excluded from ordinary
+launcher builds. No display environment or additional jail mounts are required.
+
+### Default profiles
+
 Each jailed agent gets exactly:
 
 | Resource | What | Notes |
