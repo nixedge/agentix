@@ -6,6 +6,7 @@
     ...
   }: let
     toolchain = inputs'.fenix.packages.stable.toolchain;
+    qwenFixtures = import ../nix/qwen-fixtures.nix {inherit pkgs toolchain;};
     cudaPackages = pkgs.cudaPackages_12;
     libcublasStatic = pkgs.lib.getOutput "static" cudaPackages.libcublas;
     # nvcc uses system("/bin/sh -c ...") internally, which fails on NixOS (no /bin/sh).
@@ -35,6 +36,24 @@
       '';
     };
 
+    devShells.workspace-tests = pkgs.mkShell {
+      packages = with pkgs; [toolchain pkg-config clang cmake ninja libclang.lib onnxruntime openssl alsa-lib protobuf jq];
+      LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
+      CMAKE_GENERATOR = "Ninja";
+      ORT_DYLIB_PATH = "${pkgs.onnxruntime}/lib/libonnxruntime.so";
+      LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [pkgs.openssl pkgs.onnxruntime pkgs.stdenv.cc.cc.lib pkgs.alsa-lib];
+      AGENTIX_TEST_MODEL_PATH = fixture-model;
+      AGENTIX_QWEN_TOKENIZER_PATH = qwenFixtures.tokenizer;
+      AGENTIX_QWEN_TEMPLATE_PATH = qwenFixtures.template;
+      AGENTIX_QWEN_TEST_MODEL = qwenFixtures.model;
+    };
+    devShells.qwen = pkgs.mkShell {
+      packages = [toolchain pkgs.pkg-config pkgs.jq];
+      AGENTIX_QWEN_TOKENIZER_PATH = qwenFixtures.tokenizer;
+      AGENTIX_QWEN_TEMPLATE_PATH = qwenFixtures.template;
+      AGENTIX_QWEN_TEST_MODEL = qwenFixtures.model;
+      LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [pkgs.cudaPackages_12.cuda_nvrtc pkgs.vulkan-loader] + ":/run/opengl-driver/lib";
+    };
     devShells.default = pkgs.mkShell {
       AGENTIX_VULKAN_SMOKE_SHADER = config.packages.gpu-vulkan-smoke-shader;
       packages = with pkgs; [
@@ -77,6 +96,9 @@
       ];
 
       shellHook = ''
+        export AGENTIX_QWEN_TOKENIZER_PATH="${qwenFixtures.tokenizer}"
+        export AGENTIX_QWEN_TEMPLATE_PATH="${qwenFixtures.template}"
+        export AGENTIX_QWEN_TEST_MODEL="${qwenFixtures.model}"
         export ORT_DYLIB_PATH="${pkgs.onnxruntime}/lib/libonnxruntime.so"
         export LIBCLANG_PATH="${pkgs.libclang.lib}/lib"
         export CMAKE_GENERATOR="Ninja"

@@ -1,0 +1,5 @@
+warning: Git tree '/home/sam/home/agentix/033-rustingstrata-qwen' is dirty
+    Checking agentix-router v0.1.0 (/home/sam/home/agentix/033-rustingstrata-qwen/agentix-router)
+    Checking agentix-qwen v0.1.0 (/home/sam/home/agentix/033-rustingstrata-qwen/agentix-qwen)
+    Checking agentix-qwen-worker v0.1.0 (/home/sam/home/agentix/033-rustingstrata-qwen/agentix-qwen-worker)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.68s

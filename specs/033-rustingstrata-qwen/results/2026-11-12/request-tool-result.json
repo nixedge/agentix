@@ -1,0 +1,55 @@
+{
+  "model": "qwen3.8-flash-next",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Use run_command to find the current directory. Set command to exactly pwd. Call the tool; do not answer with text."
+    },
+    {
+      "content": null,
+      "role": "assistant",
+      "tool_calls": [
+        {
+          "function": {
+            "arguments": "{\"command\":\"pwd\"}",
+            "name": "run_command"
+          },
+          "id": "call_8d6e471c387440b695be4504cee64bde",
+          "type": "function"
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_8d6e471c387440b695be4504cee64bde",
+      "content": "/home/sam/home/agentix/033-rustingstrata-qwen"
+    },
+    {
+      "role": "user",
+      "content": "Reply with the tool output exactly and nothing else."
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "run_command",
+        "description": "Run a shell command and return its output.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "command"
+          ],
+          "additionalProperties": false
+        }
+      }
+    }
+  ],
+  "max_tokens": 64,
+  "temperature": 0
+}

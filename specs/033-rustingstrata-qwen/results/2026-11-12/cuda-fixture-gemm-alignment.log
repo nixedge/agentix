@@ -1,0 +1,30 @@
+warning: Git tree '/home/sam/home/agentix/033-rustingstrata-qwen' is dirty
+   Compiling agentix-qwen v0.1.0 (/home/sam/home/agentix/033-rustingstrata-qwen/agentix-qwen)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.50s
+     Running tests/engine.rs (target/debug/deps/engine-aac7ce1a5709bf70)
+
+running 1 test
+cuda device 0: NVIDIA GeForce RTX 5090 Laptop GPU, sm_120
+cuda shared memory: opt-in 101376 B per block, attn_decode_gqa*: 2112 B static, dynamic max 73728 B, carveout default
+cuda shared memory: opt-in 101376 B per block, attn_prefill_*: 0 B static, dynamic max 72704 B, carveout default
+cuda shared memory: opt-in 101376 B per block, gemvn_*: 0 B static, dynamic max 101376 B, carveout default
+plan: weights+state+scratch 0 MB (KV 0 MB for 256 tokens, prefill 0 MB), expert slots 0 MB, resident experts 2/2
+expert traffic: 0.0 MB per layer active set (top-1), 0.0 MB per token over 1 MoE layers
+GPU parity device: NVIDIA GeForce RTX 5090 Laptop GPU
+max absolute logit difference: 0.10914421
+max absolute logit difference: 0.05770588
+max absolute logit difference: 0.0047369003
+max absolute logit difference: 0.13117695
+max absolute logit difference: 0.023675919
+max absolute logit difference: 0.10914421
+Error: Backend("Q8_0 matrix with 32 columns: GEMM needs a multiple of 64")
+test gpu_fixture_matches_cpu_prefill_decode_and_reset ... FAILED
+
+failures:
+
+failures:
+    gpu_fixture_matches_cpu_prefill_decode_and_reset
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 4 filtered out; finished in 3.72s
+
+error: test failed, to rerun pass `-p agentix-qwen --test engine`

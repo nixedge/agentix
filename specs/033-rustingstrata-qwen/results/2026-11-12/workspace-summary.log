@@ -1,0 +1,144 @@
+     Running unittests src/main.rs (target/debug/deps/agentix_agent-60e1773aa79115c5)
+test result: ok. 25 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 0.32s
+     Running unittests src/lib.rs (target/debug/deps/agentix_api-e3363e42ee5dd380)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/lib.rs (target/debug/deps/agentix_assistant-1288db579d46ab40)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/reminders.rs (target/debug/deps/reminders-e5ddeddd6767c741)
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+     Running tests/remote_groceries.rs (target/debug/deps/remote_groceries-d227d320aa2e0da3)
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+     Running tests/turns.rs (target/debug/deps/turns-7b5aad1b9757b9b2)
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+     Running unittests src/lib.rs (target/debug/deps/agentix_assistant_core-90a773ed1fcee362)
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/lib.rs (target/debug/deps/agentix_assistant_lance-2eb91c30e682f932)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/projection.rs (target/debug/deps/projection-35fb0586c301cb75)
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.70s
+     Running unittests src/lib.rs (target/debug/deps/agentix_assistant_sled-b365a8260faf2295)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/conversations.rs (target/debug/deps/conversations-99794b6331369931)
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+     Running tests/groceries.rs (target/debug/deps/groceries-1ae42a7ec59f447b)
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+     Running tests/reminders.rs (target/debug/deps/reminders-35a08275cf556664)
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+     Running tests/repository.rs (target/debug/deps/repository-03550b951fe17f30)
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+     Running unittests src/main.rs (target/debug/deps/ax-3afdb9956cd4038c)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/main.rs (target/debug/deps/agentix_daemon-51479372068d9989)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+     Running tests/integration.rs (target/debug/deps/integration-e3934ef751f12236)
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+     Running unittests src/lib.rs (target/debug/deps/agentix_harness-49eb1f7c8b615ce5)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/lib.rs (target/debug/deps/agentix_indexer-02180e0dedfe689a)
+test result: ok. 94 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.50s
+     Running unittests src/main.rs (target/debug/deps/ingest-9d46f429a72332ca)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/local_ingestion.rs (target/debug/deps/local_ingestion-69b2231c70f32f57)
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.78s
+     Running unittests src/lib.rs (target/debug/deps/agentix_infer-66162d5ec2d1ed83)
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/store_integration.rs (target/debug/deps/store_integration-fdaf2758a3a15f73)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.56s
+     Running unittests src/ax_jail/main.rs (target/debug/deps/ax_jail-77b093b4e9ba1488)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/jail/main.rs (target/debug/deps/claude_jail-148f202cd3850b45)
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/codex_jail/main.rs (target/debug/deps/codex_jail-81101a9a28aad54c)
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/gh_proxy/client.rs (target/debug/deps/gh_jail_client-d5fec021b755119d)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/gh_proxy/server.rs (target/debug/deps/gh_jail_server-70629a0abce0bdee)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/codex_jail.rs (target/debug/deps/codex_jail-642bc421417704ad)
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+     Running unittests src/lib.rs (target/debug/deps/agentix_llama-c5f631d3c342fb01)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/main.rs (target/debug/deps/agentix_llama-45a520ca7953951e)
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.94s
+     Running tests/complete_integration.rs (target/debug/deps/complete_integration-a2d1235cd91afce6)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.40s
+     Running tests/embed_integration.rs (target/debug/deps/embed_integration-e835ccbe765d5b26)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.17s
+     Running tests/grammar_integration.rs (target/debug/deps/grammar_integration-0d863c6c3a98b5b1)
+test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/main.rs (target/debug/deps/mcp_server-e4c77cfff980e23a)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/local_mcp.rs (target/debug/deps/local_mcp-d94a79a50a7e2199)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.44s
+     Running unittests src/lib.rs (target/debug/deps/agentix_ourgroceries-246770e855057561)
+test result: ok. 12 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.12s
+     Running unittests src/main.rs (target/debug/deps/agentix_ourgroceries-b9018698ba37de78)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/lib.rs (target/debug/deps/agentix_qwen-a0e3c40f66fe746d)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/bin/agentix-qwen-bench.rs (target/debug/deps/agentix_qwen_bench-382bfbfa214a525f)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/engine.rs (target/debug/deps/engine-ab90addbaad68866)
+test result: ok. 4 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 11.63s
+     Running tests/tokenizer.rs (target/debug/deps/tokenizer-0ce65e3dd4d46b3e)
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.35s
+     Running unittests src/main.rs (target/debug/deps/agentix_qwen_worker-565f5b03b2e1be9b)
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.45s
+     Running tests/http.rs (target/debug/deps/http-3adb44ef5c8d1913)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 16.37s
+     Running unittests src/lib.rs (target/debug/deps/agentix_router-e47b86a313972cb6)
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/lib.rs (target/debug/deps/agentix_search-a57a01f810e3851f)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/lib.rs (target/debug/deps/agentix_store-f97fa405ec3ebbdd)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s
+     Running unittests src/bin/agentix-store-server.rs (target/debug/deps/agentix_store_server-620d65f9f769734d)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/remote.rs (target/debug/deps/remote-95b860bb063232d9)
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.45s
+     Running tests/server_process.rs (target/debug/deps/server_process-3a4be51e856deedb)
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.40s
+     Running tests/storage.rs (target/debug/deps/storage-9c85618751e30caa)
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.62s
+     Running unittests src/lib.rs (target/debug/deps/agentix_tts-2dccca4a75a2e7cb)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/main.rs (target/debug/deps/agentix_voice-102059fbb65705ee)
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+     Running unittests src/lib.rs (target/debug/deps/agentix_whisper-85b11d0ac7e49db7)
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+     Running unittests src/main.rs (target/debug/deps/agentix_whisper-3886f92bbdc3ef4b)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/whisper_integration.rs (target/debug/deps/whisper_integration-d2e6ae27f2325675)
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests agentix_api
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests agentix_assistant
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests agentix_assistant_core
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests agentix_assistant_lance
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests agentix_assistant_sled
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests agentix_harness
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+   Doc-tests agentix_indexer
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests agentix_infer
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests agentix_llama
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests agentix_ourgroceries
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests agentix_qwen
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests agentix_router
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests agentix_search
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests agentix_store
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests agentix_tts
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests agentix_whisper
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

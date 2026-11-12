@@ -1,0 +1,2 @@
+name, memory.used [MiB], utilization.gpu [%], power.draw [W], clocks.current.sm [MHz], clocks.current.memory [MHz]
+NVIDIA GeForce RTX 5090 Laptop GPU, 61 MiB, 13 %, 15.79 W, 232 MHz, 9001 MHz

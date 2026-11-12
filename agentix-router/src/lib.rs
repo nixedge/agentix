@@ -2,6 +2,7 @@
 #[derive(Debug, Clone, PartialEq)]
 pub enum RouteTarget {
     Local,
+    LocalQwen,
     Anthropic,
     OpenAI,
     OpenRouter,
@@ -22,6 +23,14 @@ pub struct Router;
 impl Router {
     pub fn new() -> Self {
         Self
+    }
+
+    pub fn route_with_qwen(&self, model: &str, qwen_model: &str) -> RouteTarget {
+        if model == qwen_model {
+            RouteTarget::LocalQwen
+        } else {
+            self.route(model)
+        }
     }
 
     pub fn route(&self, model: &str) -> RouteTarget {
@@ -74,6 +83,24 @@ impl Router {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn qwen_worker_uses_exact_configured_identity() {
+        let router = Router::new();
+        assert_eq!(
+            router.route_with_qwen("local/qwen", "local/qwen"),
+            RouteTarget::LocalQwen
+        );
+        assert_eq!(router.route_with_qwen("QWEN", "qwen"), RouteTarget::Local);
+        assert_eq!(
+            router.route_with_qwen("qwen-other", "qwen"),
+            RouteTarget::Local
+        );
+        assert_eq!(
+            router.route_with_qwen("claude-sonnet-4-6", "qwen"),
+            RouteTarget::Anthropic
+        );
+    }
 
     #[test]
     fn local_prefix() {

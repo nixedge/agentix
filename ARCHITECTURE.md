@@ -364,3 +364,26 @@ termination or a trusted private network. A shared token grants trusted full-ind
 PROJECTS remains a visibility filter, not an authorization boundary. Jailed MCP launchers
 may inject the storage credential via environment and permit this endpoint through their
 existing network policy; this requires neither index mounts nor credential-file mounts.
+
+## RustingStrata Qwen execution
+
+`agentix-qwen` is a network-free wrapper around a pinned RustingStrata Rust
+library dependency. It retains the checkpoint's tokenizer/template and context
+admission; RustingStrata owns GGUF loading, model operations, GPU kernels and
+expert placement. Its model and borrowed mapped weights live on a persistent
+inference thread. Request sessions serialize reset/prefill/decode and keep
+blocking inference outside Tokio. No custom GGML execution or FFI wrapper from
+feature 021 is linked into this path.
+
+`agentix-qwen-worker` binds the Qwen Unix socket and owns HTTP validation, SSE,
+nonstreaming function-call parsing, cancellation and single-request admission.
+`agentix-router::route_with_qwen` selects the exact configured model as a typed
+local Qwen target. The gateway connects that target to its configured socket,
+preserving worker status and streaming bodies. Other local models use llama.
+The `services.agentix.qwen` NixOS service is explicitly enabled by the operator.
+
+CUDA/NVRTC and Vulkan are loaded by upstream library code; Nix supplies NVRTC
+and the loader while the host supplies the driver matching its kernel. The
+RustingStrata custom license and author acknowledgement are shipped with both
+packages. See [feature 033 quickstart](specs/033-rustingstrata-qwen/quickstart.md)
+for runtime configuration, fixture coverage and pending target GPU acceptance.

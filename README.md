@@ -681,3 +681,10 @@ Query embedding and reranking retain the existing MCP model-service configuratio
 The NixOS module now exposes `services.agentix.storage` for persistent storage, runtime
 credentials and listener configuration. See the [LAN server/laptop deployment guide](specs/023-lancedb-backend/quickstart.md#server-storage-with-laptop-mcp-clients)
 for the module and MCP configuration. No LanceDB directory mount is required on laptops.
+
+## RustingStrata Qwen worker
+
+The Qwen worker uses RustingStrata directly as a Rust library, with Agentix's
+Unix-socket API, pinned tokenizer and function tools. Build with
+`nix build .#agentix-qwen-worker`; use `nix develop .#qwen` for its dedicated
+development environment. [Setup, checks and target GPU benchmarks](specs/033-rustingstrata-qwen/quickstart.md).

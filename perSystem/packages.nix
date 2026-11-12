@@ -6,6 +6,8 @@
     ...
   }: let
     toolchain = inputs'.fenix.packages.stable.toolchain;
+    qwenFixtures = import ../nix/qwen-fixtures.nix {inherit pkgs toolchain;};
+    qwenRuntime = lib.makeLibraryPath [pkgs.cudaPackages_12.cuda_nvrtc pkgs.vulkan-loader];
     craneLib = (inputs.crane.mkLib pkgs).overrideToolchain toolchain;
     workspace = import ../nix/isolated-workspace.nix {
       inherit lib pkgs;
@@ -359,6 +361,44 @@
     packages =
       memberPackages
       // {
+        agentix-qwen = buildMember "agentix-qwen" {
+          doCheck = true;
+          nativeBuildInputs = (packageArgs "agentix-qwen").nativeBuildInputs ++ [pkgs.makeWrapper];
+          AGENTIX_QWEN_TOKENIZER_PATH = qwenFixtures.tokenizer;
+          AGENTIX_QWEN_TEMPLATE_PATH = qwenFixtures.template;
+          AGENTIX_QWEN_TEST_MODEL = qwenFixtures.model;
+          postInstall = ''
+            mkdir -p $out/share/doc/agentix-qwen $out/lib
+            cp target/release/libagentix_qwen.rlib $out/lib/
+            cp agentix-qwen/PROVENANCE.md agentix-qwen/RUSTINGSTRATA-LICENSE.md $out/share/doc/agentix-qwen/
+            wrapProgram $out/bin/agentix-qwen-bench \
+              --prefix LD_LIBRARY_PATH : "${qwenRuntime}:/run/opengl-driver/lib" \
+              --set-default AGENTIX_QWEN_TOKENIZER ${qwenFixtures.tokenizer} \
+              --set-default AGENTIX_QWEN_CHAT_TEMPLATE ${qwenFixtures.template}
+          '';
+        };
+        agentix-qwen-worker = pkgs.symlinkJoin {
+          name = "agentix-qwen-worker";
+          paths = [
+            (buildMember "agentix-qwen-worker" {
+              doCheck = true;
+              AGENTIX_QWEN_TOKENIZER_PATH = qwenFixtures.tokenizer;
+              AGENTIX_QWEN_TEMPLATE_PATH = qwenFixtures.template;
+              AGENTIX_QWEN_TEST_MODEL = qwenFixtures.model;
+              postInstall = ''
+                mkdir -p $out/share/doc/agentix-qwen
+                cp agentix-qwen/PROVENANCE.md agentix-qwen/RUSTINGSTRATA-LICENSE.md $out/share/doc/agentix-qwen/
+              '';
+            })
+          ];
+          nativeBuildInputs = [pkgs.makeWrapper];
+          postBuild = ''
+            wrapProgram $out/bin/agentix-qwen-worker \
+              --prefix LD_LIBRARY_PATH : "${qwenRuntime}:/run/opengl-driver/lib" \
+              --set-default AGENTIX_QWEN_TOKENIZER ${qwenFixtures.tokenizer} \
+              --set-default AGENTIX_QWEN_CHAT_TEMPLATE ${qwenFixtures.template}
+          '';
+        };
         workspace-locks = workspaceLockCheck;
         agentix-llama-cpu = llamaCpuPackage;
         assistant-core = assistantCheck;

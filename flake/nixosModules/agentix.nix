@@ -8,11 +8,67 @@
     cfg = config.services.agentix;
     socketDir = cfg.socketDir;
     llamaSock = "${socketDir}/llama.sock";
+    qwenSock = "${socketDir}/qwen.sock";
     whisperSock = "${socketDir}/whisper.sock";
 
-    anyEnabled = cfg.daemon.enable || cfg.llama.enable || cfg.whisper.enable || cfg.agent.enable;
+    anyEnabled = cfg.daemon.enable || cfg.llama.enable || cfg.qwen.enable || cfg.whisper.enable || cfg.agent.enable;
   in {
     options.services.agentix = {
+      qwen = {
+        enable = lib.mkEnableOption "RustingStrata Qwen inference worker";
+        package = lib.mkOption {
+          type = lib.types.package;
+          description = "The agentix-qwen-worker package.";
+        };
+        model = lib.mkOption {
+          type = lib.types.str;
+          default = "qwen3.8-flash-next";
+          description = "Exact model identifier routed to the Qwen worker.";
+        };
+        modelDir = lib.mkOption {
+          type = lib.types.path;
+          default = "/var/lib/agentix/qwen";
+          description = "Directory containing immutable GGUF model shards.";
+        };
+        shards = lib.mkOption {
+          type = lib.types.listOf lib.types.str;
+          description = "GGUF filenames in split order, using standard -00001-of-NNNNN naming for split models.";
+        };
+        expectedShardSha256 = lib.mkOption {
+          type = lib.types.listOf lib.types.str;
+          description = "Expected SHA256 values in shard order, checked before loading.";
+        };
+        context = lib.mkOption {
+          type = lib.types.ints.positive;
+          default = 4096;
+          description = "Admitted context; must not exceed GGUF trained context.";
+        };
+        compute = lib.mkOption {
+          type = lib.types.enum ["cuda" "vulkan" "cpu"];
+          default = "cuda";
+          description = "Explicit RustingStrata backend; CPU is the slow reference.";
+        };
+        cudaDevice = lib.mkOption {
+          type = lib.types.ints.unsigned;
+          default = 0;
+          description = "GPU device index (also used by Vulkan).";
+        };
+        prefillChunk = lib.mkOption {
+          type = lib.types.ints.positive;
+          default = 256;
+          description = "Prefill chunk tokens and cancellation interval.";
+        };
+        vramMargin = lib.mkOption {
+          type = lib.types.ints.unsigned;
+          default = 536870912;
+          description = "Bytes reserved from free VRAM when placing experts.";
+        };
+        extraEnv = lib.mkOption {
+          type = lib.types.attrsOf lib.types.str;
+          default = {};
+          description = "Additional Qwen worker environment.";
+        };
+      };
       storage = {
         enable = lib.mkEnableOption "Agentix shared LanceDB storage API";
         package = lib.mkOption {
@@ -345,17 +401,58 @@
       })
 
       # ── agentix-daemon ───────────────────────────────────────────────────────
+      (lib.mkIf cfg.qwen.enable {
+        assertions = [
+          {
+            assertion = cfg.qwen.shards != [] && builtins.length cfg.qwen.shards == builtins.length cfg.qwen.expectedShardSha256;
+            message = "services.agentix.qwen requires a nonempty shard list and one SHA256 per shard.";
+          }
+        ];
+        systemd.services.agentix-qwen = {
+          description = "Agentix RustingStrata Qwen inference worker";
+          wantedBy = ["multi-user.target"];
+          after = ["network.target"];
+          environment =
+            {
+              AGENTIX_QWEN_SOCKET = qwenSock;
+              AGENTIX_QWEN_MODEL = cfg.qwen.model;
+              AGENTIX_QWEN_MODEL_DIR = toString cfg.qwen.modelDir;
+              AGENTIX_QWEN_GGUF_SHARDS = lib.concatMapStringsSep ":" (name: "${cfg.qwen.modelDir}/${name}") cfg.qwen.shards;
+              AGENTIX_QWEN_EXPECTED_SHARD_SHA256 = lib.concatStringsSep ":" cfg.qwen.expectedShardSha256;
+              AGENTIX_QWEN_CONTEXT = toString cfg.qwen.context;
+              AGENTIX_QWEN_COMPUTE = cfg.qwen.compute;
+              AGENTIX_QWEN_CUDA_DEVICE = toString cfg.qwen.cudaDevice;
+              AGENTIX_QWEN_PREFILL_CHUNK = toString cfg.qwen.prefillChunk;
+              AGENTIX_QWEN_VRAM_MARGIN = toString cfg.qwen.vramMargin;
+            }
+            // cfg.qwen.extraEnv;
+          serviceConfig = {
+            ExecStart = "${cfg.qwen.package}/bin/agentix-qwen-worker";
+            User = "agentix";
+            Group = "agentix";
+            StateDirectory = "agentix";
+            StateDirectoryMode = "0750";
+            Restart = "on-failure";
+            RestartSec = "5s";
+            # Match existing GPU worker access; do not install a restrictive device cgroup.
+            PrivateDevices = false;
+            UMask = "0007";
+          };
+        };
+      })
       (lib.mkIf cfg.daemon.enable {
         systemd.services.agentix-daemon = {
           description = "agentix OpenAI-compatible inference gateway";
           wantedBy = ["multi-user.target"];
           after =
             ["network.target"]
+            ++ lib.optional cfg.qwen.enable "agentix-qwen.service"
             ++ lib.optional cfg.llama.enable "agentix-llama.service"
             ++ lib.optional cfg.whisper.enable "agentix-whisper.service";
           # Soft ordering only — daemon handles 503 when backends are down
           wants =
-            lib.optional cfg.llama.enable "agentix-llama.service"
+            lib.optional cfg.qwen.enable "agentix-qwen.service"
+            ++ lib.optional cfg.llama.enable "agentix-llama.service"
             ++ lib.optional cfg.whisper.enable "agentix-whisper.service";
 
           environment =
@@ -363,6 +460,8 @@
               AGENTIX_GATEWAY_HOST = cfg.daemon.host;
               AGENTIX_GATEWAY_PORT = toString cfg.daemon.port;
               AGENTIX_LLAMA_SOCKET = llamaSock;
+              AGENTIX_QWEN_SOCKET = qwenSock;
+              AGENTIX_QWEN_MODEL = cfg.qwen.model;
               AGENTIX_WHISPER_SOCKET = whisperSock;
               OLLAMA_BASE_URL = cfg.daemon.ollamaBaseUrl;
               AGENTIX_PIPER_VOICES_DIR = toString cfg.daemon.piperVoicesDir;

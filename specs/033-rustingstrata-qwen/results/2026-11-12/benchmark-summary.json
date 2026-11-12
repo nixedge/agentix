@@ -1,0 +1,11 @@
+{
+  "all_outputs_identical": true,
+  "all_generated_128": true,
+  "measured_decode": [
+    39.627457392943164,
+    55.245835823918206,
+    58.2417396449193
+  ],
+  "median_decode": 55.245835823918206,
+  "median_ttft": 0.230071421
+}

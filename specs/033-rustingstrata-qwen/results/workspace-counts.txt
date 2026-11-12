@@ -1,0 +1,3 @@
+Passed tests: 321
+Ignored tests: 7
+Result groups: 72

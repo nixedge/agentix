@@ -1,0 +1,7 @@
+warning: Git tree '/home/sam/home/agentix/033-rustingstrata-qwen' is dirty
+cuda device 0: NVIDIA GeForce RTX 5090 Laptop GPU, sm_120
+cuda shared memory: opt-in 101376 B per block, attn_decode_gqa*: 2112 B static, dynamic max 73728 B, carveout default
+cuda shared memory: opt-in 101376 B per block, attn_prefill_*: 0 B static, dynamic max 72704 B, carveout default
+cuda shared memory: opt-in 101376 B per block, gemvn_*: 0 B static, dynamic max 101376 B, carveout default
+plan: weights+state+scratch 4384 MB (KV 96 MB for 4096 tokens, prefill 205 MB), expert slots 18712 MB, resident experts 9588/24576
+expert traffic: 25.4 MB per layer active set (top-10), 936.8 MB per token over 48 MoE layers

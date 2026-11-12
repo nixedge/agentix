@@ -143,6 +143,8 @@ impl LocalGateway {
             role: "system".into(),
             content: Value::String(format!("{prompt}\nReference data: {reference}")),
             name: None,
+            tool_calls: None,
+            tool_call_id: None,
         }];
         messages.extend(context.messages.iter().map(|message| {
             ChatMessage {
@@ -153,6 +155,8 @@ impl LocalGateway {
                 .into(),
                 content: Value::String(message.text.clone()),
                 name: None,
+                tool_calls: None,
+                tool_call_id: None,
             }
         }));
         ChatCompletionRequest {

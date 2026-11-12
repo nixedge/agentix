@@ -1,0 +1,1 @@
+{"architecture":"qwen4exp","backend":"cuda","context":128,"device":"NVIDIA GeForce RTX 5090 Laptop GPU","event":"loaded","load_seconds":36.948059291,"max_tokens":4,"model":"/nix/store/m007ba04w46701a1cvlrmy1ahpxqsrm3-agentix-synthetic-qwen4exp-q8.gguf","prompt_tokens":25,"revision":"9dd6340d25c7c6770f7918134a27984cf20d7ce3"}

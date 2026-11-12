@@ -1,0 +1,94 @@
+warning: Git tree '/home/sam/home/agentix/033-rustingstrata-qwen' is dirty
+   Compiling agentix-qwen v0.1.0 (/home/sam/home/agentix/033-rustingstrata-qwen/agentix-qwen)
+   Compiling agentix-qwen-worker v0.1.0 (/home/sam/home/agentix/033-rustingstrata-qwen/agentix-qwen-worker)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.60s
+     Running unittests src/lib.rs (target/debug/deps/agentix_qwen-e0e36d5663348abc)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/agentix-qwen-bench.rs (target/debug/deps/agentix_qwen_bench-535e8af8c6cb12a7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/engine.rs (target/debug/deps/engine-293d61ff95fb3e99)
+
+running 4 tests
+test initialization_fails_without_silent_backend_fallback ... ok
+test cancellation_and_rejected_tokens_do_not_poison_next_request ... ok
+test quantized_model_prefill_matches_steps_and_resets_sequences ... ok
+test benchmark_cli_runs_the_pinned_fixture_and_emits_measured_records ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.33s
+
+     Running tests/tokenizer.rs (target/debug/deps/tokenizer-9e36ed693f351112)
+
+running 7 tests
+test greedy_generation_uses_lower_id_ties_and_stops_without_an_extra_logits_call ... ok
+test greedy_generation_respects_token_limit_and_rejects_bad_logits ... ok
+test streaming_decode_keeps_split_unicode_prefixes_valid ... ok
+test unsupported_prompts_and_reasoning_effort_are_rejected ... ok
+test prepared_prompt_admits_rendered_token_count_and_keeps_requested_output ... ok
+test pinned_tool_and_reasoning_template_preserves_special_tokens ... ok
+test pinned_vocabulary_chat_template_and_generation_stops ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.59s
+
+     Running unittests src/main.rs (target/debug/deps/agentix_qwen_worker-bbceba67baec1d8e)
+
+running 17 tests
+test tests::compute_selection_is_explicit_and_defaults_to_cuda ... ok
+test tests::reasoning_options_reject_invalid_types_and_unsupported_modes ... ok
+test tests::chat_request_preserves_prior_tool_calls_and_tool_response_ids ... ok
+test tests::missing_shard_error_names_the_expected_path ... ok
+test tests::socket_setup_preserves_an_existing_regular_file ... ok
+test tests::socket_setup_removes_a_stale_socket ... ok
+test tests::split_shards_match_automatic_discovery_before_hashing ... ok
+test tests::sse_sender_reports_disconnect_without_panicking ... ok
+test tests::sse_frames_include_event_and_json_data_lines ... ok
+test tests::shard_integrity_requires_matching_ordered_hashes ... ok
+test tool_calls::tests::normalizes_openai_tool_history_for_the_qwen_template ... ok
+test tool_calls::tests::rejects_duplicate_and_unsupported_tool_schemas ... ok
+test tool_calls::tests::rejects_unknown_tools_missing_arguments_and_incomplete_markup ... ok
+test tool_calls::tests::plain_text_and_multiple_calls_are_supported ... ok
+test tool_calls::tests::parses_and_validates_a_qwen_tool_call_with_optional_prefix ... ok
+test tests::dropped_request_cancels_blocking_generation_and_releases_slot ... ok
+test tests::text_prompt_uses_pinned_template_with_thinking_disabled ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.47s
+
+     Running tests/http.rs (target/debug/deps/http-271f34a0e82d8433)
+
+running 1 test
+test real_library_worker_http_stream_reset_admission_and_disconnect ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 13.18s
+
+     Running unittests src/lib.rs (target/debug/deps/agentix_router-efdad6c925a862bf)
+
+running 8 tests
+test tests::claude_to_anthropic ... ok
+test tests::hf_refs_are_local ... ok
+test tests::gpt_to_openai ... ok
+test tests::known_local_families ... ok
+test tests::provider_slash_model_to_openrouter ... ok
+test tests::local_prefix ... ok
+test tests::qwen_worker_uses_exact_configured_identity ... ok
+test tests::unknown_model_falls_back_to_local ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests agentix_qwen
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests agentix_router
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

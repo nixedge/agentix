@@ -1,0 +1,92 @@
+cuda device 0: NVIDIA GeForce RTX 5090 Laptop GPU, sm_120
+cuda shared memory: opt-in 101376 B per block, attn_decode_gqa*: 2112 B static, dynamic max 73728 B, carveout default
+cuda shared memory: opt-in 101376 B per block, attn_prefill_*: 0 B static, dynamic max 72704 B, carveout default
+cuda shared memory: opt-in 101376 B per block, gemvn_*: 0 B static, dynamic max 101376 B, carveout default
+plan: weights+state+scratch 4384 MB (KV 96 MB for 4096 tokens, prefill 205 MB), expert slots 18712 MB, resident experts 9588/24576
+expert traffic: 25.4 MB per layer active set (top-10), 936.8 MB per token over 48 MoE layers
+2026-11-12T10:27:06.786973Z  INFO agentix_qwen_worker: Qwen worker ready socket=/home/sam/home/agentix/033-rustingstrata-qwen/target/qwen-production.sock model=qwen3.8-flash-next shards=2 context_limit=4096 compute="cuda" cuda_device=Some(0)
+2026-11-12T10:27:39.604051Z  INFO agentix_qwen_worker: Qwen request admitted compute="cuda" prompt_tokens=16 max_tokens=8 streaming=false
+2026-11-12T10:27:42.219337Z  INFO agentix_qwen_worker: Qwen token processed position=16 prompt_tokens=16 elapsed_ms=2615
+2026-11-12T10:27:42.331983Z  INFO agentix_qwen_worker: Qwen token processed position=17 prompt_tokens=16 elapsed_ms=2727
+2026-11-12T10:27:42.332217Z  INFO agentix_qwen_worker: Qwen generation finished elapsed_ms=2727 generated_tokens=2
+2026-11-12T10:27:42.338721Z  INFO agentix_qwen_worker: Qwen request admitted compute="cuda" prompt_tokens=45 max_tokens=16 streaming=false
+2026-11-12T10:27:45.739676Z  INFO agentix_qwen_worker: Qwen token processed position=45 prompt_tokens=45 elapsed_ms=3400
+2026-11-12T10:27:45.851977Z  INFO agentix_qwen_worker: Qwen token processed position=46 prompt_tokens=45 elapsed_ms=3513
+2026-11-12T10:27:45.967906Z  INFO agentix_qwen_worker: Qwen token processed position=47 prompt_tokens=45 elapsed_ms=3629
+2026-11-12T10:27:46.064040Z  INFO agentix_qwen_worker: Qwen token processed position=48 prompt_tokens=45 elapsed_ms=3725
+2026-11-12T10:27:46.233093Z  INFO agentix_qwen_worker: Qwen token processed position=49 prompt_tokens=45 elapsed_ms=3894
+2026-11-12T10:27:46.306658Z  INFO agentix_qwen_worker: Qwen token processed position=50 prompt_tokens=45 elapsed_ms=3967
+2026-11-12T10:27:46.382823Z  INFO agentix_qwen_worker: Qwen token processed position=51 prompt_tokens=45 elapsed_ms=4044
+2026-11-12T10:27:46.480581Z  INFO agentix_qwen_worker: Qwen token processed position=52 prompt_tokens=45 elapsed_ms=4141
+2026-11-12T10:27:46.597765Z  INFO agentix_qwen_worker: Qwen token processed position=53 prompt_tokens=45 elapsed_ms=4258
+2026-11-12T10:27:46.690164Z  INFO agentix_qwen_worker: Qwen token processed position=54 prompt_tokens=45 elapsed_ms=4351
+2026-11-12T10:27:46.802267Z  INFO agentix_qwen_worker: Qwen token processed position=55 prompt_tokens=45 elapsed_ms=4463
+2026-11-12T10:27:46.966447Z  INFO agentix_qwen_worker: Qwen token processed position=56 prompt_tokens=45 elapsed_ms=4627
+2026-11-12T10:27:47.058834Z  INFO agentix_qwen_worker: Qwen token processed position=57 prompt_tokens=45 elapsed_ms=4720
+2026-11-12T10:27:47.116762Z  INFO agentix_qwen_worker: Qwen token processed position=58 prompt_tokens=45 elapsed_ms=4777
+2026-11-12T10:27:47.169429Z  INFO agentix_qwen_worker: Qwen token processed position=59 prompt_tokens=45 elapsed_ms=4830
+2026-11-12T10:27:47.294843Z  INFO agentix_qwen_worker: Qwen token processed position=60 prompt_tokens=45 elapsed_ms=4956
+2026-11-12T10:27:47.295035Z  INFO agentix_qwen_worker: Qwen generation finished elapsed_ms=4956 generated_tokens=16
+2026-11-12T10:27:47.301037Z  INFO agentix_qwen_worker: Qwen request admitted compute="cuda" prompt_tokens=45 max_tokens=16 streaming=true
+2026-11-12T10:27:48.261202Z  INFO agentix_qwen_worker: Qwen request admitted compute="cuda" prompt_tokens=287 max_tokens=128 streaming=false
+2026-11-12T10:28:03.256795Z  INFO agentix_qwen_worker: Qwen token processed position=287 prompt_tokens=287 elapsed_ms=14995
+2026-11-12T10:28:03.301776Z  INFO agentix_qwen_worker: Qwen token processed position=288 prompt_tokens=287 elapsed_ms=15040
+2026-11-12T10:28:03.377734Z  INFO agentix_qwen_worker: Qwen token processed position=289 prompt_tokens=287 elapsed_ms=15116
+2026-11-12T10:28:03.431384Z  INFO agentix_qwen_worker: Qwen token processed position=290 prompt_tokens=287 elapsed_ms=15170
+2026-11-12T10:28:03.483432Z  INFO agentix_qwen_worker: Qwen token processed position=291 prompt_tokens=287 elapsed_ms=15222
+2026-11-12T10:28:03.523403Z  INFO agentix_qwen_worker: Qwen token processed position=292 prompt_tokens=287 elapsed_ms=15262
+2026-11-12T10:28:03.619826Z  INFO agentix_qwen_worker: Qwen token processed position=293 prompt_tokens=287 elapsed_ms=15358
+2026-11-12T10:28:03.681089Z  INFO agentix_qwen_worker: Qwen token processed position=294 prompt_tokens=287 elapsed_ms=15419
+2026-11-12T10:28:03.751647Z  INFO agentix_qwen_worker: Qwen token processed position=295 prompt_tokens=287 elapsed_ms=15490
+2026-11-12T10:28:03.840709Z  INFO agentix_qwen_worker: Qwen token processed position=296 prompt_tokens=287 elapsed_ms=15579
+2026-11-12T10:28:03.903767Z  INFO agentix_qwen_worker: Qwen token processed position=297 prompt_tokens=287 elapsed_ms=15642
+2026-11-12T10:28:03.965667Z  INFO agentix_qwen_worker: Qwen token processed position=298 prompt_tokens=287 elapsed_ms=15704
+2026-11-12T10:28:04.053008Z  INFO agentix_qwen_worker: Qwen token processed position=299 prompt_tokens=287 elapsed_ms=15791
+2026-11-12T10:28:04.112325Z  INFO agentix_qwen_worker: Qwen token processed position=300 prompt_tokens=287 elapsed_ms=15851
+2026-11-12T10:28:04.179687Z  INFO agentix_qwen_worker: Qwen token processed position=301 prompt_tokens=287 elapsed_ms=15918
+2026-11-12T10:28:04.239907Z  INFO agentix_qwen_worker: Qwen token processed position=302 prompt_tokens=287 elapsed_ms=15978
+2026-11-12T10:28:04.329180Z  INFO agentix_qwen_worker: Qwen token processed position=303 prompt_tokens=287 elapsed_ms=16067
+2026-11-12T10:28:04.413731Z  INFO agentix_qwen_worker: Qwen token processed position=304 prompt_tokens=287 elapsed_ms=16152
+2026-11-12T10:28:04.486110Z  INFO agentix_qwen_worker: Qwen token processed position=305 prompt_tokens=287 elapsed_ms=16224
+2026-11-12T10:28:04.557218Z  INFO agentix_qwen_worker: Qwen token processed position=306 prompt_tokens=287 elapsed_ms=16295
+2026-11-12T10:28:04.647934Z  INFO agentix_qwen_worker: Qwen token processed position=307 prompt_tokens=287 elapsed_ms=16386
+2026-11-12T10:28:04.691455Z  INFO agentix_qwen_worker: Qwen token processed position=308 prompt_tokens=287 elapsed_ms=16430
+2026-11-12T10:28:04.806877Z  INFO agentix_qwen_worker: Qwen token processed position=309 prompt_tokens=287 elapsed_ms=16545
+2026-11-12T10:28:04.868664Z  INFO agentix_qwen_worker: Qwen token processed position=310 prompt_tokens=287 elapsed_ms=16607
+2026-11-12T10:28:04.936351Z  INFO agentix_qwen_worker: Qwen token processed position=311 prompt_tokens=287 elapsed_ms=16675
+2026-11-12T10:28:04.988790Z  INFO agentix_qwen_worker: Qwen token processed position=312 prompt_tokens=287 elapsed_ms=16727
+2026-11-12T10:28:05.032775Z  INFO agentix_qwen_worker: Qwen token processed position=313 prompt_tokens=287 elapsed_ms=16771
+2026-11-12T10:28:05.033023Z  INFO agentix_qwen_worker: Qwen generation finished elapsed_ms=16771 generated_tokens=27
+2026-11-12T10:29:26.733998Z  INFO agentix_qwen_worker: Qwen request admitted compute="cuda" prompt_tokens=359 max_tokens=64 streaming=false
+2026-11-12T10:29:36.745386Z  INFO agentix_qwen_worker: Qwen token processed position=359 prompt_tokens=359 elapsed_ms=10010
+2026-11-12T10:29:36.884843Z  INFO agentix_qwen_worker: Qwen token processed position=360 prompt_tokens=359 elapsed_ms=10149
+2026-11-12T10:29:37.018882Z  INFO agentix_qwen_worker: Qwen token processed position=361 prompt_tokens=359 elapsed_ms=10283
+2026-11-12T10:29:37.086924Z  INFO agentix_qwen_worker: Qwen token processed position=362 prompt_tokens=359 elapsed_ms=10351
+2026-11-12T10:29:37.173864Z  INFO agentix_qwen_worker: Qwen token processed position=363 prompt_tokens=359 elapsed_ms=10438
+2026-11-12T10:29:37.229256Z  INFO agentix_qwen_worker: Qwen token processed position=364 prompt_tokens=359 elapsed_ms=10494
+2026-11-12T10:29:37.354205Z  INFO agentix_qwen_worker: Qwen token processed position=365 prompt_tokens=359 elapsed_ms=10619
+2026-11-12T10:29:37.489455Z  INFO agentix_qwen_worker: Qwen token processed position=366 prompt_tokens=359 elapsed_ms=10754
+2026-11-12T10:29:37.622170Z  INFO agentix_qwen_worker: Qwen token processed position=367 prompt_tokens=359 elapsed_ms=10887
+2026-11-12T10:29:37.695725Z  INFO agentix_qwen_worker: Qwen token processed position=368 prompt_tokens=359 elapsed_ms=10960
+2026-11-12T10:29:37.772845Z  INFO agentix_qwen_worker: Qwen token processed position=369 prompt_tokens=359 elapsed_ms=11037
+2026-11-12T10:29:37.873199Z  INFO agentix_qwen_worker: Qwen token processed position=370 prompt_tokens=359 elapsed_ms=11138
+2026-11-12T10:29:37.950659Z  INFO agentix_qwen_worker: Qwen token processed position=371 prompt_tokens=359 elapsed_ms=11215
+2026-11-12T10:29:38.060284Z  INFO agentix_qwen_worker: Qwen token processed position=372 prompt_tokens=359 elapsed_ms=11325
+2026-11-12T10:29:38.159533Z  INFO agentix_qwen_worker: Qwen token processed position=373 prompt_tokens=359 elapsed_ms=11424
+2026-11-12T10:29:38.231301Z  INFO agentix_qwen_worker: Qwen token processed position=374 prompt_tokens=359 elapsed_ms=11496
+2026-11-12T10:29:38.310848Z  INFO agentix_qwen_worker: Qwen token processed position=375 prompt_tokens=359 elapsed_ms=11575
+2026-11-12T10:29:38.423801Z  INFO agentix_qwen_worker: Qwen token processed position=376 prompt_tokens=359 elapsed_ms=11688
+2026-11-12T10:29:38.424076Z  INFO agentix_qwen_worker: Qwen generation finished elapsed_ms=11688 generated_tokens=18
+2026-11-12T10:30:58.882879Z  INFO agentix_qwen_worker: Qwen request admitted compute="cuda" prompt_tokens=45 max_tokens=2048 streaming=true
+2026-11-12T10:31:04.141333Z  INFO agentix_qwen_worker: Qwen request admitted compute="cuda" prompt_tokens=16 max_tokens=8 streaming=false
+2026-11-12T10:31:04.479656Z  INFO agentix_qwen_worker: Qwen token processed position=16 prompt_tokens=16 elapsed_ms=336
+2026-11-12T10:31:04.527580Z  INFO agentix_qwen_worker: Qwen token processed position=17 prompt_tokens=16 elapsed_ms=384
+2026-11-12T10:31:04.527757Z  INFO agentix_qwen_worker: Qwen generation finished elapsed_ms=384 generated_tokens=2
+2026-11-12T10:31:34.811478Z  INFO agentix_qwen_worker: Qwen request admitted compute="cuda" prompt_tokens=2234 max_tokens=8 streaming=false
+2026-11-12T10:31:47.206952Z  INFO agentix_qwen_worker: Qwen token processed position=2234 prompt_tokens=2234 elapsed_ms=12394
+2026-11-12T10:31:47.284557Z  INFO agentix_qwen_worker: Qwen token processed position=2235 prompt_tokens=2234 elapsed_ms=12472
+2026-11-12T10:31:47.284819Z  INFO agentix_qwen_worker: Qwen generation finished elapsed_ms=12472 generated_tokens=2
+2026-11-12T10:33:08.914842Z  INFO agentix_qwen_worker: Qwen request admitted compute="cuda" prompt_tokens=16 max_tokens=8 streaming=false
+2026-11-12T10:33:09.394860Z  INFO agentix_qwen_worker: Qwen token processed position=16 prompt_tokens=16 elapsed_ms=479
+2026-11-12T10:33:09.444245Z  INFO agentix_qwen_worker: Qwen token processed position=17 prompt_tokens=16 elapsed_ms=528
+2026-11-12T10:33:09.444515Z  INFO agentix_qwen_worker: Qwen generation finished elapsed_ms=528 generated_tokens=2

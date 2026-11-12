@@ -1,0 +1,33 @@
+warning: Git tree '/home/sam/home/agentix/033-rustingstrata-qwen' is dirty
+    Blocking waiting for file lock on build directory
+   Compiling agentix-qwen-worker v0.1.0 (/home/sam/home/agentix/033-rustingstrata-qwen/agentix-qwen-worker)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3m 24s
+     Running unittests src/main.rs (target/debug/deps/agentix_qwen_worker-bbceba67baec1d8e)
+
+running 17 tests
+test tests::compute_selection_is_explicit_and_defaults_to_cuda ... ok
+test tests::reasoning_options_reject_invalid_types_and_unsupported_modes ... ok
+test tests::socket_setup_preserves_an_existing_regular_file ... ok
+test tests::socket_setup_removes_a_stale_socket ... ok
+test tests::split_shards_match_automatic_discovery_before_hashing ... ok
+test tests::missing_shard_error_names_the_expected_path ... ok
+test tests::chat_request_preserves_prior_tool_calls_and_tool_response_ids ... ok
+test tests::shard_integrity_requires_matching_ordered_hashes ... ok
+test tool_calls::tests::normalizes_openai_tool_history_for_the_qwen_template ... ok
+test tests::sse_sender_reports_disconnect_without_panicking ... ok
+test tests::sse_frames_include_event_and_json_data_lines ... ok
+test tool_calls::tests::parses_and_validates_a_qwen_tool_call_with_optional_prefix ... ok
+test tool_calls::tests::plain_text_and_multiple_calls_are_supported ... ok
+test tool_calls::tests::rejects_duplicate_and_unsupported_tool_schemas ... ok
+test tool_calls::tests::rejects_unknown_tools_missing_arguments_and_incomplete_markup ... ok
+test tests::dropped_request_cancels_blocking_generation_and_releases_slot ... ok
+test tests::text_prompt_uses_pinned_template_with_thinking_disabled ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.24s
+
+     Running tests/http.rs (target/debug/deps/http-271f34a0e82d8433)
+
+running 1 test
+test real_library_worker_http_stream_reset_admission_and_disconnect ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.46s

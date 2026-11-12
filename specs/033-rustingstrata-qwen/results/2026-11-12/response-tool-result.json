@@ -1,0 +1,1 @@
+{"choices":[{"finish_reason":"stop","index":0,"message":{"content":"/home/sam/home/agentix/033-rustingstrata-qwen","role":"assistant"}}],"created":1794479378,"id":"chatcmpl-0a6d8919d6fa4bf795916c7db6831234","model":"qwen3.8-flash-next","object":"chat.completion","usage":{"completion_tokens":18,"prompt_tokens":359,"total_tokens":377}}

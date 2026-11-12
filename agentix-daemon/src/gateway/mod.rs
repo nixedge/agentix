@@ -90,16 +90,22 @@ async fn chat_completions_handler(
         }
     };
 
-    let target = state.model_router.route(&req.model);
+    let target = state
+        .model_router
+        .route_with_qwen(&req.model, &state.config.qwen_model);
     tracing::debug!(model = %req.model, target = ?target, "routing chat completion");
 
     match target {
         RouteTarget::Anthropic => anthropic::proxy_chat(&state, headers, body).await,
         RouteTarget::OpenAI => openai_proxy::proxy_chat(&state, headers, body).await,
         RouteTarget::OpenRouter => openai_proxy::proxy_openrouter(&state, headers, body).await,
-        RouteTarget::Local => {
+        RouteTarget::Local | RouteTarget::LocalQwen => {
+            let socket = match target {
+                RouteTarget::LocalQwen => &state.config.qwen_socket,
+                _ => &state.llama_socket,
+            };
             proxy::forward(
-                &state.llama_socket,
+                socket,
                 axum::http::Method::POST,
                 "/v1/chat/completions",
                 headers,
@@ -211,6 +217,24 @@ async fn responses_proxy_handler(
 async fn models_handler(State(state): State<AppState>) -> impl IntoResponse {
     let mut models = vec![];
 
+    let response = proxy::forward(
+        &state.config.qwen_socket,
+        axum::http::Method::GET,
+        "/v1/models",
+        HeaderMap::new(),
+        Body::empty(),
+    )
+    .await;
+    if response.status().is_success() {
+        if let Ok(bytes) = axum::body::to_bytes(response.into_body(), 1 << 20).await {
+            if let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) {
+                if let Some(data) = value["data"].as_array() {
+                    models.extend_from_slice(data);
+                }
+            }
+        }
+    }
+
     // Ask the llama backend for its local models (best-effort)
     let llama_resp = proxy::forward(
         &state.llama_socket,
@@ -251,4 +275,62 @@ async fn models_handler(State(state): State<AppState>) -> impl IntoResponse {
     }
 
     axum::Json(serde_json::json!({ "object": "list", "data": models }))
+}
+
+#[cfg(test)]
+mod qwen_tests {
+    use super::*;
+    use serde_json::{json, Value};
+    use std::error::Error;
+
+    #[tokio::test]
+    async fn qwen_routing_lists_worker_and_preserves_busy_errors() -> Result<(), Box<dyn Error>> {
+        let temp = tempfile::tempdir()?;
+        let qwen = temp.path().join("qwen.sock");
+        let gateway = temp.path().join("gateway.sock");
+        let listener = tokio::net::UnixListener::bind(&qwen)?;
+        let worker = Router::new()
+            .route(
+                "/v1/models",
+                get(|| async { axum::Json(json!({"data":[{"id":"qwen-test","object":"model"}]})) }),
+            )
+            .route(
+                "/v1/chat/completions",
+                post(|| async {
+                    (
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        axum::Json(json!({"error":{"code":"busy"}})),
+                    )
+                }),
+            );
+        let worker_task = tokio::spawn(async move { axum::serve(listener, worker).await });
+        let mut config = Config::from_env();
+        config.qwen_socket = qwen;
+        config.qwen_model = "qwen-test".into();
+        config.llama_socket = temp.path().join("missing-llama.sock");
+        let app = router(Arc::new(ModelRouter::new()), config)?;
+        let listener = tokio::net::UnixListener::bind(&gateway)?;
+        let gateway_task = tokio::spawn(async move { axum::serve(listener, app).await });
+        let client = reqwest::Client::builder().unix_socket(gateway).build()?;
+        let response = client
+            .post("http://localhost/v1/chat/completions")
+            .json(&json!({"model":"qwen-test","messages":[{"role":"user","content":"Hi"}]}))
+            .send()
+            .await?;
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(response.json::<Value>().await?["error"]["code"], "busy");
+        let models: Value = client
+            .get("http://localhost/v1/models")
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+        assert!(models["data"]
+            .as_array()
+            .is_some_and(|models| models.iter().any(|model| model["id"] == "qwen-test")));
+        worker_task.abort();
+        gateway_task.abort();
+        Ok(())
+    }
 }

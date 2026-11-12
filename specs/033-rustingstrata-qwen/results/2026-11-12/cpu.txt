@@ -1,0 +1,2 @@
+model name	: AMD Ryzen AI 9 HX 370 w/ Radeon 890M
+MemTotal:       64928692 kB

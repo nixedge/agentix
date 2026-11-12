@@ -1,0 +1,9 @@
+warning: Git tree '/home/sam/home/agentix/033-rustingstrata-qwen' is dirty
+cuda device 0: NVIDIA GeForce RTX 5090 Laptop GPU, sm_120
+compiling CUDA kernels for sm_120 with NVRTC 12.9 (first run only, ~15 s)
+cuda shared memory: opt-in 101376 B per block, attn_decode_gqa*: 2112 B static, dynamic max 73728 B, carveout default
+cuda shared memory: opt-in 101376 B per block, attn_prefill_*: 0 B static, dynamic max 72704 B, carveout default
+cuda shared memory: opt-in 101376 B per block, gemvn_*: 0 B static, dynamic max 101376 B, carveout default
+plan: weights+state+scratch 0 MB (KV 0 MB for 128 tokens, prefill 0 MB), expert slots 0 MB, resident experts 2/2
+expert traffic: 0.0 MB per layer active set (top-1), 0.0 MB per token over 1 MoE layers
+Error: Backend("attention head_dim 32 unsupported (64, 128, 256 or 512)")

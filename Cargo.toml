@@ -1,5 +1,7 @@
 [workspace]
 members = [
+  "agentix-qwen",
+  "agentix-qwen-worker",
   "agentix-ourgroceries",
   "agentix-assistant",
   "agentix-assistant-core",

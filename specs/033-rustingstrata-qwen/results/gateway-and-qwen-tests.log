@@ -1,0 +1,105 @@
+warning: Git tree '/home/sam/home/agentix/033-rustingstrata-qwen' is dirty
+   Compiling agentix-router v0.1.0 (/home/sam/home/agentix/033-rustingstrata-qwen/agentix-router)
+   Compiling agentix-qwen-worker v0.1.0 (/home/sam/home/agentix/033-rustingstrata-qwen/agentix-qwen-worker)
+   Compiling agentix-daemon v0.1.0 (/home/sam/home/agentix/033-rustingstrata-qwen/agentix-daemon)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.52s
+     Running unittests src/main.rs (target/debug/deps/agentix_daemon-588b9c1e4772dffd)
+
+running 1 test
+test gateway::qwen_tests::qwen_routing_lists_worker_and_preserves_busy_errors ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/integration.rs (target/debug/deps/integration-a9c627a1784cb356)
+
+running 10 tests
+test health_returns_ok ... ok
+test models_returns_list ... ok
+test local_chat_streaming_returns_sse ... ok
+test anthropic_native_messages_endpoint ... ok
+test local_chat_completion_returns_content ... ok
+test anthropic_proxy_chat_rejects_without_auth ... ok
+test anthropic_proxy_chat_with_api_key ... ok
+test unknown_model_routes_to_default ... ok
+test openrouter_rejects_without_key ... ok
+test bad_request_returns_400 ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running unittests src/lib.rs (target/debug/deps/agentix_qwen-e0e36d5663348abc)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/agentix-qwen-bench.rs (target/debug/deps/agentix_qwen_bench-535e8af8c6cb12a7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/engine.rs (target/debug/deps/engine-293d61ff95fb3e99)
+
+running 3 tests
+test initialization_fails_without_silent_backend_fallback ... ok
+test cancellation_and_rejected_tokens_do_not_poison_next_request ... ok
+test quantized_model_prefill_matches_steps_and_resets_sequences ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.24s
+
+     Running tests/tokenizer.rs (target/debug/deps/tokenizer-9e36ed693f351112)
+
+running 7 tests
+test greedy_generation_respects_token_limit_and_rejects_bad_logits ... ok
+test greedy_generation_uses_lower_id_ties_and_stops_without_an_extra_logits_call ... ok
+test pinned_tool_and_reasoning_template_preserves_special_tokens ... ok
+test pinned_vocabulary_chat_template_and_generation_stops ... ok
+test streaming_decode_keeps_split_unicode_prefixes_valid ... ok
+test prepared_prompt_admits_rendered_token_count_and_keeps_requested_output ... ok
+test unsupported_prompts_and_reasoning_effort_are_rejected ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.93s
+
+     Running unittests src/main.rs (target/debug/deps/agentix_qwen_worker-6cfde85cba141a77)
+
+running 17 tests
+test tool_calls::tests::plain_text_and_multiple_calls_are_supported ... ok
+test tests::missing_shard_error_names_the_expected_path ... ok
+test tests::reasoning_options_reject_invalid_types_and_unsupported_modes ... ok
+test tool_calls::tests::rejects_unknown_tools_missing_arguments_and_incomplete_markup ... ok
+test tests::shard_integrity_requires_matching_ordered_hashes ... ok
+test tests::split_shards_match_automatic_discovery_before_hashing ... ok
+test tests::socket_setup_preserves_an_existing_regular_file ... ok
+test tests::socket_setup_removes_a_stale_socket ... ok
+test tests::sse_sender_reports_disconnect_without_panicking ... ok
+test tool_calls::tests::normalizes_openai_tool_history_for_the_qwen_template ... ok
+test tests::chat_request_preserves_prior_tool_calls_and_tool_response_ids ... ok
+test tool_calls::tests::parses_and_validates_a_qwen_tool_call_with_optional_prefix ... ok
+test tests::compute_selection_is_explicit_and_defaults_to_cuda ... ok
+test tests::sse_frames_include_event_and_json_data_lines ... ok
+test tool_calls::tests::rejects_duplicate_and_unsupported_tool_schemas ... ok
+test tests::dropped_request_cancels_blocking_generation_and_releases_slot ... ok
+test tests::text_prompt_uses_pinned_template_with_thinking_disabled ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.96s
+
+     Running tests/http.rs (target/debug/deps/http-8023d712439a5eba)
+
+running 1 test
+test real_library_worker_http_stream_reset_admission_and_disconnect ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 19.90s
+
+     Running unittests src/lib.rs (target/debug/deps/agentix_router-efdad6c925a862bf)
+
+running 8 tests
+test tests::local_prefix ... ok
+test tests::claude_to_anthropic ... ok
+test tests::hf_refs_are_local ... ok
+test tests::unknown_model_falls_back_to_local ... ok
+test tests::gpt_to_openai ... ok
+test tests::qwen_worker_uses_exact_configured_identity ... ok
+test tests::provider_slash_model_to_openrouter ... ok
+test tests::known_local_families ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s

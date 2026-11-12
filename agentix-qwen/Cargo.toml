@@ -1,0 +1,20 @@
+[package]
+name = "agentix-qwen"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "RustingStrata inference and Qwen prompt integration for Agentix"
+
+[[bin]]
+name = "agentix-qwen-bench"
+path = "src/bin/agentix-qwen-bench.rs"
+
+[dependencies]
+anyhow = "1"
+rusting_strata = { git = "https://github.com/RustingStudio/RustingStrata", rev = "9dd6340d25c7c6770f7918134a27984cf20d7ce3" }
+minijinja = { version = "2.24.0", features = ["json"] }
+serde_json = "1"
+tokenizers = { version = "0.22.2", default-features = false, features = ["fancy-regex"] }
+
+[lints]
+workspace = true
