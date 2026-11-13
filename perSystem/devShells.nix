@@ -37,7 +37,7 @@
     };
 
     devShells.workspace-tests = pkgs.mkShell {
-      packages = with pkgs; [toolchain pkg-config clang cmake ninja libclang.lib onnxruntime openssl alsa-lib protobuf jq];
+      packages = with pkgs; [toolchain bubblewrap pkg-config clang cmake ninja libclang.lib onnxruntime openssl alsa-lib protobuf jq];
       LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
       CMAKE_GENERATOR = "Ninja";
       ORT_DYLIB_PATH = "${pkgs.onnxruntime}/lib/libonnxruntime.so";

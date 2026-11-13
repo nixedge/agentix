@@ -1,5 +1,6 @@
 [workspace]
 members = [
+  "agentix-gpu",
   "agentix-qwen",
   "agentix-qwen-worker",
   "agentix-ourgroceries",
@@ -41,3 +42,6 @@ expect_used = "deny"
 # but our workspace uses ort =2.0.0-rc.13 where it was renamed to ort::ep::CUDA.
 # This local patch updates the two call sites.
 kokoro-tts = { path = "patches/kokoro-tts" }
+
+[patch."https://github.com/RustingStudio/RustingStrata"]
+rusting_strata = { path = "patches/rusting-strata" }

@@ -1,221 +1,242 @@
 use crate::{backend::LoadedModel, InferError};
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, Weak},
     time::Instant,
 };
-use tokio::sync::Notify;
 
 struct PoolSlot {
     loaded: Arc<dyn LoadedModel>,
     last_used: Instant,
 }
-
 type ReleaseFn = Box<dyn FnOnce(Arc<dyn LoadedModel>) + Send>;
-
-/// Returned to callers; releases the model back to the pool on drop.
 pub struct ModelGuard {
     loaded: Arc<dyn LoadedModel>,
     on_release: Option<ReleaseFn>,
 }
-
 impl std::ops::Deref for ModelGuard {
     type Target = dyn LoadedModel;
     fn deref(&self) -> &Self::Target {
         self.loaded.as_ref()
     }
 }
-
 impl Drop for ModelGuard {
     fn drop(&mut self) {
-        if let Some(f) = self.on_release.take() {
-            f(Arc::clone(&self.loaded));
+        if let Some(release) = self.on_release.take() {
+            release(Arc::clone(&self.loaded));
         }
     }
 }
-
+#[derive(Default)]
+struct Accounting {
+    count: usize,
+    bytes: u64,
+}
+/// A native owner retains this token after its pool entry is evicted.
+pub struct Reservation {
+    accounting: Arc<Mutex<Accounting>>,
+    bytes: u64,
+}
+impl Drop for Reservation {
+    fn drop(&mut self) {
+        let mut accounting = self.accounting.lock().unwrap_or_else(|p| p.into_inner());
+        accounting.count = accounting.count.saturating_sub(1);
+        accounting.bytes = accounting.bytes.saturating_sub(self.bytes);
+    }
+}
+#[derive(Default)]
 struct PoolState {
     idle: HashMap<String, Vec<PoolSlot>>,
 }
-
 impl PoolState {
-    fn total_vram(&self) -> u64 {
-        self.idle
-            .values()
-            .flat_map(|v| v.iter())
-            .map(|s| s.loaded.vram_bytes())
-            .sum()
-    }
-
-    /// Evict the idle slot with the oldest last_used timestamp.
-    fn evict_lru(&mut self) {
-        let mut oldest: Option<(String, usize)> = None;
-
-        for (name, slots) in &self.idle {
-            for (i, slot) in slots.iter().enumerate() {
-                let is_older = oldest
-                    .as_ref()
-                    .and_then(|(n, idx)| self.idle.get(n).and_then(|v| v.get(*idx)))
-                    .map(|s| slot.last_used < s.last_used)
-                    .unwrap_or(true);
-                if is_older {
-                    oldest = Some((name.clone(), i));
-                }
-            }
+    fn take_lru(&mut self) -> Option<Arc<dyn LoadedModel>> {
+        let oldest = self
+            .idle
+            .iter()
+            .flat_map(|(name, slots)| {
+                slots
+                    .iter()
+                    .enumerate()
+                    .map(move |(index, slot)| (name.clone(), index, slot.last_used))
+            })
+            .min_by_key(|(_, _, used)| *used);
+        let (name, index, _) = oldest?;
+        let slots = self.idle.get_mut(&name)?;
+        let slot = slots.remove(index);
+        if slots.is_empty() {
+            self.idle.remove(&name);
         }
-
-        if let Some((name, idx)) = oldest {
-            if let Some(slots) = self.idle.get_mut(&name) {
-                let vram_freed = slots.get(idx).map(|s| s.loaded.vram_bytes()).unwrap_or(0);
-                slots.remove(idx);
-                if slots.is_empty() {
-                    self.idle.remove(&name);
-                }
-                tracing::info!(
-                    model = %name,
-                    vram_freed_bytes = vram_freed,
-                    "evicted LRU model from pool",
-                );
-            }
-        }
-    }
-
-    fn total_idle_count(&self) -> usize {
-        self.idle.values().map(|v| v.len()).sum()
+        Some(slot.loaded)
     }
 }
-
 pub struct ContextPool {
     state: Arc<Mutex<PoolState>>,
-    /// Guards concurrent loads for the same model key.
-    /// When a thread begins loading a model it inserts a Notify here; other
-    /// threads that want the same model wait on that Notify instead of
-    /// starting a duplicate load (T027).
-    loading: Arc<Mutex<HashMap<String, Arc<Notify>>>>,
+    accounting: Arc<Mutex<Accounting>>,
+    loading: Mutex<HashMap<String, Weak<tokio::sync::Mutex<()>>>>,
     vram_limit: Option<u64>,
     max_loaded_models: usize,
 }
-
 impl ContextPool {
     pub fn new(vram_limit: Option<u64>, max_loaded_models: usize) -> Self {
         Self {
-            state: Arc::new(Mutex::new(PoolState {
-                idle: HashMap::new(),
-            })),
-            loading: Arc::new(Mutex::new(HashMap::new())),
+            state: Arc::new(Mutex::new(PoolState::default())),
+            accounting: Arc::new(Mutex::new(Accounting::default())),
+            loading: Mutex::new(HashMap::new()),
             vram_limit,
             max_loaded_models,
         }
     }
-
-    /// If another caller is already loading `name`, wait for it to finish and
-    /// return `true` (the caller should then retry `acquire_idle`).
-    /// If no load is in progress, register `name` as loading and return `false`.
-    pub async fn wait_if_loading(&self, name: &str) -> bool {
-        let notify = {
-            let map = self.loading.lock().unwrap_or_else(|p| p.into_inner());
-            map.get(name).cloned()
+    pub async fn lock_loading(&self, name: &str) -> tokio::sync::OwnedMutexGuard<()> {
+        let lock = {
+            let mut loading = self.loading.lock().unwrap_or_else(|p| p.into_inner());
+            loading.retain(|_, lock| lock.strong_count() > 0);
+            loading
+                .get(name)
+                .and_then(Weak::upgrade)
+                .unwrap_or_else(|| {
+                    let lock = Arc::new(tokio::sync::Mutex::new(()));
+                    loading.insert(name.into(), Arc::downgrade(&lock));
+                    lock
+                })
         };
-        if let Some(notify) = notify {
-            notify.notified().await;
-            true
-        } else {
-            false
+        lock.lock_owned().await
+    }
+    pub fn reserve(&self, name: &str, bytes: u64) -> Result<Reservation, InferError> {
+        loop {
+            {
+                let mut accounting = self.accounting.lock().unwrap_or_else(|p| p.into_inner());
+                let total = accounting.bytes.checked_add(bytes);
+                let fits =
+                    total.is_some_and(|total| self.vram_limit.is_none_or(|limit| total <= limit));
+                if fits && accounting.count < self.max_loaded_models {
+                    accounting.bytes = total
+                        .ok_or_else(|| InferError::Backend("pool accounting overflow".into()))?;
+                    accounting.count += 1;
+                    return Ok(Reservation {
+                        accounting: Arc::clone(&self.accounting),
+                        bytes,
+                    });
+                }
+            }
+            let evicted = self
+                .state
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .take_lru();
+            match evicted {
+                Some(model) => drop(model),
+                None => {
+                    return Err(InferError::VramExhausted {
+                        model: name.into(),
+                        required_bytes: bytes,
+                    })
+                }
+            }
         }
     }
-
-    /// Mark `name` as currently loading. Call `finish_loading` when done.
-    pub fn begin_loading(&self, name: &str) -> Arc<Notify> {
-        let notify = Arc::new(Notify::new());
-        self.loading
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .insert(name.to_string(), Arc::clone(&notify));
-        notify
-    }
-
-    /// Remove the loading sentinel and wake all waiters.
-    pub fn finish_loading(&self, name: &str, notify: Arc<Notify>) {
-        self.loading
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .remove(name);
-        notify.notify_waiters();
-    }
-
-    /// Try to get an idle instance for `name` without loading.
-    pub fn acquire_idle(&self, name: &str) -> Option<ModelGuard> {
-        let mut state = self.state.lock().ok()?;
-        let slots = state.idle.get_mut(name)?;
-        if slots.is_empty() {
-            return None;
-        }
-        let slot = slots.pop()?;
-        drop(state);
-
-        let state_arc = Arc::clone(&self.state);
-        let name_owned = name.to_string();
-        Some(ModelGuard {
-            loaded: slot.loaded,
+    fn guard(&self, name: &str, loaded: Arc<dyn LoadedModel>) -> ModelGuard {
+        let state = Arc::clone(&self.state);
+        let name = name.to_owned();
+        ModelGuard {
+            loaded,
             on_release: Some(Box::new(move |model| {
-                if let Ok(mut s) = state_arc.lock() {
-                    s.idle.entry(name_owned).or_default().push(PoolSlot {
+                state
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .idle
+                    .entry(name)
+                    .or_default()
+                    .push(PoolSlot {
                         loaded: model,
                         last_used: Instant::now(),
                     });
-                }
             })),
-        })
+        }
     }
-
-    /// Register a freshly loaded model and return a guard for immediate use.
-    /// Evicts idle models if VRAM budget or slot count is exceeded.
+    pub fn acquire_idle(&self, name: &str) -> Option<ModelGuard> {
+        let slot = self.state.lock().ok()?.idle.get_mut(name)?.pop()?;
+        Some(self.guard(name, slot.loaded))
+    }
+    pub fn store_reserved(&self, name: &str, loaded: Arc<dyn LoadedModel>) -> ModelGuard {
+        self.guard(name, loaded)
+    }
     pub fn store_loaded(
         &self,
         name: &str,
         loaded: Arc<dyn LoadedModel>,
         needed_vram: u64,
     ) -> Result<ModelGuard, InferError> {
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| InferError::Backend("pool lock poisoned".to_string()))?;
-
-        // Enforce VRAM limit
-        if let Some(limit) = self.vram_limit {
-            while state.total_vram() + needed_vram > limit {
-                if state.total_idle_count() == 0 {
-                    return Err(InferError::VramExhausted {
-                        model: name.to_string(),
-                        required_bytes: needed_vram,
-                    });
-                }
-                state.evict_lru();
-            }
+        let local = self.reserve(name, needed_vram)?;
+        let loaded = crate::memory::LoadReservation {
+            local: Some(local),
+            shared: None,
+            peak_bytes: needed_vram,
+            plan: None,
         }
+        .wrap(loaded);
+        Ok(self.guard(name, loaded))
+    }
+}
 
-        // Enforce slot count
-        while state.total_idle_count() >= self.max_loaded_models {
-            if state.total_idle_count() == 0 {
-                break;
-            }
-            state.evict_lru();
-        }
-
-        drop(state);
-
-        let state_arc = Arc::clone(&self.state);
-        let name_owned = name.to_string();
-        Ok(ModelGuard {
-            loaded,
-            on_release: Some(Box::new(move |model| {
-                if let Ok(mut s) = state_arc.lock() {
-                    s.idle.entry(name_owned).or_default().push(PoolSlot {
-                        loaded: model,
-                        last_used: Instant::now(),
-                    });
-                }
-            })),
-        })
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn active_and_pending_reservations_are_counted_before_allocation() -> Result<(), InferError> {
+        let pool = ContextPool::new(Some(100), 3);
+        let active = pool.reserve("active", 60)?;
+        assert!(matches!(
+            pool.reserve("pending", 50),
+            Err(InferError::VramExhausted { .. })
+        ));
+        let pending = pool.reserve("pending", 40)?;
+        assert!(pool.reserve("third", 1).is_err());
+        drop(active);
+        drop(pending);
+        let _all = pool.reserve("all", 100)?;
+        Ok(())
+    }
+    #[test]
+    fn allocation_is_charged_through_delayed_native_shutdown(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let pool = ContextPool::new(Some(100), 2);
+        let allocation = pool.reserve("native", 90)?;
+        let (release, released) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            let _allocation = allocation;
+            let _ = released.recv();
+        });
+        assert!(pool.reserve("competing", 20).is_err());
+        release.send(())?;
+        worker.join().map_err(|_| "native test worker panicked")?;
+        let _allocation = pool.reserve("competing", 100)?;
+        Ok(())
+    }
+    #[test]
+    fn count_limit_and_overflow_fail_closed() -> Result<(), InferError> {
+        let pool = ContextPool::new(None, 1);
+        let held = pool.reserve("one", 1)?;
+        assert!(pool.reserve("two", 1).is_err());
+        drop(held);
+        let huge = pool.reserve("huge", u64::MAX)?;
+        assert!(pool.reserve("overflow", 1).is_err());
+        drop(huge);
+        assert!(ContextPool::new(None, 0).reserve("disabled", 1).is_err());
+        Ok(())
+    }
+    #[tokio::test]
+    async fn cancelled_loading_guard_does_not_strand_waiters(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let pool = ContextPool::new(None, 1);
+        let first = pool.lock_loading("model").await;
+        let mut next = Box::pin(pool.lock_loading("model"));
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(10), next.as_mut())
+                .await
+                .is_err()
+        );
+        drop(first);
+        let _next = tokio::time::timeout(std::time::Duration::from_secs(1), next).await?;
+        Ok(())
     }
 }

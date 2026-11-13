@@ -688,3 +688,9 @@ The Qwen worker uses RustingStrata directly as a Rust library, with Agentix's
 Unix-socket API, pinned tokenizer and function tools. Build with
 `nix build .#agentix-qwen-worker`; use `nix develop .#qwen` for its dedicated
 development environment. [Setup, checks and target GPU benchmarks](specs/033-rustingstrata-qwen/quickstart.md).
+
+Shared GPU memory management is opt-in through `services.agentix.gpu`. The
+coordinator admits calibrated peak leases before model loading and can reclaim
+Qwen's GPU expert copies without restarting it or losing its live context.
+Use matching coordinator/worker packages and measured model-hash/context/batch
+profiles. [Configuration, metrics and bounded server acceptance](specs/035-shared-gpu-memory/quickstart.md).

@@ -4,6 +4,7 @@ use agentix_qwen::{
     tokenizer::{GreedyStopReason, PreparedPrompt, PromptRequest, QwenTokenizer},
     Error as QwenError,
 };
+mod gpu;
 mod tool_calls;
 
 use axum::{
@@ -119,21 +120,42 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .first()
         .ok_or("missing first GGUF shard")?
         .clone();
-    let (engine, tokenizer) = tokio::task::spawn_blocking(move || -> Result<_, String> {
+    let model_name = env::var("AGENTIX_QWEN_MODEL").unwrap_or_else(|_| "qwen3.8-flash-next".into());
+    let load_model_name = model_name.clone();
+    let control_path = env_path("AGENTIX_QWEN_GPU_SOCKET", "/run/agentix/qwen-gpu.sock");
+    let (engine, tokenizer, managed) = tokio::task::spawn_blocking(move || -> Result<_, String> {
+        let gpu_client = agentix_gpu::Client::from_env("qwen").map_err(|e| e.to_string())?;
+        let mut options = Options {
+            backend: compute_mode.into(),
+            device,
+            context: context_limit,
+            chunk,
+            vram_margin,
+            expert_budget: None,
+        };
+        gpu::Managed::validate(
+            gpu_client.as_ref(),
+            &load_model_name,
+            &expected_hashes,
+            &options,
+        )?;
         verify_shard_hashes(&shard_paths, &expected_hashes).map_err(|error| error.to_string())?;
         let tokenizer = QwenTokenizer::from_files(&tokenizer_path, &template_path)
             .map_err(|error| error.to_string())?;
-        let engine = Engine::open(
-            first_shard,
-            Options {
-                backend: compute_mode.into(),
-                device,
-                context: context_limit,
-                chunk,
-                vram_margin,
-            },
-        )
-        .map_err(|error| error.to_string())?;
+        let managed = gpu::Managed::prepare(
+            gpu_client,
+            &load_model_name,
+            &expected_hashes,
+            &options,
+            &control_path,
+        )?;
+        let (managed, budget) = match managed {
+            Some((managed, budget)) => (Some(managed), Some(budget)),
+            None => (None, None),
+        };
+        options.expert_budget = managed.as_ref().map(gpu::Managed::bytes);
+        let engine = Engine::open_managed(first_shard, options, budget)
+            .map_err(|error| error.to_string())?;
         if engine.info.architecture != "qwen4exp"
             || engine.info.vocabulary != tokenizer.model_vocabulary_size()
         {
@@ -141,16 +163,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 "GGUF must match the pinned Qwen3.8 qwen4exp tokenizer and vocabulary".into(),
             );
         }
-        Ok((engine, tokenizer))
+        Ok((engine, tokenizer, managed))
     })
     .await?
     .map_err(std::io::Error::other)?;
+    if let Some(managed) = managed {
+        managed.start(engine.control())?;
+    }
     let state = AppState {
         engine: Arc::new(engine),
         tokenizer: Arc::new(tokenizer),
-        model_name: Arc::from(
-            env::var("AGENTIX_QWEN_MODEL").unwrap_or_else(|_| "qwen3.8-flash-next".into()),
-        ),
+        model_name: Arc::from(model_name),
         context_limit,
         compute_mode,
         cuda_device: (compute_mode == "cuda").then_some(device),

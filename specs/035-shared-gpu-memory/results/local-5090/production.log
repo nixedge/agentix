@@ -1,0 +1,13 @@
+warning: Git tree '/home/sam/home/agentix/035-shared-gpu-memory' is dirty
+   Compiling agentix-qwen v0.1.0 (/home/sam/home/agentix/035-shared-gpu-memory/agentix-qwen)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.62s
+     Running tests/engine.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/engine-f0d9cd5345d289a5)
+
+running 1 test
+cuda device 0: NVIDIA GeForce RTX 5090 Laptop GPU, sm_120
+cuda shared memory: opt-in 101376 B per block, attn_decode_gqa*: 2112 B static, dynamic max 73728 B, carveout default
+cuda shared memory: opt-in 101376 B per block, attn_prefill_*: 0 B static, dynamic max 72704 B, carveout default
+cuda shared memory: opt-in 101376 B per block, gemvn_*: 0 B static, dynamic max 101376 B, carveout default
+plan: weights+state+scratch 4224 MB (KV 3 MB for 128 tokens, prefill 143 MB), expert slots 506 MB, resident experts 259/24576
+expert traffic: 25.4 MB per layer active set (top-10), 936.8 MB per token over 48 MoE layers
+test gpu_production_release_yields_vram_and_preserves_logits has been running for over 60 seconds

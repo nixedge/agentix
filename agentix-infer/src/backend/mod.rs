@@ -16,6 +16,24 @@ pub trait InferBackend: Send + Sync {
         info: &ModelInfo,
     ) -> Result<Arc<dyn LoadedModel>, InferError>;
 
+    /// Threaded backends retain this until native context/weights are destroyed.
+    async fn load_reserved(
+        &self,
+        blob_path: &Path,
+        info: &ModelInfo,
+        reservation: crate::memory::LoadReservation,
+    ) -> Result<Arc<dyn LoadedModel>, InferError> {
+        if self.uses_gpu() && reservation.shared.is_some() {
+            return Err(InferError::GpuCapacity(
+                "backend must implement native GPU lease ownership".into(),
+            ));
+        }
+        Ok(reservation.wrap(self.load(blob_path, info).await?))
+    }
+    fn uses_gpu(&self) -> bool {
+        true
+    }
+
     /// Return true if this backend can handle the given model format.
     fn supports_format(&self, format: ModelFormat) -> bool;
 

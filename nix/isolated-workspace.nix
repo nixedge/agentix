@@ -138,10 +138,14 @@ in {
     dependencySrc = makeSource manifestsSource stubCommands cargoLock;
     extraDummyScript =
       lib.concatMapStringsSep "\n" (path: ''
+        # Crane's freshly copied manifests/stubs can be read-only store files.
+        # Restore the real patch over writable destinations, not over its stubs.
+        if [ -d "$out/${path}" ]; then chmod -R u+w "$out/${path}"; fi
         cp -rT ${lib.fileset.toSource {
           inherit root;
           fileset = root + "/${path}";
         }}/${path} "$out/${path}"
+        chmod -R u+w "$out/${path}"
       '')
       patchPaths;
   };

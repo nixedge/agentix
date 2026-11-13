@@ -1,0 +1,3 @@
+warning: Git tree '/home/sam/home/agentix/035-shared-gpu-memory' is dirty
+    Checking agentix-qwen v0.1.0 (/home/sam/home/agentix/035-shared-gpu-memory/agentix-qwen)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.26s

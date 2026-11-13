@@ -94,7 +94,7 @@ async fn main() -> anyhow::Result<()> {
     let cfg = InferConfig::new(models_dir, vram_limit, max_loaded, max_ctx);
     let engine = InferEngine::new(cfg).await?;
 
-    match LlamaCppBackend::new() {
+    match tokio::task::spawn_blocking(LlamaCppBackend::new).await? {
         Ok(backend) => {
             engine.register_backend(Arc::new(backend));
             info!("registered LlamaCppBackend");
@@ -248,7 +248,11 @@ async fn chat_completions_handler(
         Ok(s) => s,
         Err(e) => {
             return (
-                StatusCode::INTERNAL_SERVER_ERROR,
+                if e.is_capacity() {
+                    StatusCode::SERVICE_UNAVAILABLE
+                } else {
+                    StatusCode::INTERNAL_SERVER_ERROR
+                },
                 format!("complete error: {e}"),
             )
                 .into_response()
@@ -396,6 +400,11 @@ async fn ollama_embed_handler(State(state): State<AppState>, body: axum::body::B
 
 fn embedding_error(error: agentix_infer::InferError) -> Response {
     match error {
+        error if error.is_capacity() => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            format!("GPU capacity: {error}"),
+        )
+            .into_response(),
         agentix_infer::InferError::ModelNotFound(_) => {
             (StatusCode::NOT_FOUND, "model not in local store").into_response()
         }
@@ -653,7 +662,11 @@ async fn responses_handler(State(state): State<AppState>, body: axum::body::Byte
         Ok(s) => s,
         Err(e) => {
             return (
-                StatusCode::INTERNAL_SERVER_ERROR,
+                if e.is_capacity() {
+                    StatusCode::SERVICE_UNAVAILABLE
+                } else {
+                    StatusCode::INTERNAL_SERVER_ERROR
+                },
                 Json(serde_json::json!({"error": format!("complete error: {e}")})),
             )
                 .into_response()

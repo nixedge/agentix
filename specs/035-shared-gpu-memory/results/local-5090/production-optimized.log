@@ -1,0 +1,34 @@
+warning: Git tree '/home/sam/home/agentix/035-shared-gpu-memory' is dirty
+    Finished `release` profile [optimized] target(s) in 0.16s
+     Running tests/engine.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/release/deps/engine-62064a1fa71695ab)
+
+running 1 test
+stage=load, pid=61035, elapsed=0.000s
+cuda device 0: NVIDIA GeForce RTX 5090 Laptop GPU, sm_120
+cuda shared memory: opt-in 101376 B per block, attn_decode_gqa*: 2112 B static, dynamic max 73728 B, carveout default
+cuda shared memory: opt-in 101376 B per block, attn_prefill_*: 0 B static, dynamic max 72704 B, carveout default
+cuda shared memory: opt-in 101376 B per block, gemvn_*: 0 B static, dynamic max 101376 B, carveout default
+plan: weights+state+scratch 4224 MB (KV 3 MB for 128 tokens, prefill 143 MB), expert slots 506 MB, resident experts 259/24576
+expert traffic: 25.4 MB per layer active set (top-10), 936.8 MB per token over 48 MoE layers
+stage=reference-prefill, pid=61035, elapsed=0.708s
+stage=reference-step-1, pid=61035, elapsed=3.331s
+stage=reference-step-2, pid=61035, elapsed=4.250s
+stage=live-prefill, pid=61035, elapsed=5.229s
+stage=live-step-before-release, pid=61035, elapsed=7.729s
+stage=release, pid=61035, elapsed=8.588s
+before=MemoryInfo { expert_bytes: 530073600, free_bytes: Some(19790036992), total_bytes: Some(25148850176) }, released=MemoryInfo { expert_bytes: 0, free_bytes: Some(20293353472), total_bytes: Some(25148850176) }
+stage=continue-without-expert-cache, pid=61035, elapsed=8.593s
+
+thread 'gpu_production_release_yields_vram_and_preserves_logits' (61036) panicked at agentix-qwen/tests/engine.rs:301:5:
+continuation logits changed: 0.027448534643819696
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test gpu_production_release_yields_vram_and_preserves_logits ... FAILED
+
+failures:
+
+failures:
+    gpu_production_release_yields_vram_and_preserves_logits
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 9.73s
+
+error: test failed, to rerun pass `-p agentix-qwen --test engine`

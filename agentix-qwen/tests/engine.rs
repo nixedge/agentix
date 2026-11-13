@@ -179,3 +179,224 @@ fn gpu_fixture_matches_cpu_prefill_decode_and_reset() -> Result<(), Box<dyn Erro
     compare(&batched_reference, &gpu.session()?.prefill(&batched)?)?;
     Ok(())
 }
+
+#[test]
+fn management_commands_work_while_a_cpu_session_retains_its_lock() -> Result<(), Box<dyn Error>> {
+    let engine = Engine::open(fixture()?, options())?;
+    let control = engine.control();
+    let mut session = engine.session()?;
+    session.prefill(&[1, 2, 3])?;
+    assert_eq!(control.set_expert_budget(0)?, 0);
+    assert_eq!(control.memory()?.expert_bytes, 0);
+    assert!(control.memory()?.free_bytes.is_none());
+    assert_eq!(greedy_next_token(&session.step(42)?)?, 42);
+    Ok(())
+}
+
+#[test]
+#[ignore = "requires explicit GPU authorization and external thermal limits"]
+fn gpu_expert_release_refill_preserves_the_live_session() -> Result<(), Box<dyn Error>> {
+    let backend = std::env::var("AGENTIX_QWEN_GPU_TEST_BACKEND")?;
+    if backend != "cuda" {
+        return Err("this release acceptance test requires CUDA".into());
+    }
+    let engine = Engine::open(
+        fixture()?,
+        Options {
+            backend,
+            chunk: 64,
+            ..options()
+        },
+    )?;
+    let control = engine.control();
+    let mut session = engine.session()?;
+    let prompt: Vec<u32> = (0..64).map(|i| i % 7 + 1).collect();
+    assert_eq!(greedy_next_token(&session.prefill(&prompt)?)?, 42);
+    // Warm a captured decode graph before freeing any pointer-bearing buffers.
+    assert_eq!(greedy_next_token(&session.step(42)?)?, 42);
+    let before = control.memory()?;
+    assert!(before.expert_bytes > 0);
+    assert_eq!(control.set_expert_budget(0)?, 0);
+    let released = control.memory()?;
+    assert_eq!(released.expert_bytes, 0);
+    assert_eq!(greedy_next_token(&session.step(42)?)?, 42);
+    let refilled = control.set_expert_budget(before.expert_bytes)?;
+    assert!(refilled > 0 && refilled <= before.expert_bytes);
+    assert_eq!(greedy_next_token(&session.step(42)?)?, 42);
+    println!(
+        "device={}, before={before:?}, released={released:?}, refill_bytes={refilled}",
+        engine.info.device
+    );
+    // Tiny fixture pools may share allocator pages with live weights. Measurable
+    // device-level reclamation must also be checked with production expert pools.
+    Ok(())
+}
+
+#[test]
+#[ignore = "requires explicit GPU authorization and a cached production model"]
+fn gpu_production_engine_release_refill_continues_session() -> Result<(), Box<dyn Error>> {
+    let started = std::time::Instant::now();
+    let stage = |name| {
+        eprintln!(
+            "stage={name}, pid={}, elapsed={:.3}s",
+            std::process::id(),
+            started.elapsed().as_secs_f64()
+        );
+    };
+    let path = std::env::var_os("AGENTIX_QWEN_PRODUCTION_TEST_MODEL")
+        .ok_or("missing explicitly selected production GGUF")?;
+    stage("load");
+    let engine = Engine::open(
+        path.into(),
+        Options {
+            backend: "cuda".into(),
+            context: 128,
+            chunk: 64,
+            expert_budget: Some(512 * 1024 * 1024),
+            ..Options::default()
+        },
+    )?;
+    let control = engine.control();
+    let prefix = [1, 2, 3];
+    let (first, second, expected) = {
+        let mut reference = engine.session()?;
+        stage("reference-prefill");
+        let first = greedy_next_token(&reference.prefill(&prefix)?)?;
+        stage("reference-step-1");
+        let second = greedy_next_token(&reference.step(first)?)?;
+        stage("reference-step-2");
+        (first, second, reference.step(second)?)
+    };
+    let mut live = engine.session()?;
+    stage("live-prefill");
+    assert_eq!(greedy_next_token(&live.prefill(&prefix)?)?, first);
+    stage("live-step-before-release");
+    assert_eq!(greedy_next_token(&live.step(first)?)?, second);
+    let before = control.memory()?;
+    assert!(before.expert_bytes > 16 * 1024 * 1024);
+    stage("release");
+    assert_eq!(control.set_expert_budget(0)?, 0);
+    let released = control.memory()?;
+    eprintln!("before={before:?}, released={released:?}");
+    assert_eq!(released.expert_bytes, 0);
+    let free_delta = released
+        .free_bytes
+        .ok_or("missing CUDA free memory")?
+        .saturating_sub(before.free_bytes.ok_or("missing CUDA free memory")?);
+    assert!(
+        free_delta >= 16 * 1024 * 1024,
+        "no substantial VRAM release: {free_delta}"
+    );
+    stage("continue-without-expert-cache");
+    let actual = live.step(second)?;
+    assert_eq!(actual.len(), expected.len());
+    let cpu_next = greedy_next_token(&actual)?;
+    let cached_next = greedy_next_token(&expected)?;
+    let error: f64 = actual
+        .iter()
+        .zip(&expected)
+        .map(|(&a, &b)| (f64::from(a) - f64::from(b)).powi(2))
+        .sum();
+    let magnitude: f64 = expected.iter().map(|&x| f64::from(x).powi(2)).sum();
+    let relative_l2 = (error / magnitude.max(f64::EPSILON)).sqrt();
+    // CPU and GPU expert kernels round differently. The separate checkpoint
+    // test holds arithmetic constant and checks context preservation at 1e-5.
+    assert!(relative_l2.is_finite());
+    stage("refill");
+    let refill = control.set_expert_budget(before.expert_bytes)?;
+    assert!(refill > 0 && refill <= before.expert_bytes);
+    let next = greedy_next_token(&actual)?;
+    stage("continue-after-refill");
+    greedy_next_token(&live.step(next)?)?;
+    println!(
+        "pid={}, device={}, before={before:?}, released={released:?}, free_delta={free_delta}, refill_bytes={refill}, cross_placement_l2={relative_l2}, cpu_next={cpu_next}, cached_next={cached_next}",
+        std::process::id(), engine.info.device,
+    );
+    Ok(())
+}
+
+#[test]
+#[ignore = "requires explicit GPU authorization and a cached production model"]
+fn gpu_production_reclaim_matches_cpu_checkpoint() -> Result<(), Box<dyn Error>> {
+    use rusting_strata::{backend, gguf::Gguf, gpu_model::GpuModel, model::Model};
+    let started = std::time::Instant::now();
+    let stage = |name| {
+        eprintln!(
+            "stage={name}, pid={}, elapsed={:.3}s",
+            std::process::id(),
+            started.elapsed().as_secs_f64()
+        );
+    };
+    let path: PathBuf = std::env::var_os("AGENTIX_QWEN_PRODUCTION_TEST_MODEL")
+        .ok_or("missing explicitly selected production GGUF")?
+        .into();
+    stage("load");
+    let gguf = Gguf::open(&path)?;
+    let model = Model::load(&gguf)?;
+    let mut gpu = GpuModel::load_budgeted(
+        &model,
+        backend::open(Some("cuda"), 0)?,
+        128,
+        64,
+        512 * 1024 * 1024,
+        512 * 1024 * 1024,
+    )?;
+    gpu.adapt_every = 0;
+    gpu.reset()?;
+    stage("warm-cached-prefix");
+    let mut logits = Vec::new();
+    for token in [1, 2, 3] {
+        logits = gpu.step(token)?;
+    }
+    logits = gpu.step(greedy_next_token(&logits)?)?;
+    let next = greedy_next_token(&logits)?;
+    stage("checkpoint-before-release");
+    gpu.save_state()?;
+    let position = gpu.pos;
+    let cached = gpu.step(next)?;
+    gpu.restore_state()?;
+    assert_eq!(gpu.pos, position);
+    let bytes = gpu.expert_cache_bytes();
+    let before = gpu.device_memory()?.0;
+    stage("release");
+    assert_eq!(gpu.set_expert_budget(0)?, 0);
+    assert_eq!(gpu.pos, position);
+    let released = gpu.device_memory()?.0.saturating_sub(before);
+    assert!(
+        released >= 16 * 1024 * 1024,
+        "no substantial VRAM release: {released}"
+    );
+    stage("live-cpu-continuation");
+    let live = gpu.step(next)?;
+    assert_eq!(gpu.pos, position + 1);
+    stage("refill");
+    let refill = gpu.set_expert_budget(bytes)?;
+    assert!(refill > 0 && refill <= bytes);
+    assert_eq!(gpu.pos, position + 1);
+    stage("continue-after-refill");
+    greedy_next_token(&gpu.step(greedy_next_token(&live)?)?)?;
+    // Replay from the original checkpoint only after the uninterrupted live
+    // release/refill path has completed. Both compared steps use CPU experts.
+    stage("matched-cpu-replay");
+    gpu.set_expert_budget(0)?;
+    gpu.restore_state()?;
+    let replay = gpu.step(next)?;
+    assert_eq!(live.len(), replay.len());
+    assert_eq!(greedy_next_token(&live)?, greedy_next_token(&replay)?);
+    let l2 = |a: &[f32], b: &[f32]| {
+        let error: f64 = a
+            .iter()
+            .zip(b)
+            .map(|(&x, &y)| (f64::from(x) - f64::from(y)).powi(2))
+            .sum();
+        let magnitude: f64 = b.iter().map(|&x| f64::from(x).powi(2)).sum();
+        (error / magnitude.max(f64::EPSILON)).sqrt()
+    };
+    let matched_error = l2(&live, &replay);
+    assert!(
+        matched_error < 1e-5,
+        "pre-release context was not preserved: {matched_error}"
+    );
+    println!("device={}, position={position}, released_bytes={released}, refill_bytes={refill}, matched_cpu_l2={matched_error}, cross_placement_l2={}", gpu.gpu.device(), l2(&cached, &replay));
+    Ok(())
+}

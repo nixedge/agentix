@@ -9,6 +9,7 @@ description = "In-process inference library for agentix (GGUF via llama.cpp, saf
 whisper = []
 
 [dependencies]
+agentix-gpu = { path = "../agentix-gpu" }
 async-trait = "0.1"
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }

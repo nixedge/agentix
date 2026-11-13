@@ -7,6 +7,7 @@ use rusting_strata::{
     model::{Model, State},
 };
 use std::{
+    collections::VecDeque,
     path::PathBuf,
     sync::{mpsc, Arc, Mutex, MutexGuard},
     thread,
@@ -19,6 +20,7 @@ pub struct Options {
     pub context: usize,
     pub chunk: usize,
     pub vram_margin: usize,
+    pub expert_budget: Option<usize>,
 }
 impl Default for Options {
     fn default() -> Self {
@@ -28,6 +30,7 @@ impl Default for Options {
             context: 4096,
             chunk: 256,
             vram_margin: 512 * 1024 * 1024,
+            expert_budget: None,
         }
     }
 }
@@ -47,9 +50,19 @@ enum Command {
     Prefill(Vec<u32>, Cancellation),
     Step(u32),
 }
-struct Request {
-    command: Command,
-    reply: mpsc::SyncSender<Result<Vec<f32>>>,
+enum Request {
+    Infer {
+        command: Command,
+        reply: mpsc::SyncSender<Result<Vec<f32>>>,
+    },
+    ExpertBudget {
+        bytes: usize,
+        reply: mpsc::SyncSender<Result<usize>>,
+    },
+    Memory {
+        reply: mpsc::SyncSender<Result<MemoryInfo>>,
+    },
+    Shutdown,
 }
 struct Client {
     sender: mpsc::Sender<Request>,
@@ -62,9 +75,58 @@ pub struct Engine {
     thread: Option<thread::JoinHandle<()>>,
     pub info: ModelInfo,
     options: Options,
+    control: Control,
+}
+#[derive(Clone)]
+pub struct Control {
+    sender: mpsc::Sender<Request>,
+}
+#[derive(Debug)]
+pub struct MemoryInfo {
+    pub expert_bytes: usize,
+    pub free_bytes: Option<usize>,
+    pub total_bytes: Option<usize>,
+}
+impl Control {
+    pub fn memory(&self) -> Result<MemoryInfo> {
+        let (reply, result) = mpsc::sync_channel(1);
+        self.sender
+            .send(Request::Memory { reply })
+            .map_err(|_| Error::Backend("inference thread stopped".into()))?;
+        result
+            .recv()
+            .map_err(|_| Error::Backend("memory observation failed".into()))?
+    }
+    pub fn set_expert_budget(&self, bytes: usize) -> Result<usize> {
+        let (reply, result) = mpsc::sync_channel(1);
+        self.sender
+            .send(Request::ExpertBudget { bytes, reply })
+            .map_err(|_| Error::Backend("inference thread stopped".into()))?;
+        result
+            .recv()
+            .map_err(|_| Error::Backend("expert budget command failed".into()))?
+    }
+}
+pub struct ManagedBudget {
+    pub peak: agentix_gpu::Lease,
+    pub cache: Arc<agentix_gpu::Lease>,
+}
+impl Drop for ManagedBudget {
+    fn drop(&mut self) {
+        // run() drops GPU/model locals before its budget parameter. Management
+        // observers may retain Arcs, but must not retain this dead engine's lease.
+        self.cache.release_after_free();
+    }
 }
 impl Engine {
     pub fn open(path: PathBuf, options: Options) -> Result<Self> {
+        Self::open_managed(path, options, None)
+    }
+    pub fn open_managed(
+        path: PathBuf,
+        options: Options,
+        budget: Option<ManagedBudget>,
+    ) -> Result<Self> {
         if options.context == 0 || options.chunk == 0 {
             return Err(Error::Invalid("context and prefill chunk must be positive"));
         }
@@ -80,7 +142,7 @@ impl Engine {
             .name("rustingstrata".into())
             .spawn(move || {
                 let mut ready = Some(ready);
-                if let Err(error) = run(path, worker_options, receiver, &mut ready) {
+                if let Err(error) = run(path, worker_options, receiver, &mut ready, budget) {
                     if let Some(ready) = ready.take() {
                         let _ = ready.send(Err(Error::Backend(format!("{error:#}"))));
                     }
@@ -98,11 +160,17 @@ impl Engine {
             }
         };
         Ok(Self {
+            control: Control {
+                sender: sender.clone(),
+            },
             client: Mutex::new(Some(Client { sender })),
             thread: Some(handle),
             info,
             options,
         })
+    }
+    pub fn control(&self) -> Control {
+        self.control.clone()
     }
 
     pub fn session(&self) -> Result<Session<'_>> {
@@ -129,6 +197,7 @@ impl Engine {
 }
 impl Drop for Engine {
     fn drop(&mut self) {
+        let _ = self.control.sender.send(Request::Shutdown);
         // Closing the only sender terminates the command loop before joining.
         match self.client.get_mut() {
             Ok(client) => {
@@ -164,7 +233,7 @@ impl Session<'_> {
             .as_ref()
             .ok_or_else(|| Error::Backend("inference engine closed".into()))?
             .sender
-            .send(Request { command, reply })
+            .send(Request::Infer { command, reply })
             .map_err(|_| Error::Backend("inference thread stopped".into()))?;
         result
             .recv()
@@ -244,6 +313,7 @@ fn run(
     options: Options,
     receiver: mpsc::Receiver<Request>,
     ready: &mut Option<mpsc::SyncSender<Result<ModelInfo>>>,
+    budget: Option<ManagedBudget>,
 ) -> anyhow::Result<()> {
     let gguf = Gguf::open(&path)?;
     let model = Model::load(&gguf)?;
@@ -266,15 +336,32 @@ fn run(
     } else {
         let backend = backend::open(Some(&options.backend), options.device)?;
         device = backend.device();
-        Some(GpuModel::load(
-            &model,
-            backend,
-            options.context,
-            options.chunk,
-            options.vram_margin,
-            0,
-        )?)
+        Some(match options.expert_budget {
+            Some(bytes) => GpuModel::load_budgeted(
+                &model,
+                backend,
+                options.context,
+                options.chunk,
+                options.vram_margin,
+                bytes,
+            )?,
+            None => GpuModel::load(
+                &model,
+                backend,
+                options.context,
+                options.chunk,
+                options.vram_margin,
+                0,
+            )?,
+        })
     };
+    if let Some(budget) = &budget {
+        budget
+            .cache
+            .resize_cache(gpu.as_ref().map_or(0, |g| g.expert_cache_bytes()) as u64)?;
+        budget.cache.activate_floor(budget.cache.bytes())?;
+        budget.peak.activate_plan()?;
+    }
     let info = ModelInfo {
         architecture: model.cfg.arch.clone(),
         vocabulary: model.cfg.n_vocab,
@@ -285,9 +372,26 @@ fn run(
     if let Some(ready) = ready.take() {
         let _ = ready.send(Ok(info));
     }
-    for request in receiver {
+    let mut pending = VecDeque::new();
+    loop {
+        let request = match pending
+            .pop_front()
+            .map(Ok)
+            .unwrap_or_else(|| receiver.recv())
+        {
+            Ok(request) => request,
+            Err(_) => break,
+        };
+        let Some(request) = management(request, gpu.as_mut(), budget.as_ref()) else {
+            continue;
+        };
+        let (command, reply) = match request {
+            Request::Shutdown => break,
+            Request::Infer { command, reply } => (command, reply),
+            _ => continue,
+        };
         let result = (|| -> anyhow::Result<Vec<f32>> {
-            let logits = match request.command {
+            let logits = match command {
                 Command::Reset => {
                     if let Some(gpu) = gpu.as_mut() {
                         gpu.reset()?;
@@ -307,9 +411,16 @@ fn run(
                     let mut logits = Vec::new();
                     // Bound cancellation latency even when upstream's short-prompt path has no callback.
                     for chunk in tokens.chunks(options.chunk) {
+                        drain_management(&receiver, &mut pending, gpu.as_mut(), budget.as_ref());
                         anyhow::ensure!(!cancelled(), "generation cancelled");
                         if let Some(gpu) = gpu.as_mut() {
-                            logits = gpu.prefill_with(chunk, &mut |_| {
+                            logits = gpu.prefill_with(chunk, &mut |part| {
+                                drain_management(
+                                    &receiver,
+                                    &mut pending,
+                                    Some(part),
+                                    budget.as_ref(),
+                                );
                                 anyhow::ensure!(!cancelled(), "generation cancelled");
                                 Ok(())
                             })?;
@@ -330,7 +441,72 @@ fn run(
             Ok(logits)
         })()
         .map_err(|error| Error::Backend(format!("{error:#}")));
-        let _ = request.reply.send(result);
+        let _ = reply.send(result);
     }
     Ok(())
+}
+
+fn drain_management(
+    receiver: &mpsc::Receiver<Request>,
+    pending: &mut VecDeque<Request>,
+    mut gpu: Option<&mut GpuModel<'_>>,
+    budget: Option<&ManagedBudget>,
+) {
+    while let Ok(request) = receiver.try_recv() {
+        if let Some(request) = management(request, gpu.as_deref_mut(), budget) {
+            pending.push_back(request);
+        }
+    }
+}
+
+fn management(
+    request: Request,
+    gpu: Option<&mut GpuModel<'_>>,
+    budget: Option<&ManagedBudget>,
+) -> Option<Request> {
+    match request {
+        Request::Memory { reply } => {
+            let result = match gpu {
+                Some(gpu) => gpu
+                    .device_memory()
+                    .map(|(free, total)| MemoryInfo {
+                        expert_bytes: gpu.expert_cache_bytes(),
+                        free_bytes: Some(free),
+                        total_bytes: Some(total),
+                    })
+                    .map_err(|e| Error::Backend(format!("{e:#}"))),
+                None => Ok(MemoryInfo {
+                    expert_bytes: 0,
+                    free_bytes: None,
+                    total_bytes: None,
+                }),
+            };
+            let _ = reply.send(result);
+            None
+        }
+        Request::ExpertBudget { bytes, reply } => {
+            let result = (|| -> anyhow::Result<usize> {
+                if let Some(budget) = budget {
+                    anyhow::ensure!(
+                        bytes as u64 <= budget.cache.bytes(),
+                        "expert refill exceeds its lease"
+                    );
+                    budget.cache.activate_floor(0)?;
+                }
+                let remaining = match gpu {
+                    Some(gpu) => gpu.set_expert_budget(bytes)?,
+                    None => 0,
+                };
+                if let Some(budget) = budget {
+                    budget.cache.resize_cache(remaining as u64)?;
+                    budget.cache.activate_floor(remaining as u64)?;
+                }
+                Ok(remaining)
+            })()
+            .map_err(|e| Error::Backend(format!("{e:#}")));
+            let _ = reply.send(result);
+            None
+        }
+        request => Some(request),
+    }
 }

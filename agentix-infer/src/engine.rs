@@ -10,6 +10,7 @@ struct EngineInner {
     config: InferConfig,
     pool: ContextPool,
     backends: RwLock<Vec<Arc<dyn InferBackend>>>,
+    gpu: Option<agentix_gpu::Client>,
 }
 
 /// Top-level inference handle. Clone is cheap (Arc internals).
@@ -22,11 +23,19 @@ impl InferEngine {
     pub async fn new(config: InferConfig) -> Result<Self, InferError> {
         std::fs::create_dir_all(&config.models_dir)?;
         let pool = ContextPool::new(config.vram_limit_bytes, config.max_loaded_models);
+        let gpu = tokio::task::spawn_blocking(|| {
+            let role = std::env::var("AGENTIX_GPU_ROLE").unwrap_or_else(|_| "llama".into());
+            agentix_gpu::Client::from_env(&role)
+        })
+        .await
+        .map_err(|e| InferError::Backend(e.to_string()))?
+        .map_err(|e| InferError::Backend(e.to_string()))?;
         Ok(Self {
             inner: Arc::new(EngineInner {
                 pool,
                 config,
                 backends: RwLock::new(vec![]),
+                gpu,
             }),
         })
     }
@@ -102,7 +111,14 @@ impl InferEngine {
     ) -> Result<CompletionStream, InferError> {
         self.check_capability(model, crate::Capability::Completion)?;
         let guard = self.acquire(model).await?;
-        guard.complete(req).await
+        let stream = guard.complete(req).await?;
+        Ok(Box::pin(futures::stream::unfold(
+            (guard, stream),
+            |(guard, mut stream)| async move {
+                use futures::StreamExt;
+                stream.next().await.map(|chunk| (chunk, (guard, stream)))
+            },
+        )))
     }
 
     pub async fn tokenize(&self, model: &str, text: &str) -> Result<Vec<i32>, InferError> {
@@ -147,28 +163,11 @@ impl InferEngine {
             return Ok(guard);
         }
 
-        // Serialise concurrent loads for the same model key (T027).
-        // If another task is already loading this model, wait for it to finish
-        // and then retry the idle pool — the loader will have placed the model
-        // there before calling finish_loading.
-        if self.inner.pool.wait_if_loading(model).await {
-            // Another load just finished; try the idle pool again.
-            if let Some(guard) = self.inner.pool.acquire_idle(model) {
-                return Ok(guard);
-            }
-            // Unlikely but possible: the loaded model was immediately evicted.
-            // Fall through to attempt our own load below.
+        let _loading = self.inner.pool.lock_loading(model).await;
+        if let Some(guard) = self.inner.pool.acquire_idle(model) {
+            return Ok(guard);
         }
-
-        // Register ourselves as the loader for this key.
-        let notify = self.inner.pool.begin_loading(model);
-
-        let result = self.load_model(model).await;
-
-        // Always clear the loading sentinel, even on error.
-        self.inner.pool.finish_loading(model, notify);
-
-        result
+        self.load_model(model).await
     }
 
     async fn load_model(&self, model: &str) -> Result<crate::pool::ModelGuard, InferError> {
@@ -203,9 +202,50 @@ impl InferEngine {
         };
 
         tracing::info!(model = %model, backend = %backend.name(), "loading model");
-        let loaded = backend.load(&blob_path, &info).await?;
-        let vram = loaded.vram_bytes();
-
-        self.inner.pool.store_loaded(model, loaded, vram)
+        let client = self.inner.gpu.clone().filter(|_| backend.uses_gpu());
+        let plan = client
+            .as_ref()
+            .map(|client| client.plan(model).cloned())
+            .transpose()
+            .map_err(|e| InferError::GpuCapacity(e.to_string()))?;
+        if let Some(plan) = &plan {
+            let hash = blob_path
+                .file_name()
+                .and_then(|s| s.to_str())
+                .and_then(|s| s.strip_prefix("sha256-"))
+                .ok_or_else(|| {
+                    InferError::GpuCapacity(
+                        "managed models require immutable SHA256 blob names".into(),
+                    )
+                })?;
+            plan.check_hashes(&[hash.into()])
+                .map_err(|e| InferError::GpuCapacity(e.to_string()))?;
+        }
+        let peak_bytes = plan
+            .as_ref()
+            .map_or(info.size_bytes, |plan| plan.peak_bytes);
+        let local = self.inner.pool.reserve(model, peak_bytes)?;
+        let shared = match client {
+            Some(client) => {
+                let model = model.to_owned();
+                Some(
+                    tokio::task::spawn_blocking(move || client.reserve_model(&model))
+                        .await
+                        .map_err(|e| InferError::Backend(e.to_string()))?
+                        .map_err(|e| InferError::GpuCapacity(e.to_string()))?,
+                )
+            }
+            None => None,
+        };
+        let reservation = crate::memory::LoadReservation {
+            local: Some(local),
+            shared,
+            peak_bytes,
+            plan,
+        };
+        let loaded = backend
+            .load_reserved(&blob_path, &info, reservation)
+            .await?;
+        Ok(self.inner.pool.store_reserved(model, loaded))
     }
 }

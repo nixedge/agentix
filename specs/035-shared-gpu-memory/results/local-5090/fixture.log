@@ -1,0 +1,18 @@
+warning: Git tree '/home/sam/home/agentix/035-shared-gpu-memory' is dirty
+   Compiling rusting_strata v1.2.1 (/home/sam/home/agentix/035-shared-gpu-memory/patches/rusting-strata)
+   Compiling agentix-gpu v0.1.0 (/home/sam/home/agentix/035-shared-gpu-memory/agentix-gpu)
+   Compiling agentix-qwen v0.1.0 (/home/sam/home/agentix/035-shared-gpu-memory/agentix-qwen)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 11.28s
+     Running tests/engine.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/engine-f0d9cd5345d289a5)
+
+running 1 test
+cuda device 0: NVIDIA GeForce RTX 5090 Laptop GPU, sm_120
+cuda shared memory: opt-in 101376 B per block, attn_decode_gqa*: 2112 B static, dynamic max 73728 B, carveout default
+cuda shared memory: opt-in 101376 B per block, attn_prefill_*: 0 B static, dynamic max 72704 B, carveout default
+cuda shared memory: opt-in 101376 B per block, gemvn_*: 0 B static, dynamic max 101376 B, carveout default
+plan: weights+state+scratch 0 MB (KV 0 MB for 256 tokens, prefill 1 MB), expert slots 0 MB, resident experts 2/2
+expert traffic: 0.0 MB per layer active set (top-1), 0.0 MB per token over 1 MoE layers
+device=NVIDIA GeForce RTX 5090 Laptop GPU, before=MemoryInfo { expert_bytes: 26112, free_bytes: Some(24764481536), total_bytes: Some(25148850176) }, released=MemoryInfo { expert_bytes: 0, free_bytes: Some(24764481536), total_bytes: Some(25148850176) }, refill_bytes=26112
+test gpu_expert_release_refill_preserves_the_live_session ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.49s

@@ -10,11 +10,94 @@
     llamaSock = "${socketDir}/llama.sock";
     qwenSock = "${socketDir}/qwen.sock";
     whisperSock = "${socketDir}/whisper.sock";
+    gpuSock = "/run/agentix-gpu/coordinator.sock";
+    gpuRoles = lib.optional cfg.qwen.enable "qwen" ++ lib.optional cfg.llama.enable "llama" ++ lib.optional cfg.whisper.enable "whisper";
+    gpuPlans =
+      lib.mapAttrs (_: plan: {
+        peak_bytes = plan.peakBytes;
+        model_sha256 = plan.modelSha256;
+        resident_floor_bytes = plan.residentFloorBytes;
+        context_tokens = plan.contextTokens;
+        batch_tokens = plan.batchTokens;
+        priority = plan.priority;
+      })
+      cfg.gpu.plans;
+    gpuEnv = role:
+      lib.optionalAttrs cfg.gpu.enable {
+        AGENTIX_GPU_COORDINATOR = gpuSock;
+        AGENTIX_GPU_ROLE = role;
+        AGENTIX_GPU_DEVICE = toString cfg.gpu.device;
+        AGENTIX_GPU_PLANS = builtins.toJSON gpuPlans;
+      };
 
-    anyEnabled = cfg.daemon.enable || cfg.llama.enable || cfg.qwen.enable || cfg.whisper.enable || cfg.agent.enable;
+    anyEnabled = cfg.gpu.enable || cfg.daemon.enable || cfg.llama.enable || cfg.qwen.enable || cfg.whisper.enable || cfg.agent.enable;
   in {
     options.services.agentix = {
+      gpu = {
+        enable = lib.mkEnableOption "shared GPU allocation admission and Qwen expert reclamation";
+        package = lib.mkOption {
+          type = lib.types.package;
+          description = "The agentix-gpu-coordinator package from the workers' Agentix revision.";
+        };
+        device = lib.mkOption {
+          type = lib.types.ints.unsigned;
+          default = 0;
+          description = "Physical NVIDIA device index shared by these workers.";
+        };
+        safetyBytes = lib.mkOption {
+          type = lib.types.ints.positive;
+          default = 536870912;
+          description = "Device safety reserve, excluded from all leases.";
+        };
+        metricsAddress = lib.mkOption {
+          type = lib.types.str;
+          default = "127.0.0.1:9488";
+          description = "Coordinator Prometheus listener; firewall access is configured by the deployment.";
+        };
+        plans = lib.mkOption {
+          default = {};
+          description = "Measured full GPU loading/execution peaks keyed by exact model identifier. Missing plans fail before managed native loading.";
+          type = lib.types.attrsOf (lib.types.submodule {
+            options = {
+              peakBytes = lib.mkOption {
+                type = lib.types.ints.positive;
+                description = "Calibrated weights/context/scratch/batch/loading peak in bytes. For Qwen, excludes separately leased expert slots.";
+              };
+              modelSha256 = lib.mkOption {
+                type = lib.types.listOf (lib.types.strMatching "[a-fA-F0-9]{64}");
+                default = [];
+                description = "SHA256 values of the calibrated model's shards, in split order. Required before managed native loading.";
+              };
+              residentFloorBytes = lib.mkOption {
+                type = lib.types.ints.unsigned;
+                default = 0;
+                description = "Guaranteed persistent GPU allocation floor after load. Zero is conservative when not measured; never include transient scratch.";
+              };
+              contextTokens = lib.mkOption {
+                type = lib.types.ints.unsigned;
+                default = 0;
+                description = "Largest context covered by the measured peak (required for Qwen/llama).";
+              };
+              batchTokens = lib.mkOption {
+                type = lib.types.ints.unsigned;
+                default = 0;
+                description = "Largest batch/prefill chunk covered by the measured peak (required for Qwen/llama).";
+              };
+              priority = lib.mkOption {
+                type = lib.types.ints.unsigned;
+                default = 50;
+                description = "Admission priority; larger values win among queued allocations. Equal priorities are FIFO, with aging.";
+              };
+            };
+          });
+        };
+      };
       qwen = {
+        expertMaxBytes = lib.mkOption {
+          type = lib.types.ints.positive;
+          default = 25769803776;
+          description = "Upper bound for optional expert copies; actual allocation is limited by shared admission when enabled.";
+        };
         enable = lib.mkEnableOption "RustingStrata Qwen inference worker";
         package = lib.mkOption {
           type = lib.types.package;
@@ -400,6 +483,50 @@
         ];
       })
 
+      (lib.mkIf cfg.gpu.enable {
+        assertions = [
+          {
+            assertion = gpuRoles != [];
+            message = "services.agentix.gpu requires an enabled inference worker.";
+          }
+          {
+            assertion = !cfg.qwen.enable || builtins.hasAttr cfg.qwen.model cfg.gpu.plans;
+            message = "Managed Qwen requires a measured services.agentix.gpu.plans entry for its model.";
+          }
+          {
+            assertion = !cfg.qwen.enable || (cfg.qwen.compute == "cuda" && cfg.qwen.cudaDevice == cfg.gpu.device);
+            message = "Shared NVIDIA memory requires Qwen CUDA on services.agentix.gpu.device.";
+          }
+          {
+            assertion = lib.all (plan: plan.residentFloorBytes <= plan.peakBytes) (builtins.attrValues cfg.gpu.plans);
+            message = "GPU persistent resident floors must not exceed peak reservations.";
+          }
+        ];
+        systemd.services.agentix-gpu-coordinator = {
+          description = "Agentix shared GPU memory admission";
+          wantedBy = ["multi-user.target"];
+          before = map (role: "agentix-${role}.service") gpuRoles;
+          path = [config.hardware.nvidia.package];
+          environment = {
+            AGENTIX_GPU_COORDINATOR = gpuSock;
+            AGENTIX_GPU_WORKERS = lib.concatStringsSep "," gpuRoles;
+            AGENTIX_GPU_SAFETY_BYTES = toString cfg.gpu.safetyBytes;
+            AGENTIX_GPU_METRICS_ADDRESS = cfg.gpu.metricsAddress;
+          };
+          serviceConfig = {
+            ExecStart = "${cfg.gpu.package}/bin/agentix-gpu-coordinator";
+            User = "agentix";
+            Group = "agentix";
+            RuntimeDirectory = "agentix-gpu";
+            RuntimeDirectoryMode = "0750";
+            Restart = "on-failure";
+            RestartSec = "2s";
+            PrivateDevices = false;
+            UMask = "0007";
+          };
+        };
+      })
+
       # ── agentix-daemon ───────────────────────────────────────────────────────
       (lib.mkIf cfg.qwen.enable {
         assertions = [
@@ -411,7 +538,8 @@
         systemd.services.agentix-qwen = {
           description = "Agentix RustingStrata Qwen inference worker";
           wantedBy = ["multi-user.target"];
-          after = ["network.target"];
+          after = ["network.target"] ++ lib.optional cfg.gpu.enable "agentix-gpu-coordinator.service";
+          wants = lib.optional cfg.gpu.enable "agentix-gpu-coordinator.service";
           environment =
             {
               AGENTIX_QWEN_SOCKET = qwenSock;
@@ -424,8 +552,10 @@
               AGENTIX_QWEN_CUDA_DEVICE = toString cfg.qwen.cudaDevice;
               AGENTIX_QWEN_PREFILL_CHUNK = toString cfg.qwen.prefillChunk;
               AGENTIX_QWEN_VRAM_MARGIN = toString cfg.qwen.vramMargin;
+              AGENTIX_QWEN_EXPERT_MAX_BYTES = toString cfg.qwen.expertMaxBytes;
+              AGENTIX_QWEN_GPU_SOCKET = "${socketDir}/qwen-gpu.sock";
             }
-            // cfg.qwen.extraEnv;
+            // cfg.qwen.extraEnv // gpuEnv "qwen";
           serviceConfig = {
             ExecStart = "${cfg.qwen.package}/bin/agentix-qwen-worker";
             User = "agentix";
@@ -498,7 +628,8 @@
         systemd.services.agentix-llama = {
           description = "agentix LlamaCpp inference backend";
           wantedBy = ["multi-user.target"];
-          after = ["network.target"];
+          after = ["network.target"] ++ lib.optional cfg.gpu.enable "agentix-gpu-coordinator.service";
+          wants = lib.optional cfg.gpu.enable "agentix-gpu-coordinator.service";
 
           environment =
             {
@@ -516,7 +647,7 @@
             // lib.optionalAttrs (cfg.llama.preloadedModels != []) {
               AGENTIX_LLAMA_MODELS = lib.concatStringsSep "," cfg.llama.preloadedModels;
             }
-            // cfg.llama.extraEnv;
+            // cfg.llama.extraEnv // gpuEnv "llama";
 
           serviceConfig = {
             ExecStart = "${cfg.llama.package}/bin/agentix-llama";
@@ -546,7 +677,8 @@
         systemd.services.agentix-whisper = {
           description = "agentix Whisper speech-to-text backend";
           wantedBy = ["multi-user.target"];
-          after = ["network.target"];
+          after = ["network.target"] ++ lib.optional cfg.gpu.enable "agentix-gpu-coordinator.service";
+          wants = lib.optional cfg.gpu.enable "agentix-gpu-coordinator.service";
 
           environment =
             {
@@ -556,7 +688,7 @@
             // lib.optionalAttrs (cfg.whisper.preloadedModels != []) {
               AGENTIX_WHISPER_MODELS = lib.concatStringsSep "," cfg.whisper.preloadedModels;
             }
-            // cfg.whisper.extraEnv;
+            // cfg.whisper.extraEnv // gpuEnv "whisper";
 
           serviceConfig = {
             ExecStart = "${cfg.whisper.package}/bin/agentix-whisper";

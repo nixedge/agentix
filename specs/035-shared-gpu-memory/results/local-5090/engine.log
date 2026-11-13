@@ -1,0 +1,26 @@
+warning: Git tree '/home/sam/home/agentix/035-shared-gpu-memory' is dirty
+    Finished `release` profile [optimized] target(s) in 0.12s
+     Running tests/engine.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/release/deps/engine-62064a1fa71695ab)
+
+running 1 test
+stage=load, pid=61581, elapsed=0.000s
+cuda device 0: NVIDIA GeForce RTX 5090 Laptop GPU, sm_120
+cuda shared memory: opt-in 101376 B per block, attn_decode_gqa*: 2112 B static, dynamic max 73728 B, carveout default
+cuda shared memory: opt-in 101376 B per block, attn_prefill_*: 0 B static, dynamic max 72704 B, carveout default
+cuda shared memory: opt-in 101376 B per block, gemvn_*: 0 B static, dynamic max 101376 B, carveout default
+plan: weights+state+scratch 4224 MB (KV 3 MB for 128 tokens, prefill 143 MB), expert slots 506 MB, resident experts 259/24576
+expert traffic: 25.4 MB per layer active set (top-10), 936.8 MB per token over 48 MoE layers
+stage=reference-prefill, pid=61581, elapsed=0.716s
+stage=reference-step-1, pid=61581, elapsed=3.249s
+stage=reference-step-2, pid=61581, elapsed=4.066s
+stage=live-prefill, pid=61581, elapsed=4.883s
+stage=live-step-before-release, pid=61581, elapsed=7.291s
+stage=release, pid=61581, elapsed=8.095s
+before=MemoryInfo { expert_bytes: 530073600, free_bytes: Some(19790036992), total_bytes: Some(25148850176) }, released=MemoryInfo { expert_bytes: 0, free_bytes: Some(20293353472), total_bytes: Some(25148850176) }
+stage=continue-without-expert-cache, pid=61581, elapsed=8.101s
+stage=refill, pid=61581, elapsed=8.920s
+stage=continue-after-refill, pid=61581, elapsed=8.979s
+pid=61581, device=NVIDIA GeForce RTX 5090 Laptop GPU, before=MemoryInfo { expert_bytes: 530073600, free_bytes: Some(19790036992), total_bytes: Some(25148850176) }, released=MemoryInfo { expert_bytes: 0, free_bytes: Some(20293353472), total_bytes: Some(25148850176) }, free_delta=503316480, refill_bytes=522086400, cross_placement_l2=0.027448534643819696, cpu_next=6, cached_next=6
+test gpu_production_engine_release_refill_continues_session ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 10.08s

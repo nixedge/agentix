@@ -35,8 +35,30 @@ impl InferBackend for WhisperBackend {
         blob_path: &Path,
         info: &ModelInfo,
     ) -> Result<Arc<dyn LoadedModel>, InferError> {
+        self.load_reserved(
+            blob_path,
+            info,
+            agentix_infer::memory::LoadReservation::unmanaged(),
+        )
+        .await
+    }
+
+    fn uses_gpu(&self) -> bool {
+        WhisperContextParameters::default().use_gpu
+    }
+
+    async fn load_reserved(
+        &self,
+        blob_path: &Path,
+        info: &ModelInfo,
+        reservation: agentix_infer::memory::LoadReservation,
+    ) -> Result<Arc<dyn LoadedModel>, InferError> {
         let path = blob_path.to_owned();
-        let size_bytes = info.size_bytes;
+        let size_bytes = if reservation.peak_bytes == 0 {
+            info.size_bytes
+        } else {
+            reservation.peak_bytes
+        };
 
         tokio::task::spawn_blocking(move || {
             let path_str = path
@@ -45,13 +67,15 @@ impl InferBackend for WhisperBackend {
 
             tracing::info!(path = %path_str, size_bytes, "loading whisper model");
 
-            let ctx =
-                WhisperContext::new_with_params(path_str, WhisperContextParameters::default())
-                    .map_err(|e| {
-                        InferError::Backend(format!("whisper context init failed: {e:?}"))
-                    })?;
+            let mut parameters = WhisperContextParameters::default();
+            if let Some(shared) = &reservation.shared {
+                parameters.gpu_device = i32::try_from(shared.device())
+                    .map_err(|_| InferError::Backend("GPU device index overflow".into()))?;
+            }
+            let ctx = WhisperContext::new_with_params(path_str, parameters)
+                .map_err(|e| InferError::Backend(format!("whisper context init failed: {e:?}")))?;
 
-            let worker = WhisperWorker::new(ctx)?;
+            let worker = WhisperWorker::new(ctx, reservation)?;
 
             Ok(Arc::new(WhisperLoadedModel { worker, size_bytes }) as Arc<dyn LoadedModel>)
         })
@@ -75,40 +99,43 @@ struct WhisperWorker {
 }
 
 impl WhisperWorker {
-    fn new(ctx: WhisperContext) -> Result<Self, InferError> {
+    fn new(
+        ctx: WhisperContext,
+        reservation: agentix_infer::memory::LoadReservation,
+    ) -> Result<Self, InferError> {
         let (tx, rx) = std::sync::mpsc::sync_channel::<WorkItem>(4);
-
-        let mut state = ctx
-            .create_state()
-            .map_err(|e| InferError::Backend(format!("whisper state init failed: {e:?}")))?;
+        let (ready, initialized) = std::sync::mpsc::sync_channel(1);
+        let owner = WhisperOwner { ctx, reservation };
 
         let thread = std::thread::Builder::new()
             .name("whisper-worker".into())
-            .spawn(move || {
-                while let Ok(work) = rx.recv() {
-                    let result = run_transcription(&mut state, &work.pcm);
-                    let _ = work.reply.send(result);
-                }
-                drop(state);
-                drop(ctx);
-            })
+            .spawn(move || owner.run(rx, ready))
             .map_err(|e| InferError::Backend(format!("whisper thread spawn failed: {e}")))?;
 
-        Ok(Self {
+        let worker = Self {
             tx: Some(tx),
             thread: Some(thread),
-        })
+        };
+        initialized
+            .recv()
+            .map_err(|_| InferError::Backend("whisper initialization stopped".into()))??;
+        Ok(worker)
     }
 
     async fn transcribe(&self, pcm: Vec<f32>) -> Result<String, InferError> {
         let (reply_tx, reply_rx) = oneshot::channel();
-        self.tx
+        let sender = self
+            .tx
             .as_ref()
             .ok_or_else(|| InferError::Backend("whisper worker is shutting down".into()))?
-            .send(WorkItem {
-                pcm,
-                reply: reply_tx,
-            })
+            .clone();
+        let item = WorkItem {
+            pcm,
+            reply: reply_tx,
+        };
+        tokio::task::spawn_blocking(move || sender.send(item))
+            .await
+            .map_err(|e| InferError::Backend(e.to_string()))?
             .map_err(|_| InferError::Backend("whisper worker channel closed".into()))?;
         reply_rx
             .await
@@ -133,6 +160,45 @@ impl Drop for WhisperWorker {
                 join();
             }
         }
+    }
+}
+
+struct WhisperOwner {
+    // Keep native ownership ahead of its lease on a failed thread spawn too.
+    ctx: WhisperContext,
+    reservation: agentix_infer::memory::LoadReservation,
+}
+impl WhisperOwner {
+    fn run(
+        self,
+        receiver: std::sync::mpsc::Receiver<WorkItem>,
+        ready: std::sync::mpsc::SyncSender<Result<(), InferError>>,
+    ) {
+        let allocation = self.reservation;
+        let ctx = self.ctx;
+        let mut state = match ctx.create_state() {
+            Ok(state) => state,
+            Err(error) => {
+                let _ = ready.send(Err(InferError::Backend(format!(
+                    "whisper state init failed: {error:?}"
+                ))));
+                return;
+            }
+        };
+        if let Err(error) = allocation.activate() {
+            let _ = ready.send(Err(error));
+            return;
+        }
+        if ready.send(Ok(())).is_err() {
+            return;
+        }
+        while let Ok(work) = receiver.recv() {
+            let result = run_transcription(&mut state, &work.pcm);
+            let _ = work.reply.send(result);
+        }
+        drop(state);
+        drop(ctx);
+        drop(allocation);
     }
 }
 

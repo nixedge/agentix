@@ -250,6 +250,11 @@ async fn transcription_handler(
 
     match state.engine.transcribe_pcm(&model, &pcm).await {
         Ok(text) => Json(agentix_api::TranscriptionResponse { text }).into_response(),
+        Err(error) if error.is_capacity() => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            format!("GPU capacity: {error}"),
+        )
+            .into_response(),
         Err(agentix_infer::InferError::ModelNotFound(_)) => (
             StatusCode::NOT_FOUND,
             format!("model '{model}' not found — pull it first with POST /api/pull"),

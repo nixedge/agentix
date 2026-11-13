@@ -163,6 +163,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "agentix-gpu"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "agentix-harness"
 version = "0.1.0"
 dependencies = [
@@ -216,6 +226,7 @@ dependencies = [
 name = "agentix-infer"
 version = "0.1.0"
 dependencies = [
+ "agentix-gpu",
  "async-trait",
  "dirs 5.0.1",
  "futures",
@@ -303,6 +314,7 @@ dependencies = [
 name = "agentix-qwen"
 version = "0.1.0"
 dependencies = [
+ "agentix-gpu",
  "anyhow",
  "minijinja",
  "rusting_strata",
@@ -315,6 +327,7 @@ name = "agentix-qwen-worker"
 version = "0.1.0"
 dependencies = [
  "agentix-api",
+ "agentix-gpu",
  "agentix-qwen",
  "axum",
  "reqwest",
@@ -7947,7 +7960,6 @@ dependencies = [
 [[package]]
 name = "rusting_strata"
 version = "1.2.1"
-source = "git+https://github.com/RustingStudio/RustingStrata?rev=9dd6340d25c7c6770f7918134a27984cf20d7ce3#9dd6340d25c7c6770f7918134a27984cf20d7ce3"
 dependencies = [
  "anyhow",
  "ash",

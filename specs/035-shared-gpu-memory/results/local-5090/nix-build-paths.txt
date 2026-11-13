@@ -1,0 +1,2 @@
+/nix/store/3y69i5azq6yzbv0krr1s9y144m8w4fqf-agentix-qwen-0.1.0
+/nix/store/nhan33cgrb9n8kzg74dfajqy2rcbcdka-agentix-qwen-worker

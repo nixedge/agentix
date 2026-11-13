@@ -1,0 +1,48 @@
+warning: Git tree '/home/sam/home/agentix/035-shared-gpu-memory' is dirty
+   Compiling agentix-qwen v0.1.0 (/home/sam/home/agentix/035-shared-gpu-memory/agentix-qwen)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.64s
+     Running unittests src/lib.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/agentix_qwen-80b607a0ec21c1d5)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/agentix-qwen-bench.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/agentix_qwen_bench-b6e6c1b62770ab0f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/engine.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/engine-f0d9cd5345d289a5)
+
+running 9 tests
+test gpu_expert_release_refill_preserves_the_live_session ... ignored, requires explicit GPU authorization and external thermal limits
+test gpu_fixture_matches_cpu_prefill_decode_and_reset ... ignored, requires explicit GPU access; run with AGENTIX_QWEN_GPU_TEST_BACKEND=cuda or vulkan
+test gpu_production_engine_release_refill_continues_session ... ignored, requires explicit GPU authorization and a cached production model
+test gpu_production_reclaim_matches_cpu_checkpoint ... ignored, requires explicit GPU authorization and a cached production model
+test initialization_fails_without_silent_backend_fallback ... ok
+test cancellation_and_rejected_tokens_do_not_poison_next_request ... ok
+test management_commands_work_while_a_cpu_session_retains_its_lock ... ok
+test quantized_model_prefill_matches_steps_and_resets_sequences ... ok
+test benchmark_cli_runs_the_pinned_fixture_and_emits_measured_records ... ok
+
+test result: ok. 5 passed; 0 failed; 4 ignored; 0 measured; 0 filtered out; finished in 10.28s
+
+     Running tests/tokenizer.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/tokenizer-e35bd1a4ac44c9e0)
+
+running 7 tests
+test greedy_generation_uses_lower_id_ties_and_stops_without_an_extra_logits_call ... ok
+test greedy_generation_respects_token_limit_and_rejects_bad_logits ... ok
+test prepared_prompt_admits_rendered_token_count_and_keeps_requested_output ... ok
+test pinned_tool_and_reasoning_template_preserves_special_tokens ... ok
+test streaming_decode_keeps_split_unicode_prefixes_valid ... ok
+test unsupported_prompts_and_reasoning_effort_are_rejected ... ok
+test pinned_vocabulary_chat_template_and_generation_stops ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.76s
+
+   Doc-tests agentix_qwen
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

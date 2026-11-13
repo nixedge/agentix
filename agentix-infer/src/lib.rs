@@ -1,6 +1,7 @@
 pub mod backend;
 pub mod engine;
 pub mod error;
+pub mod memory;
 pub mod meta;
 pub mod pool;
 pub mod store;

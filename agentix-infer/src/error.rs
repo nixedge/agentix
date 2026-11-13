@@ -24,6 +24,9 @@ pub enum InferError {
     #[error("VRAM exhausted: cannot load {model} ({required_bytes} bytes required)")]
     VramExhausted { model: String, required_bytes: u64 },
 
+    #[error("shared GPU capacity unavailable: {0}")]
+    GpuCapacity(String),
+
     #[error("transcription error: {0}")]
     Transcription(String),
 
@@ -42,4 +45,10 @@ pub enum InferError {
         max_new_tokens: u32,
         context_window: u32,
     },
+}
+
+impl InferError {
+    pub fn is_capacity(&self) -> bool {
+        matches!(self, Self::VramExhausted { .. } | Self::GpuCapacity(_))
+    }
 }

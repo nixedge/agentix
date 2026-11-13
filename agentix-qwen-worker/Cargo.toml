@@ -10,6 +10,7 @@ name = "agentix-qwen-worker"
 path = "src/main.rs"
 
 [dependencies]
+agentix-gpu = { path = "../agentix-gpu" }
 agentix-api = { path = "../agentix-api" }
 agentix-qwen = { path = "../agentix-qwen" }
 axum = { version = "0.8", features = ["json"] }

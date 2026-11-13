@@ -389,8 +389,15 @@
     packages =
       memberPackages
       // {
+        agentix-gpu-coordinator = memberPackages.agentix-gpu.overrideAttrs (old: {
+          doCheck = true;
+          meta = (old.meta or {}) // {mainProgram = "agentix-gpu-coordinator";};
+        });
         agentix-qwen = buildMember "agentix-qwen" {
           doCheck = true;
+          preCheck = ''
+            export RAYON_NUM_THREADS=2
+          '';
           nativeBuildInputs = (packageArgs "agentix-qwen").nativeBuildInputs ++ [pkgs.makeWrapper];
           AGENTIX_QWEN_TOKENIZER_PATH = qwenFixtures.tokenizer;
           AGENTIX_QWEN_TEMPLATE_PATH = qwenFixtures.template;
@@ -399,6 +406,7 @@
             mkdir -p $out/share/doc/agentix-qwen $out/lib
             cp target/release/libagentix_qwen.rlib $out/lib/
             cp agentix-qwen/PROVENANCE.md agentix-qwen/RUSTINGSTRATA-LICENSE.md $out/share/doc/agentix-qwen/
+            cp patches/rusting-strata/AGENTIX-MODIFICATIONS.md $out/share/doc/agentix-qwen/
             wrapProgram $out/bin/agentix-qwen-bench \
               --prefix LD_LIBRARY_PATH : "${qwenRuntime}:/run/opengl-driver/lib" \
               --set-default AGENTIX_QWEN_TOKENIZER ${qwenFixtures.tokenizer} \
@@ -410,12 +418,16 @@
           paths = [
             (buildMember "agentix-qwen-worker" {
               doCheck = true;
+              preCheck = ''
+                export RAYON_NUM_THREADS=2
+              '';
               AGENTIX_QWEN_TOKENIZER_PATH = qwenFixtures.tokenizer;
               AGENTIX_QWEN_TEMPLATE_PATH = qwenFixtures.template;
               AGENTIX_QWEN_TEST_MODEL = qwenFixtures.model;
               postInstall = ''
                 mkdir -p $out/share/doc/agentix-qwen
                 cp agentix-qwen/PROVENANCE.md agentix-qwen/RUSTINGSTRATA-LICENSE.md $out/share/doc/agentix-qwen/
+                cp patches/rusting-strata/AGENTIX-MODIFICATIONS.md $out/share/doc/agentix-qwen/
               '';
             })
           ];

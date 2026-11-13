@@ -1,0 +1,6 @@
+/nix/store/8zhqzjp4hw755zjckn7dqzgz6ih13kwq-agentix-gpu-0.1.0
+/nix/store/hff6i5j217drq4yq4sn28dyijg5aqf4k-agentix-qwen-0.1.0
+/nix/store/hfk3lp3sz92py8dxprkrbkrxhbzl3i71-agentix-qwen-worker
+/nix/store/h6i5vwdg5a75yiv945fnw23lca73q5f4-agentix-llama
+/nix/store/vf1mhmb0dkbkam6gjphh04cv8935dw8x-agentix-whisper-0.1.0
+/nix/store/ik2pbz3g7kpvdmacf4xvrhhmbc7yxb5m-agentix-daemon

@@ -9,7 +9,10 @@ use llama_cpp_2::{
     context::params::{LlamaContextParams, LlamaPoolingType},
     llama_backend::LlamaBackend,
     llama_batch::LlamaBatch,
-    model::{params::LlamaModelParams, AddBos, LlamaModel},
+    model::{
+        params::{LlamaModelParams, LlamaSplitMode},
+        AddBos, LlamaModel,
+    },
     sampling::LlamaSampler,
 };
 
@@ -102,6 +105,24 @@ impl InferBackend for LlamaCppBackend {
         blob_path: &Path,
         info: &ModelInfo,
     ) -> Result<Arc<dyn LoadedModel>, InferError> {
+        self.load_reserved(
+            blob_path,
+            info,
+            agentix_infer::memory::LoadReservation::unmanaged(),
+        )
+        .await
+    }
+
+    fn uses_gpu(&self) -> bool {
+        self.n_gpu_layers > 0
+    }
+
+    async fn load_reserved(
+        &self,
+        blob_path: &Path,
+        info: &ModelInfo,
+        reservation: agentix_infer::memory::LoadReservation,
+    ) -> Result<Arc<dyn LoadedModel>, InferError> {
         let path = blob_path.to_path_buf();
         let backend = Arc::clone(&self.backend);
 
@@ -146,24 +167,22 @@ impl InferBackend for LlamaCppBackend {
         // completion-model context allocation for each embedding model.
         let max_ctx = if is_embedding { 8192u32 } else { self.max_ctx };
         let n_ctx_val = info.context_length.clamp(64, max_ctx).max(256);
-        let size_bytes = info.size_bytes;
+        if let Some(plan) = &reservation.plan {
+            plan.check_shape(n_ctx_val as usize, n_ctx_val as usize)
+                .map_err(|e| InferError::GpuCapacity(e.to_string()))?;
+        }
+        let size_bytes = if reservation.peak_bytes == 0 {
+            info.size_bytes
+        } else {
+            reservation.peak_bytes
+        };
 
         let n_gpu_layers = self.n_gpu_layers;
 
-        // Phase 1: load the model weights (blocking; model is Send)
-        let model = tokio::task::spawn_blocking({
-            let backend = Arc::clone(&backend);
-            move || {
-                let params = LlamaModelParams::default().with_n_gpu_layers(n_gpu_layers);
-                LlamaModel::load_from_file(&backend, &path, &params)
-                    .map_err(|e| InferError::Backend(format!("model load failed: {e:?}")))
-            }
-        })
-        .await
-        .map_err(|e| InferError::Backend(e.to_string()))??;
-
-        // Phase 2: spawn a dedicated thread that owns model + context
+        // The native owner also owns admission through failed loads, cancelled
+        // waiters and delayed thread shutdown. No native destructor runs on Tokio.
         let (tx, rx) = std::sync::mpsc::sync_channel::<InferMessage>(16);
+        let (ready, initialized) = tokio::sync::oneshot::channel();
 
         std::thread::Builder::new()
             .name(format!(
@@ -174,6 +193,27 @@ impl InferBackend for LlamaCppBackend {
                     .unwrap_or_default()
             ))
             .spawn(move || {
+                let allocation = reservation;
+                let mut params = LlamaModelParams::default().with_n_gpu_layers(n_gpu_layers);
+                if let Some(shared) = &allocation.shared {
+                    let Ok(device) = i32::try_from(shared.device()) else {
+                        let _ = ready
+                            .send(Err(InferError::Backend("GPU device index overflow".into())));
+                        return;
+                    };
+                    params = params
+                        .with_main_gpu(device)
+                        .with_split_mode(LlamaSplitMode::None);
+                }
+                let model = match LlamaModel::load_from_file(&backend, &path, &params) {
+                    Ok(model) => model,
+                    Err(error) => {
+                        let _ = ready.send(Err(InferError::Backend(format!(
+                            "model load failed: {error:?}"
+                        ))));
+                        return;
+                    }
+                };
                 // n_ctx_val >= 256 due to clamping; NonZeroU32::MIN (1) is an unreachable fallback
                 let n_ctx = NonZeroU32::new(n_ctx_val).unwrap_or(NonZeroU32::MIN);
                 // Decoder-based embedding models need explicit mean pooling — the GGUF
@@ -184,12 +224,20 @@ impl InferBackend for LlamaCppBackend {
                 } else {
                     LlamaPoolingType::Unspecified
                 };
-                let n_threads = std::thread::available_parallelism()
-                    .map(|n| n.get() as i32)
-                    .unwrap_or(4);
+                let n_threads = std::env::var("AGENTIX_CPU_THREADS")
+                    .ok()
+                    .and_then(|v| v.parse::<i32>().ok())
+                    .filter(|n| *n > 0)
+                    .unwrap_or_else(|| {
+                        std::thread::available_parallelism()
+                            .map(|n| n.get() as i32)
+                            .unwrap_or(4)
+                    });
                 let ctx_params = LlamaContextParams::default()
                     .with_n_ctx(Some(n_ctx))
                     .with_embeddings(is_embedding)
+                    .with_offload_kqv(n_gpu_layers > 0)
+                    .with_op_offload(n_gpu_layers > 0)
                     .with_pooling_type(pooling_type)
                     // Use all available CPU threads — prefill is memory-bandwidth limited
                     // and llama.cpp defaults to 1 thread without this.
@@ -201,10 +249,19 @@ impl InferBackend for LlamaCppBackend {
                 let mut ctx = match model.new_context(&backend, ctx_params) {
                     Ok(c) => c,
                     Err(e) => {
-                        tracing::error!("context creation failed: {:?}", e);
+                        let _ = ready.send(Err(InferError::Backend(format!(
+                            "context creation failed: {e:?}"
+                        ))));
                         return;
                     }
                 };
+                if let Err(error) = allocation.activate() {
+                    let _ = ready.send(Err(error));
+                    return;
+                }
+                if ready.send(Ok(())).is_err() {
+                    return;
+                }
 
                 for msg in rx {
                     match msg {
@@ -233,6 +290,10 @@ impl InferBackend for LlamaCppBackend {
                 tracing::debug!("inference thread exiting");
             })
             .map_err(|e| InferError::Backend(format!("failed to spawn inference thread: {e}")))?;
+
+        initialized
+            .await
+            .map_err(|_| InferError::Backend("native model initialization stopped".into()))??;
 
         Ok(Arc::new(LlamaCppLoadedModel {
             tx,
@@ -486,12 +547,11 @@ impl LoadedModel for LlamaCppLoadedModel {
             ));
         }
         let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
-        self.tx
-            .send(InferMessage::EmbedBatch {
-                inputs: inputs.iter().map(|s| s.to_string()).collect(),
-                reply: reply_tx,
-            })
-            .map_err(|_| InferError::Backend("inference thread closed".to_string()))?;
+        self.dispatch(InferMessage::EmbedBatch {
+            inputs: inputs.iter().map(|s| s.to_string()).collect(),
+            reply: reply_tx,
+        })
+        .await?;
         reply_rx
             .await
             .map_err(|_| InferError::Backend("reply channel dropped".to_string()))?
@@ -506,9 +566,8 @@ impl LoadedModel for LlamaCppLoadedModel {
         }
 
         let (chunk_tx, chunk_rx) = tokio::sync::mpsc::unbounded_channel();
-        self.tx
-            .send(InferMessage::Complete { req, tx: chunk_tx })
-            .map_err(|_| InferError::Backend("inference thread closed".to_string()))?;
+        self.dispatch(InferMessage::Complete { req, tx: chunk_tx })
+            .await?;
 
         let stream = tokio_stream::wrappers::UnboundedReceiverStream::new(chunk_rx);
         Ok(Box::pin(stream))
@@ -516,12 +575,11 @@ impl LoadedModel for LlamaCppLoadedModel {
 
     async fn tokenize(&self, text: &str) -> Result<Vec<i32>, InferError> {
         let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
-        self.tx
-            .send(InferMessage::Tokenize {
-                text: text.to_string(),
-                reply: reply_tx,
-            })
-            .map_err(|_| InferError::Backend("inference thread closed".to_string()))?;
+        self.dispatch(InferMessage::Tokenize {
+            text: text.to_string(),
+            reply: reply_tx,
+        })
+        .await?;
         reply_rx
             .await
             .map_err(|_| InferError::Backend("reply channel dropped".to_string()))?
@@ -529,5 +587,15 @@ impl LoadedModel for LlamaCppLoadedModel {
 
     fn vram_bytes(&self) -> u64 {
         self.vram_est
+    }
+}
+
+impl LlamaCppLoadedModel {
+    async fn dispatch(&self, message: InferMessage) -> Result<(), InferError> {
+        let sender = self.tx.clone();
+        tokio::task::spawn_blocking(move || sender.send(message))
+            .await
+            .map_err(|e| InferError::Backend(e.to_string()))?
+            .map_err(|_| InferError::Backend("inference thread closed".into()))
     }
 }

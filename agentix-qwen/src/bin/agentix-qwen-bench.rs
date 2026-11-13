@@ -50,6 +50,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             context,
             chunk: number("AGENTIX_QWEN_PREFILL_CHUNK", 256)?,
             vram_margin: number("AGENTIX_QWEN_VRAM_MARGIN", 512 * 1024 * 1024)?,
+            expert_budget: None,
         },
     )?;
     println!(

@@ -1,0 +1,4 @@
+warning: Git tree '/home/sam/home/agentix/035-shared-gpu-memory' is dirty
+   Compiling agentix-qwen v0.1.0 (/home/sam/home/agentix/035-shared-gpu-memory/agentix-qwen)
+    Finished `release` profile [optimized] target(s) in 1.55s
+  Executable tests/engine.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/release/deps/engine-62064a1fa71695ab)

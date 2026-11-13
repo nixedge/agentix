@@ -2,7 +2,7 @@
 //!
 //! Requires the AGENTIX_TEST_WHISPER_MODEL_PATH environment variable to be set
 //! to the path of a whisper model file (ggml-tiny.en.bin or similar).
-//! Marked #[ignore] when the env var is absent so CI without the fixture passes.
+//! Explicitly ignored; supply the fixture and select this test for acceptance.
 
 use agentix_infer::{InferConfig, InferEngine};
 use agentix_whisper::WhisperBackend;
@@ -63,13 +63,8 @@ async fn whisper_transcribes_sine_wave() -> Result<(), Box<dyn std::error::Error
     let wav = make_sine_wav(16_000, 3.0);
     let pcm = agentix_whisper::decode_audio_to_pcm(wav).await?;
 
-    let result = engine.transcribe_pcm(model_name, &pcm).await;
-    assert!(
-        result.is_ok(),
-        "transcribe_pcm should not error: {:?}",
-        result
-    );
+    let result = engine.transcribe_pcm(model_name, &pcm).await?;
     // Not checking the actual text — a sine wave may produce empty or noise text.
-    println!("transcript: {:?}", result?);
+    println!("transcript: {:?}", result);
     Ok(())
 }

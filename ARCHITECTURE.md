@@ -387,3 +387,38 @@ and the loader while the host supplies the driver matching its kernel. The
 RustingStrata custom license and author acknowledgement are shipped with both
 packages. See [feature 033 quickstart](specs/033-rustingstrata-qwen/quickstart.md)
 for runtime configuration, fixture coverage and pending target GPU acceptance.
+
+## Shared GPU memory admission
+
+`agentix-gpu` contains the lease policy, device observations and local client.
+Its separate `agentix-gpu-coordinator` binary binds a permission-restricted Unix
+management socket and localhost Prometheus listener. This is an explicit
+infrastructure-listener exception like the existing worker/storage binaries;
+libraries do not bind listeners and the public inference gateway is unchanged.
+
+The coordinator charges calibrated model loading/execution peaks across worker
+processes, reconciles them with driver usage and retains room for future context
+and scratch allocations. Only guaranteed persistent floors offset reservations;
+transient measured peaks do not make growth capacity available for expert cache.
+Unknown attribution is conservative. Missing or mismatched model-hash/context/
+batch profiles fail before native model loading when management is enabled.
+
+Pool reservations now count active, idle and pending loads. Native llama and
+Whisper threads own their reservations through weight/context destruction; a
+completion stream keeps its model guard alive. Qwen's persistent inference
+thread handles management between token/prefill operations, independently of
+the session mutex, while preserving KV/recurrent state and CPU model mappings.
+
+`patches/rusting-strata` is a documented Cargo path patch of the pinned upstream
+library under its original license. It adds leased cache ceilings, real expert
+pool release/refill, CUDA/Vulkan graph invalidation and CUDA async allocator
+trimming. Upstream inference/quantization algorithms remain in that library.
+After release acknowledgement the coordinator rechecks actual device headroom;
+refill requires a new grant, no queued competitor and cooldown/minimum-increment
+hysteresis. Coordinator restart requires worker snapshot reconciliation; process
+death and delayed device frees are handled separately.
+
+See [feature 035](specs/035-shared-gpu-memory/quickstart.md). The mechanism is
+opt-in, requires measured upper bounds, and does not intercept every native
+allocator call or prevent unmanaged GPU jobs from racing admission. Hardware
+release and coexistence acceptance must be verified on the deployment host.
