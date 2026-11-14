@@ -1,0 +1,164 @@
+warning: Git tree '/home/sam/home/agentix/036-whisper-cuda' is dirty
+these 6 derivations will be built:
+  /nix/store/w7czhzja9wiy4kd5j6a9sb8v44n4ixkf-isolated-workspace-src.drv
+  /nix/store/dl6wg39rksvikh11j5k3y6da2smnl4cv-agentix-whisper-locked-workspace.drv
+  /nix/store/0mjqwi8y5xyh40s9rlqgiszdipqzs27h-workspace-locks.drv
+  /nix/store/sddgvwx80al4g3kflf8pzzmcsir5vib3-agentix-whisper-0.1.0.drv
+  /nix/store/ahjxf0g2b8h65mwcx9n9my05r0k605nj-whisper-runtime.drv
+  /nix/store/ngwc3x4cn891m2ngwgqa393ydvwlikjp-agentix-whisper-0.1.0.drv
+building '/nix/store/w7czhzja9wiy4kd5j6a9sb8v44n4ixkf-isolated-workspace-src.drv'...
+building '/nix/store/ngwc3x4cn891m2ngwgqa393ydvwlikjp-agentix-whisper-0.1.0.drv'...
+agentix-whisper> Sourcing setup-cuda-hook
+agentix-whisper> source: sourcing removeStubsFromRunpathHook.bash (hostOffset=-1) (targetOffset=0)
+agentix-whisper> source: added removeStubsFromRunpathHookRegistration to prePhases
+agentix-whisper> Sourcing fix-elf-files.sh
+agentix-whisper> Sourcing fix-elf-files.sh
+agentix-whisper> Running phase: removeStubsFromRunpathHookRegistration
+agentix-whisper> removeStubsFromRunpathHookRegistration: added removeStubsFromRunpath to postFixupHooks
+agentix-whisper> Running phase: unpackPhase
+agentix-whisper> unpacking source archive /nix/store/gb6bj5grr3h4xc3csm718l5vcs5vfsg4-isolated-workspace-src
+agentix-whisper> source root is isolated-workspace-src
+agentix-whisper> Running phase: patchPhase
+agentix-whisper> moving Cargo.lock to Cargo.lock.orig, then will use /nix/store/aihva6rhfil26kwxmwdhwfc3hv9rb9lh-Cargo.lock as Cargo.lock
+agentix-whisper> Executing configureCargoCommonVars
+agentix-whisper> decompressing cargo artifacts from /nix/store/rr7rd9060c7x3f55ikz71p50za804c19-agentix-whisper-deps-0.1.0/target.tar.zst to target
+agentix-whisper> Running phase: updateAutotoolsGnuConfigScriptsPhase
+agentix-whisper> Running phase: configurePhase
+agentix-whisper> Executing setupCUDAToolkitCompilers
+agentix-whisper> will append /build/isolated-workspace-src/.cargo-home/config.toml with contents of /nix/store/7lqg4zpfr2p51mwz60zx9sbklh2w2y3l-vendor-cargo-deps/config.toml
+agentix-whisper> default configurePhase, nothing to do
+agentix-whisper> Running phase: buildPhase
+agentix-whisper> +++ command cargo --version
+agentix-whisper> cargo 1.97.1 (c980f4866 2026-06-30)
+agentix-whisper> +++ command cargo build --release --message-format json-render-diagnostics --locked --package agentix-whisper --features cuda
+agentix-whisper>    Compiling agentix-infer v0.1.0 (/build/isolated-workspace-src/agentix-infer)
+agentix-whisper>    Compiling agentix-api v0.1.0 (/build/isolated-workspace-src/agentix-api)
+agentix-whisper>    Compiling agentix-whisper v0.1.0 (/build/isolated-workspace-src/agentix-whisper)
+agentix-whisper>     Finished `release` profile [optimized] target(s) in 11.67s
+agentix-whisper> searching for bins/libs to install from cargo build log at cargoBuildLogy9EE.json
+agentix-whisper> installing /build/isolated-workspace-src/target/release/agentix-whisper in postBuildInstallFromCargoBuildLogOutTemp6e6/bin
+agentix-whisper> searching for bins/libs complete
+agentix-whisper> Running phase: installPhase
+agentix-whisper> actually installing contents of postBuildInstallFromCargoBuildLogOutTemp6e6 to /nix/store/lw7mg81263dcx5w0qvwnkikn2pk582v2-agentix-whisper-0.1.0
+agentix-whisper> stripping references to Rust toolchain
+agentix-whisper> Rust toolchain at: /nix/store/12zl8d0b3f1hzb4k85glcg6dl2r6abf0-rust-stable-2026-07-16
+agentix-whisper> stripping Rust toolchain references done
+agentix-whisper> stripping references to cargoVendorDir from:
+agentix-whisper> /nix/store/lw7mg81263dcx5w0qvwnkikn2pk582v2-agentix-whisper-0.1.0/bin/agentix-whisper
+agentix-whisper> stripping references done
+agentix-whisper> Running phase: fixupPhase
+agentix-whisper> shrinking RPATHs of ELF executables and libraries in /nix/store/lw7mg81263dcx5w0qvwnkikn2pk582v2-agentix-whisper-0.1.0
+agentix-whisper> shrinking /nix/store/lw7mg81263dcx5w0qvwnkikn2pk582v2-agentix-whisper-0.1.0/bin/agentix-whisper
+agentix-whisper> checking for references to /build/ in /nix/store/lw7mg81263dcx5w0qvwnkikn2pk582v2-agentix-whisper-0.1.0...
+agentix-whisper> patching script interpreter paths in /nix/store/lw7mg81263dcx5w0qvwnkikn2pk582v2-agentix-whisper-0.1.0
+agentix-whisper> stripping (with command strip and flags -S -p) in /nix/store/lw7mg81263dcx5w0qvwnkikn2pk582v2-agentix-whisper-0.1.0/bin
+agentix-whisper> shrinking RPATHs of ELF executables and libraries in /nix/store/lw7mg81263dcx5w0qvwnkikn2pk582v2-agentix-whisper-0.1.0
+agentix-whisper> shrinking /nix/store/lw7mg81263dcx5w0qvwnkikn2pk582v2-agentix-whisper-0.1.0/bin/agentix-whisper
+agentix-whisper> automatically fixing dependencies for ELF files
+agentix-whisper> {'add_existing': True,
+agentix-whisper>  'append_rpaths': [],
+agentix-whisper>  'extra_args': [],
+agentix-whisper>  'ignore_missing': ['libcuda.so.1'],
+agentix-whisper>  'keep_libc': False,
+agentix-whisper>  'libs': [PosixPath('/nix/store/jzcvjw2j8hpfjyxlycjcyjkzs78wqj4z-compiler-rt-libc-21.1.8-dev/lib'),
+agentix-whisper>           PosixPath('/nix/store/ylwfkhrmakaf8mrala410phkjxh95pqx-compiler-rt-libc-21.1.8/lib'),
+agentix-whisper>           PosixPath('/nix/store/djbmc5jk7ggq5hhcb1g976iadjbs99hb-openssl-3.6.3-dev/lib'),
+agentix-whisper>           PosixPath('/nix/store/d4vvjf2zix40pq13w778cz4hkyna90ii-openssl-3.6.3-bin/lib'),
+agentix-whisper>           PosixPath('/nix/store/1mf3lj0mldr8732yvzjc12fig2407b3d-openssl-3.6.3/lib'),
+agentix-whisper>           PosixPath('/nix/store/shvpdnar85wxg813lkjiw9dlcdj8cmk7-clang-21.1.8-lib/lib'),
+agentix-whisper>           PosixPath('/nix/store/r48746qznwqxxl9qzd8f08ny8mg1dg2y-gcc-15.3.0-lib/lib'),
+agentix-whisper>           PosixPath('/nix/store/a3dzzmnj4xpaa5lb5jxfqpmdd29jy6b6-cuda12.9-cuda_cudart-12.9.79/lib'),
+agentix-whisper>           PosixPath('/nix/store/8arci91vgr80xnj9vx0g6l1fhb47gyvd-cuda12.9-cuda_cccl-12.9.27/lib'),
+agentix-whisper>           PosixPath('/nix/store/dq2l54wyawv5ddxkq348mwkck596vq36-removeStubsFromRunpathHook/lib'),
+agentix-whisper>           PosixPath('/nix/store/f37klnp74bblyg9mxmyracxwiylppmqy-getRunpathEntries/lib'),
+agentix-whisper>           PosixPath('/nix/store/fkgrm6vsfv1dgq2bmlln7krll0b1qc2b-isDeclaredArray/lib'),
+agentix-whisper>           PosixPath('/nix/store/iyinjjn7gv8c77w9qgicfmz4mc4dwq5j-patchelf-0.15.2/lib'),
+agentix-whisper>           PosixPath('/nix/store/bh6i205lnr4jnw0whfpm287rndpncaaw-auto-fix-elf-files/lib'),
+agentix-whisper>           PosixPath('/nix/store/xhap63h2qb4zgd95zria1gd1n42hw3hz-cuda12.9-libcublas-12.9.1.4-dev/lib'),
+agentix-whisper>           PosixPath('/nix/store/wkj0383zkas6ihy0an8xpqw3bv4270y3-cuda12.9-libcublas-12.9.1.4-include/lib'),
+agentix-whisper>           PosixPath('/nix/store/gns7wifrz1k75jbdrhdbl17lnskllkw5-cuda12.9-libcublas-12.9.1.4-lib/lib'),
+agentix-whisper>           PosixPath('/nix/store/7q4pag041i8z9gfp31lvfm8rimihwbaz-cuda12.9-libcublas-12.9.1.4-static/lib')],
+agentix-whisper>  'paths': [PosixPath('/nix/store/lw7mg81263dcx5w0qvwnkikn2pk582v2-agentix-whisper-0.1.0')],
+agentix-whisper>  'preserve_origin': False,
+agentix-whisper>  'recursive': True,
+agentix-whisper>  'runtime_dependencies': [],
+agentix-whisper>  'structured_logs': False}
+agentix-whisper> setting interpreter of /nix/store/lw7mg81263dcx5w0qvwnkikn2pk582v2-agentix-whisper-0.1.0/bin/.agentix-whisper-wrapped
+agentix-whisper> searching for dependencies of /nix/store/lw7mg81263dcx5w0qvwnkikn2pk582v2-agentix-whisper-0.1.0/bin/.agentix-whisper-wrapped
+agentix-whisper>     libstdc++.so.6 -> found: /nix/store/r48746qznwqxxl9qzd8f08ny8mg1dg2y-gcc-15.3.0-lib/lib
+agentix-whisper>     libcublas.so.12 -> found: /nix/store/gns7wifrz1k75jbdrhdbl17lnskllkw5-cuda12.9-libcublas-12.9.1.4-lib/lib
+agentix-whisper>     libcudart.so.12 -> found: /nix/store/a3dzzmnj4xpaa5lb5jxfqpmdd29jy6b6-cuda12.9-cuda_cudart-12.9.79/lib
+agentix-whisper>     libcuda.so.1 -> not found!
+agentix-whisper>     libgcc_s.so.1 -> found: /nix/store/cjgm8gv32xdrjgzbgc0zk2fypiys9ylf-gcc-15.3.0-libgcc/lib
+agentix-whisper> setting RPATH to: /nix/store/r48746qznwqxxl9qzd8f08ny8mg1dg2y-gcc-15.3.0-lib/lib:/nix/store/gns7wifrz1k75jbdrhdbl17lnskllkw5-cuda12.9-libcublas-12.9.1.4-lib/lib:/nix/store/a3dzzmnj4xpaa5lb5jxfqpmdd29jy6b6-cuda12.9-cuda_cudart-12.9.79/lib:/nix/store/cjgm8gv32xdrjgzbgc0zk2fypiys9ylf-gcc-15.3.0-libgcc/lib
+agentix-whisper> auto-patchelf: 1 dependencies could not be satisfied
+agentix-whisper> warn: auto-patchelf ignoring missing libcuda.so.1 wanted by /nix/store/lw7mg81263dcx5w0qvwnkikn2pk582v2-agentix-whisper-0.1.0/bin/.agentix-whisper-wrapped
+agentix-whisper> autoFixElfFiles: using removeStubsFromRunpath to fix /nix/store/lw7mg81263dcx5w0qvwnkikn2pk582v2-agentix-whisper-0.1.0/bin/.agentix-whisper-wrapped
+building '/nix/store/sddgvwx80al4g3kflf8pzzmcsir5vib3-agentix-whisper-0.1.0.drv'...
+agentix-whisper> Running phase: unpackPhase
+agentix-whisper> unpacking source archive /nix/store/gb6bj5grr3h4xc3csm718l5vcs5vfsg4-isolated-workspace-src
+agentix-whisper> source root is isolated-workspace-src
+agentix-whisper> Running phase: patchPhase
+agentix-whisper> moving Cargo.lock to Cargo.lock.orig, then will use /nix/store/aihva6rhfil26kwxmwdhwfc3hv9rb9lh-Cargo.lock as Cargo.lock
+agentix-whisper> Executing configureCargoCommonVars
+agentix-whisper> decompressing cargo artifacts from /nix/store/z8915s86h1gmbywmsyjf4cprb49xphpy-agentix-whisper-deps-0.1.0/target.tar.zst to target
+agentix-whisper> Running phase: updateAutotoolsGnuConfigScriptsPhase
+agentix-whisper> Running phase: configurePhase
+agentix-whisper> will append /build/isolated-workspace-src/.cargo-home/config.toml with contents of /nix/store/7lqg4zpfr2p51mwz60zx9sbklh2w2y3l-vendor-cargo-deps/config.toml
+agentix-whisper> default configurePhase, nothing to do
+agentix-whisper> Running phase: buildPhase
+agentix-whisper> +++ command cargo --version
+agentix-whisper> cargo 1.97.1 (c980f4866 2026-06-30)
+agentix-whisper> +++ command cargo build --release --message-format json-render-diagnostics --locked --package agentix-whisper
+agentix-whisper>    Compiling agentix-infer v0.1.0 (/build/isolated-workspace-src/agentix-infer)
+agentix-whisper>    Compiling agentix-api v0.1.0 (/build/isolated-workspace-src/agentix-api)
+agentix-whisper>    Compiling agentix-whisper v0.1.0 (/build/isolated-workspace-src/agentix-whisper)
+agentix-whisper>     Finished `release` profile [optimized] target(s) in 13.37s
+agentix-whisper> searching for bins/libs to install from cargo build log at cargoBuildLogedDT.json
+agentix-whisper> installing /build/isolated-workspace-src/target/release/agentix-whisper in postBuildInstallFromCargoBuildLogOutTempJmw/bin
+agentix-whisper> searching for bins/libs complete
+agentix-whisper> Running phase: installPhase
+agentix-whisper> actually installing contents of postBuildInstallFromCargoBuildLogOutTempJmw to /nix/store/1q8b7clipzmj7vpsr2v1vajyr7xh5ffz-agentix-whisper-0.1.0
+agentix-whisper> stripping references to Rust toolchain
+agentix-whisper> Rust toolchain at: /nix/store/12zl8d0b3f1hzb4k85glcg6dl2r6abf0-rust-stable-2026-07-16
+agentix-whisper> stripping Rust toolchain references done
+agentix-whisper> stripping references to cargoVendorDir from:
+agentix-whisper> /nix/store/1q8b7clipzmj7vpsr2v1vajyr7xh5ffz-agentix-whisper-0.1.0/bin/agentix-whisper
+agentix-whisper> stripping references done
+agentix-whisper> Running phase: fixupPhase
+agentix-whisper> shrinking RPATHs of ELF executables and libraries in /nix/store/1q8b7clipzmj7vpsr2v1vajyr7xh5ffz-agentix-whisper-0.1.0
+agentix-whisper> shrinking /nix/store/1q8b7clipzmj7vpsr2v1vajyr7xh5ffz-agentix-whisper-0.1.0/bin/agentix-whisper
+agentix-whisper> checking for references to /build/ in /nix/store/1q8b7clipzmj7vpsr2v1vajyr7xh5ffz-agentix-whisper-0.1.0...
+agentix-whisper> patching script interpreter paths in /nix/store/1q8b7clipzmj7vpsr2v1vajyr7xh5ffz-agentix-whisper-0.1.0
+agentix-whisper> stripping (with command strip and flags -S -p) in /nix/store/1q8b7clipzmj7vpsr2v1vajyr7xh5ffz-agentix-whisper-0.1.0/bin
+agentix-whisper> automatically fixing dependencies for ELF files
+agentix-whisper> {'add_existing': True,
+agentix-whisper>  'append_rpaths': [],
+agentix-whisper>  'extra_args': [],
+agentix-whisper>  'ignore_missing': [],
+agentix-whisper>  'keep_libc': False,
+agentix-whisper>  'libs': [PosixPath('/nix/store/jzcvjw2j8hpfjyxlycjcyjkzs78wqj4z-compiler-rt-libc-21.1.8-dev/lib'),
+agentix-whisper>           PosixPath('/nix/store/ylwfkhrmakaf8mrala410phkjxh95pqx-compiler-rt-libc-21.1.8/lib'),
+agentix-whisper>           PosixPath('/nix/store/djbmc5jk7ggq5hhcb1g976iadjbs99hb-openssl-3.6.3-dev/lib'),
+agentix-whisper>           PosixPath('/nix/store/d4vvjf2zix40pq13w778cz4hkyna90ii-openssl-3.6.3-bin/lib'),
+agentix-whisper>           PosixPath('/nix/store/1mf3lj0mldr8732yvzjc12fig2407b3d-openssl-3.6.3/lib'),
+agentix-whisper>           PosixPath('/nix/store/shvpdnar85wxg813lkjiw9dlcdj8cmk7-clang-21.1.8-lib/lib'),
+agentix-whisper>           PosixPath('/nix/store/r48746qznwqxxl9qzd8f08ny8mg1dg2y-gcc-15.3.0-lib/lib')],
+agentix-whisper>  'paths': [PosixPath('/nix/store/1q8b7clipzmj7vpsr2v1vajyr7xh5ffz-agentix-whisper-0.1.0')],
+agentix-whisper>  'preserve_origin': False,
+agentix-whisper>  'recursive': True,
+agentix-whisper>  'runtime_dependencies': [],
+agentix-whisper>  'structured_logs': False}
+agentix-whisper> setting interpreter of /nix/store/1q8b7clipzmj7vpsr2v1vajyr7xh5ffz-agentix-whisper-0.1.0/bin/agentix-whisper
+agentix-whisper> searching for dependencies of /nix/store/1q8b7clipzmj7vpsr2v1vajyr7xh5ffz-agentix-whisper-0.1.0/bin/agentix-whisper
+agentix-whisper>     libstdc++.so.6 -> found: /nix/store/r48746qznwqxxl9qzd8f08ny8mg1dg2y-gcc-15.3.0-lib/lib
+agentix-whisper>     libgcc_s.so.1 -> found: /nix/store/cjgm8gv32xdrjgzbgc0zk2fypiys9ylf-gcc-15.3.0-libgcc/lib
+agentix-whisper> setting RPATH to: /nix/store/r48746qznwqxxl9qzd8f08ny8mg1dg2y-gcc-15.3.0-lib/lib:/nix/store/cjgm8gv32xdrjgzbgc0zk2fypiys9ylf-gcc-15.3.0-libgcc/lib
+agentix-whisper> auto-patchelf: 0 dependencies could not be satisfied
+building '/nix/store/dl6wg39rksvikh11j5k3y6da2smnl4cv-agentix-whisper-locked-workspace.drv'...
+building '/nix/store/ahjxf0g2b8h65mwcx9n9my05r0k605nj-whisper-runtime.drv'...
+building '/nix/store/0mjqwi8y5xyh40s9rlqgiszdipqzs27h-workspace-locks.drv'...
+/nix/store/lw7mg81263dcx5w0qvwnkikn2pk582v2-agentix-whisper-0.1.0
+/nix/store/1q8b7clipzmj7vpsr2v1vajyr7xh5ffz-agentix-whisper-0.1.0
+/nix/store/fhcydqkk21m21qmn1chi6f5fw88l5bp3-whisper-runtime
+/nix/store/75ij982xqcc4x8khs6slm4p02crhgrzk-workspace-locks

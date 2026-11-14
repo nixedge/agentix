@@ -1,0 +1,3 @@
+warning: Git tree '/home/sam/home/agentix/036-whisper-cuda' is dirty
+2:2026-11-14T17:08:04.669249Z  WARN agentix_whisper: preload warmup failed model=/nix/store/pbhdzdlc0y9n0bn3yysy7zhp0w7pkw6b-ggml-tiny.en.bin err=model not found: /nix/store/pbhdzdlc0y9n0bn3yysy7zhp0w7pkw6b-ggml-tiny.en.bin
+Native GPU error in worker log

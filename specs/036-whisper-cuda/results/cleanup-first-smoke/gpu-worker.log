@@ -1,0 +1,45 @@
+2026-11-14T17:08:04.610584Z  INFO agentix_whisper: preloading whisper model model=/nix/store/pbhdzdlc0y9n0bn3yysy7zhp0w7pkw6b-ggml-tiny.en.bin
+2026-11-14T17:08:04.669249Z  WARN agentix_whisper: preload warmup failed model=/nix/store/pbhdzdlc0y9n0bn3yysy7zhp0w7pkw6b-ggml-tiny.en.bin err=model not found: /nix/store/pbhdzdlc0y9n0bn3yysy7zhp0w7pkw6b-ggml-tiny.en.bin
+2026-11-14T17:08:04.669601Z  INFO agentix_whisper: agentix-whisper listening socket=/tmp/036-whisper-gpu.gHHM8d/whisper.sock
+2026-11-14T17:08:04.691116Z  INFO agentix_whisper: transcription request model=pbhdzdlc0y9n0bn3yysy7zhp0w7pkw6b-ggml-tiny.en.bin audio_bytes=96044
+2026-11-14T17:08:04.691743Z  INFO agentix_infer::engine: loading model model=pbhdzdlc0y9n0bn3yysy7zhp0w7pkw6b-ggml-tiny.en.bin backend=whisper
+2026-11-14T17:08:04.691768Z  INFO agentix_whisper: loading whisper model path=/tmp/036-whisper-gpu.gHHM8d/models/blobs/sha256-921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f size_bytes=77704715
+whisper_init_from_file_with_params_no_state: loading model from '/tmp/036-whisper-gpu.gHHM8d/models/blobs/sha256-921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f'
+whisper_init_with_params_no_state: use gpu    = 1
+whisper_init_with_params_no_state: flash attn = 0
+whisper_init_with_params_no_state: gpu_device = 0
+whisper_init_with_params_no_state: dtw        = 0
+ggml_cuda_init: GGML_CUDA_FORCE_MMQ:    no
+ggml_cuda_init: GGML_CUDA_FORCE_CUBLAS: no
+ggml_cuda_init: found 1 CUDA devices:
+  Device 0: NVIDIA GeForce RTX 5090 Laptop GPU, compute capability 12.0, VMM: yes
+whisper_init_with_params_no_state: devices    = 2
+whisper_init_with_params_no_state: backends   = 2
+whisper_model_load: loading model
+whisper_model_load: n_vocab       = 51864
+whisper_model_load: n_audio_ctx   = 1500
+whisper_model_load: n_audio_state = 384
+whisper_model_load: n_audio_head  = 6
+whisper_model_load: n_audio_layer = 4
+whisper_model_load: n_text_ctx    = 448
+whisper_model_load: n_text_state  = 384
+whisper_model_load: n_text_head   = 6
+whisper_model_load: n_text_layer  = 4
+whisper_model_load: n_mels        = 80
+whisper_model_load: ftype         = 1
+whisper_model_load: qntvr         = 0
+whisper_model_load: type          = 1 (tiny)
+whisper_model_load: adding 1607 extra tokens
+whisper_model_load: n_langs       = 99
+whisper_default_buffer_type: using device CUDA0 (NVIDIA GeForce RTX 5090 Laptop GPU)
+whisper_model_load:    CUDA0 total size =    77.11 MB
+whisper_model_load: model size    =   77.11 MB
+whisper_backend_init_gpu: using CUDA0 backend
+whisper_init_state: kv self size  =    3.15 MB
+whisper_init_state: kv cross size =    9.44 MB
+whisper_init_state: kv pad  size  =    2.36 MB
+whisper_init_state: compute buffer (conv)   =   14.15 MB
+whisper_init_state: compute buffer (encode) =   64.79 MB
+whisper_init_state: compute buffer (cross)  =    3.88 MB
+whisper_init_state: compute buffer (decode) =   96.81 MB
+2026-11-14T17:08:04.907481Z  INFO agentix_whisper: shutdown requested via /control/shutdown

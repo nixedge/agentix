@@ -1,0 +1,3 @@
+warning: Git tree '/home/sam/home/agentix/036-whisper-cuda' is dirty
+error (ignored): SQLite database '/home/sam/.cache/nix/eval-cache-v6/8bc833da534e18fb938c7096d1b2a4d3d2d24525ad7a8c860abfe485a7d353d0.sqlite' is busy
+bash: line 1: alejandra: command not found

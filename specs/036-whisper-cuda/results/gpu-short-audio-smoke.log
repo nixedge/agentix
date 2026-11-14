@@ -1,0 +1,4 @@
+warning: Git tree '/home/sam/home/agentix/036-whisper-cuda' is dirty
+whisper_model_load:    CUDA0 total size =    77.11 MB
+whisper_backend_init_gpu: using CUDA0 backend
+completed_in_seconds=0

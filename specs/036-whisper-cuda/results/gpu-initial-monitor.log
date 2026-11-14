@@ -1,0 +1,1 @@
+Initial bounded fixture check exited 124 before worker launch: nvidia-smi did not finish within the initial three-second telemetry deadline. No model was loaded and no GPU inference ran. Read-only monitoring is being checked before an unchanged retry.

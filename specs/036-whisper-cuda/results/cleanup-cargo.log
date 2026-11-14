@@ -1,0 +1,34 @@
+warning: Git tree '/home/sam/home/agentix/036-whisper-cuda' is dirty
+   Compiling agentix-whisper v0.1.0 (/home/sam/home/agentix/036-whisper-cuda/agentix-whisper)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.86s
+     Running unittests src/lib.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/agentix_whisper-85a36dade2bae737)
+
+running 4 tests
+test tests::worker_drop_joins_cleanup_without_a_runtime ... ok
+test audio::tests::decode_native_16khz_wav_no_resample ... ok
+test audio::tests::decode_sine_wav_produces_correct_length ... ok
+test tests::runtime_waits_for_worker_cleanup_without_blocking_async_tasks ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running unittests src/main.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/agentix_whisper-e5562f553579a290)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/whisper_integration.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/whisper_integration-0f0f96d4fd4653b6)
+
+running 1 test
+test whisper_transcribes_sine_wave ... ignored, requires AGENTIX_TEST_WHISPER_MODEL_PATH to point to a whisper model
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests agentix_whisper
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+    Checking agentix-whisper v0.1.0 (/home/sam/home/agentix/036-whisper-cuda/agentix-whisper)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.64s

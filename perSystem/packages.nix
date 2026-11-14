@@ -7,6 +7,11 @@
   }: let
     toolchain = inputs'.fenix.packages.stable.toolchain;
     qwenFixtures = import ../nix/qwen-fixtures.nix {inherit pkgs toolchain;};
+    whisperFixture = pkgs.fetchurl {
+      name = "ggml-tiny.en.bin";
+      url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin";
+      sha256 = "07qbja4m5isssw42prv227gbyrf3nsjms6h8rlyrkpbgd3w4q7lj";
+    };
     qwenRuntime = lib.makeLibraryPath [pkgs.cudaPackages_12.cuda_nvrtc pkgs.vulkan-loader];
     craneLib = (inputs.crane.mkLib pkgs).overrideToolchain toolchain;
     workspace = import ../nix/isolated-workspace.nix {
@@ -61,6 +66,7 @@
     libcublasStatic = pkgs.lib.getOutput "static" cudaPackages.libcublas;
     cudaCapabilities = pkgs.config.cudaCapabilities or [];
     withCuda = cudaCapabilities != [];
+    cudaMember = name: builtins.elem name ["agentix-llama" "agentix-whisper"];
     cudaArgs = base:
       lib.optionalAttrs withCuda {
         nativeBuildInputs = base.nativeBuildInputs ++ [cudaPackages.cuda_nvcc cudaPackages.cuda_cudart];
@@ -75,8 +81,8 @@
     packageArgs = name: let
       base = argsFor [name];
     in
-      base // lib.optionalAttrs (name == "agentix-llama") (cudaArgs base);
-    extraArgs = name: "--locked --package ${name}" + lib.optionalString (name == "agentix-llama" && withCuda) " --features cuda";
+      base // lib.optionalAttrs (cudaMember name) (cudaArgs base);
+    extraArgs = name: "--locked --package ${name}" + lib.optionalString (cudaMember name && withCuda) " --features cuda";
     depsFor = name:
       craneLib.buildDepsOnly ((packageArgs name)
         // {
@@ -100,7 +106,7 @@
         // {
           cargoArtifacts = dependencyArtifacts.${name};
           cargoExtraArgs = extraArgs name;
-          autoPatchelfIgnoreMissingDeps = lib.optional (name == "agentix-llama" && withCuda) "libcuda.so.1";
+          autoPatchelfIgnoreMissingDeps = lib.optional (cudaMember name && withCuda) "libcuda.so.1";
           passthru.isolation = {
             members = scopes.${name}.selectedMembers;
             dependencyArtifacts = dependencyArtifacts.${name};
@@ -130,7 +136,29 @@
           cargoExtraArgs = "${extraArgs name} ${selection}";
         });
     agentixDaemonPkg = memberPackages.agentix-daemon;
-    agentixWhisperPkg = memberPackages.agentix-whisper;
+    agentixWhisperPkg = buildMember "agentix-whisper" {
+      nativeBuildInputs =
+        (withRuntimeFixup (packageArgs "agentix-whisper")).nativeBuildInputs
+        ++ lib.optional withCuda pkgs.makeWrapper;
+      postFixup = lib.optionalString withCuda ''
+        wrapProgram "$out/bin/agentix-whisper" \
+          --prefix LD_LIBRARY_PATH : /run/opengl-driver/lib
+      '';
+    };
+    whisperCpuPackage = let
+      base = argsFor ["agentix-whisper"];
+      cargoExtraArgs = "--locked --package agentix-whisper";
+    in
+      craneLib.buildPackage ((withRuntimeFixup base)
+        // {
+          inherit cargoExtraArgs;
+          cargoArtifacts = craneLib.buildDepsOnly (base
+            // {
+              inherit cargoExtraArgs;
+              src = scopes.agentix-whisper.dependencySrc;
+              inherit (scopes.agentix-whisper) extraDummyScript;
+            });
+        });
     agentixLlamaPkg = memberPackages.agentix-llama;
     axPkg = memberPackages.agentix-ax;
     agentixMcpServerPkg = memberPackages.agentix-mcp-server.overrideAttrs (_: {meta.mainProgram = "mcp-server";});
@@ -309,7 +337,7 @@
       export AGENTIX_MODELS_DIR="$TMPDIR/models"
       export AGENTIX_WHISPER_SOCKET="$TMPDIR/whisper.sock"
       export AGENTIX_WHISPER_MODELS=""
-      ${agentixWhisperPkg}/bin/agentix-whisper > "$TMPDIR/whisper.log" 2>&1 &
+      ${whisperCpuPackage}/bin/agentix-whisper > "$TMPDIR/whisper.log" 2>&1 &
       whisper_pid=$!
       trap 'kill "$whisper_pid" 2>/dev/null || true' EXIT
       for attempt in $(seq 1 100); do
@@ -409,6 +437,8 @@
         agentix-voice = agentixVoicePkg;
 
         agentix-whisper = agentixWhisperPkg;
+        agentix-whisper-cpu = whisperCpuPackage;
+        agentix-test-whisper-model = whisperFixture;
 
         agentix-llama = pkgs.writeShellScriptBin "agentix-llama" ''
           export LD_LIBRARY_PATH="/run/opengl-driver/lib:${cudaPackages.cuda_cudart}/lib:${cudaPackages.libcublas}/lib:''${LD_LIBRARY_PATH:-}"

@@ -1,0 +1,3 @@
+timestamp,temperature_C,utilization_percent,memory_MiB,power_W
+2026-11-14T17:09:07Z,44, 0, 958, 15.33
+2026-11-14T17:09:07Z,44, 0, 973, 15.33

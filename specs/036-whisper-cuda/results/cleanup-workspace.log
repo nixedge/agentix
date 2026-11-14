@@ -1,0 +1,884 @@
+warning: Git tree '/home/sam/home/agentix/036-whisper-cuda' is dirty
+error (ignored): SQLite database '/home/sam/.cache/nix/eval-cache-v6/ba6cc88fa48ee49a93e641fb612b881b3cabfc777b421f1ddc3521cfd51f9888.sqlite' is busy
+warning: Git tree '/home/sam/home/agentix/036-whisper-cuda' is dirty
+warning: kokoro-tts@0.3.3: In file included from /nix/store/m300ngckdmal8wnl3bjbpwca3a5bn74c-glibc-2.42-67-dev/include/bits/libc-header-start.h:33,
+warning: kokoro-tts@0.3.3:                  from /nix/store/m300ngckdmal8wnl3bjbpwca3a5bn74c-glibc-2.42-67-dev/include/stdint.h:26,
+warning: kokoro-tts@0.3.3:                  from /nix/store/7sh9061yj9yl20ndc00rqw4d0bd80m1j-gcc-15.3.0/lib/gcc/x86_64-unknown-linux-gnu/15.3.0/include/stdint.h:11,
+warning: kokoro-tts@0.3.3:                  from src/transcription/en_ipa.c:6:
+warning: kokoro-tts@0.3.3: /nix/store/m300ngckdmal8wnl3bjbpwca3a5bn74c-glibc-2.42-67-dev/include/features.h:435:4: warning: #warning _FORTIFY_SOURCE requires compiling with optimization (-O) [-Wcpp]
+warning: kokoro-tts@0.3.3:   435 | #  warning _FORTIFY_SOURCE requires compiling with optimization (-O)
+warning: kokoro-tts@0.3.3:       |    ^~~~~~~
+   Compiling agentix-whisper v0.1.0 (/home/sam/home/agentix/036-whisper-cuda/agentix-whisper)
+   Compiling agentix-jails v0.1.0 (/home/sam/home/agentix/036-whisper-cuda/agentix-jails)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.07s
+     Running unittests src/main.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/agentix_agent-60e1773aa79115c5)
+
+running 28 tests
+test assistant::tests::installed_qwen_acceptance ... ignored, explicit synthetic acceptance against the owner's already-installed Qwen model; not a hermetic fixture test
+test assistant::tests::installed_qwen_grocery_selection ... ignored, explicit synthetic grocery selection against the installed local Qwen model; no OurGroceries account access
+test assistant::tests::installed_qwen_reminder_selection ... ignored, explicit synthetic reminder selection against installed local Qwen; no live schedules or notifications
+test assistant::tests::optional_owner_token_resolution_preserves_configured_auth_and_redacts_errors ... ok
+test assistant::tests::grocery_config_is_opt_in_and_runtime_credentials_are_redacted ... ok
+test google::calendar::tests::create_event_sends_correct_body ... ok
+test store::todos::tests::atomic_transaction_prevents_duplicate ... ok
+test store::sessions::tests::load_missing_returns_empty_vec ... ok
+test store::sessions::tests::prune_removes_old_keeps_recent ... ok
+test store::notifications::tests::mark_failed_at_max_retries_returns_ok ... ok
+test store::notifications::tests::already_sent_false_then_true_after_mark_sent ... ok
+test assistant::tests::invalid_auth_body_envelopes_and_unsafe_configuration_never_write ... ok
+test store::todos::tests::list_search_filter ... ok
+test store::todos::tests::overdue_open_returns_past_due_todos ... ok
+test store::todos::tests::find_by_source_dedup ... ok
+test scheduler::gmail_scan::tests::duplicate_message_creates_only_one_todo ... ok
+test google::calendar::tests::list_events_parses_response ... ok
+test assistant::tests::unsupported_http_answer_replays_without_effects_or_repeat_inference ... ok
+test assistant::tests::tokenless_http_save_and_replay_use_actual_storage ... ok
+test scheduler::notification::tests::only_one_ntfy_post_for_two_overdue_one_already_sent ... ok
+test assistant::tests::authenticated_http_grocery_save_retry_conflict_and_actual_history ... ok
+test assistant::tests::device_http_auth_enrollment_reminder_replay_and_sync_use_real_store ... ok
+test assistant::tests::reminder_gateway_rejects_invented_revision_and_time_kind_disagreement ... ok
+test assistant::tests::malformed_or_truncated_model_output_cannot_claim_a_save ... ok
+test http::chat::tests::post_chat_no_session_returns_reply_and_session_id ... ok
+test http::chat::tests::second_chat_with_session_sends_prior_context ... ok
+test assistant::tests::grocery_gateway_tools_use_remote_ids_and_selected_action_schemas ... ok
+test assistant::tests::two_step_selection_and_filling_disagreements_never_write ... ok
+
+test result: ok. 25 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 0.17s
+
+     Running unittests src/lib.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/agentix_api-e3363e42ee5dd380)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/agentix_assistant-1288db579d46ab40)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/reminders.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/reminders-e5ddeddd6767c741)
+
+running 2 tests
+test invalid_time_completes_clarification_without_a_schedule_or_local_save ... ok
+test device_turn_replay_and_v1_identity_guard_preserve_real_receipts ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/remote_groceries.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/remote_groceries-d227d320aa2e0da3)
+
+running 7 tests
+test restart_after_dispatch_does_not_send_a_remote_change ... ok
+test ambiguous_duplicate_targets_require_owner_disambiguation ... ok
+test unavailable_remote_is_distinct_from_missing_configuration ... ok
+test old_local_groceries_are_retained_but_hidden_and_not_edited ... ok
+test lost_write_response_is_definitive_uncertainty_and_never_blindly_replayed ... ok
+test unicode_list_reply_stays_within_wire_bounds_and_clears_the_turn ... ok
+test actual_http_and_sled_tools_keep_remote_authority_and_local_notes ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+     Running tests/turns.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/turns-7b5aad1b9757b9b2)
+
+running 10 tests
+test multi_command_conflict_reports_the_actual_partial_save_and_replays_it ... ok
+test a_model_no_op_cannot_increment_a_revision_or_claim_an_update ... ok
+test ambiguous_list_names_clarify_then_an_explicit_id_selects_the_original ... ok
+test unsupported_capabilities_are_durable_answers_without_effects ... ok
+test grocery_save_read_correction_history_and_replay_use_actual_records ... ok
+test cancelled_waiter_does_not_release_admitted_turn_or_claim_rollback ... ok
+test oversized_originals_are_omitted_explicitly_and_latest_instruction_reaches_inference ... ok
+test focused_edits_preserve_fields_and_reject_wrong_types_and_stale_revisions ... ok
+test inference_failure_and_timeout_are_durable_honest_non_mutations ... ok
+test uncertain_save_reuses_prepared_commands_without_calling_model_again ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running unittests src/lib.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/agentix_assistant_core-90a773ed1fcee362)
+
+running 2 tests
+test model::tests::nil_parent_is_not_a_valid_reference ... ok
+test model::tests::text_bounds_are_utf8_bytes_and_do_not_destroy_original_wording ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/agentix_assistant_lance-2eb91c30e682f932)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/projection.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/projection-35fb0586c301cb75)
+
+running 8 tests
+test incompatible_profile_dimension_and_schema_are_rejected_even_when_empty ... ok
+test projection_outage_never_undoes_a_save_or_consumes_its_job ... ok
+test cancelled_worker_keeps_committed_projection_replayable_until_acknowledged ... ok
+test lexical_search_filters_limits_and_tracks_pending_work ... ok
+test edit_during_projection_preserves_new_job_and_hides_old_candidate ... ok
+test independent_owner_is_rejected_and_clones_serialize_out_of_order_writes ... ok
+test restart_between_projection_and_ack_replays_and_rebuilds_into_fresh_index ... ok
+test revision_barriers_and_rehydration_prevent_old_text_or_deleted_records ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.21s
+
+     Running unittests src/lib.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/agentix_assistant_sled-b365a8260faf2295)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/conversations.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/conversations-99794b6331369931)
+
+running 5 tests
+test invalid_envelopes_and_history_bounds_do_not_consume_request_identity ... ok
+test concurrent_turn_admission_cannot_append_two_unresolved_user_messages ... ok
+test completion_rejects_forged_or_omitted_receipts_and_preserves_partial_truth ... ok
+test prepared_commands_resume_after_a_partial_execution_without_regeneration ... ok
+test request_replay_and_append_only_history_survive_reopen ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/groceries.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/groceries-1ae42a7ec59f447b)
+
+running 2 tests
+test prepared_identity_cannot_be_replaced_or_completed_via_local_receipts ... ok
+test prepared_dispatch_and_outcome_survive_reopen_without_local_records ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/reminders.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/reminders-35a08275cf556664)
+
+running 8 tests
+test spoken_times_use_owner_calendar_without_raw_timestamps ... ok
+test time_resolution_rejects_dst_gaps_and_folds_and_freezes_relative_instant ... ok
+test stale_edits_are_atomic_and_concurrent_replays_create_one_reminder ... ok
+test posted_observations_are_terminal_and_unknown_reminder_schema_is_rejected ... ok
+test dismissed_alarms_survive_reopen_reject_rearming_and_leave_spoken_list ... ok
+test cancellation_invalidates_due_index_and_reports_cannot_revive_old_revisions ... ok
+test create_receipt_deadline_and_device_binding_survive_reopen_and_replay ... ok
+test listing_speaks_three_local_deadlines_without_metadata_or_delivered_history ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests/repository.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/repository-03550b951fe17f30)
+
+running 9 tests
+test validation_failures_do_not_write_a_record_or_job_or_consume_request_id ... ok
+test invalid_parent_edits_and_task_completion_preserve_current_state ... ok
+test orderly_close_requires_last_handle_and_allows_immediate_reopen ... ok
+test membership_moves_and_tombstones_preserve_referential_integrity ... ok
+test receipt_replay_is_durable_and_preserves_original_result_after_edits ... ok
+test concurrent_requests_create_once_and_stale_edits_cannot_overwrite ... ok
+test corrupt_keys_and_receipts_are_rejected_without_acknowledging_success ... ok
+test stale_projection_ack_cannot_erase_a_later_edit_and_delete_survives_reopen ... ok
+test unknown_schema_and_legacy_databases_are_rejected ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running unittests src/main.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/ax-3afdb9956cd4038c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/agentix_daemon-51479372068d9989)
+
+running 1 test
+test gateway::qwen_tests::qwen_routing_lists_worker_and_preserves_busy_errors ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests/integration.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/integration-e3934ef751f12236)
+
+running 10 tests
+test anthropic_proxy_chat_rejects_without_auth ... ok
+test openrouter_rejects_without_key ... ok
+test unknown_model_routes_to_default ... ok
+test anthropic_native_messages_endpoint ... ok
+test bad_request_returns_400 ... ok
+test anthropic_proxy_chat_with_api_key ... ok
+test health_returns_ok ... ok
+test local_chat_completion_returns_content ... ok
+test models_returns_list ... ok
+test local_chat_streaming_returns_sse ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running unittests src/lib.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/agentix_harness-49eb1f7c8b615ce5)
+
+running 4 tests
+test stagnation::tests::not_stagnant_below_threshold ... ok
+test stagnation::tests::evicts_oldest_beyond_capacity ... ok
+test stagnation::tests::not_stagnant_with_mixed_results ... ok
+test stagnation::tests::stagnant_on_repeated_result ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/agentix_indexer-02180e0dedfe689a)
+
+running 94 tests
+test ingest::code::tests::chunk_lines_empty ... ok
+test ingest::code::tests::make_chunks_unknown_language_falls_back_to_lines ... ok
+test ingest::code::tests::chunk_lines_short_file ... ok
+test ingest::code::tests::chunk_lines_overlap_means_consecutive_chunks_share_lines ... ok
+test ingest::code::tests::make_lhs_chunks_no_code_returns_empty ... ok
+test ingest::docs::tests::bird_prose_chunks_have_lhs_prose_kind_and_no_code_prefix ... ok
+test ingest::code::tests::make_lhs_chunks_bird_strips_prefix ... ok
+test ingest::code::tests::make_lhs_chunks_latex_strips_delimiters_and_prose ... ok
+test ingest::code::tests::make_chunks_haskell_cpp_instance_is_extracted ... ok
+test ingest::docs::tests::changelog_names_recognized ... ok
+test ingest::docs::tests::paragraph_split_on_blank_line ... ok
+test ingest::code::tests::make_chunks_haskell_extracts_instances ... ok
+test ingest::docs::tests::latex_prose_chunk_carries_adjacent_code_header ... ok
+test ingest::docs::tests::paragraph_empty_text_produces_no_chunks ... ok
+test ingest::docs::tests::trailing_prose_has_no_adjacent_code_header ... ok
+test ingest::docs::tests::non_changelog_names_rejected ... ok
+test ingest::lhs::tests::bird_alternating_blocks ... ok
+test ingest::lhs::tests::bird_bare_gt_is_prose ... ok
+test ingest::lhs::tests::bird_code_only ... ok
+test ingest::lhs::tests::bird_empty_file ... ok
+test ingest::lhs::tests::bird_line_numbers_correct ... ok
+test ingest::lhs::tests::bird_prose_only ... ok
+test ingest::lhs::tests::bird_strips_prefix_from_code ... ok
+test ingest::lhs::tests::latex_basic_structure ... ok
+test ingest::lhs::tests::latex_detected_when_begin_code_present ... ok
+test ingest::lhs::tests::latex_empty_code_block_not_emitted ... ok
+test ingest::lhs::tests::latex_line_numbers_correct ... ok
+test ingest::lhs::tests::latex_multiple_code_blocks ... ok
+test ingest::lhs::tests::latex_unclosed_begin_code_treated_as_code ... ok
+test ingest::lhs::tests::linemap_empty ... ok
+test ingest::lhs::tests::linemap_multiple_blocks ... ok
+test ingest::lhs::tests::linemap_single_block ... ok
+test ingest::symbols::tests::haddock_start_includes_haddock_comments ... ok
+test ingest::symbols::tests::haddock_start_stops_at_non_comment ... ok
+test ingest::symbols::tests::empty_source_returns_empty_for_all_languages ... ok
+test ingest::symbols::tests::hs_cpp_function_outside_block_still_extracted ... ok
+test ingest::symbols::tests::hs_cpp_nested_blocks_are_handled ... ok
+test ingest::symbols::tests::hs_extracts_class_declaration ... ok
+test ingest::symbols::tests::hs_extracts_data_type ... ok
+test ingest::symbols::tests::hs_cpp_wrapped_instance_is_not_dropped ... ok
+test ingest::symbols::tests::hs_extracts_instance_declaration ... ok
+test ingest::symbols::tests::hs_extracts_type_alias ... ok
+test ingest::symbols::tests::hs_extracts_newtype ... ok
+test ingest::symbols::tests::hs_haddock_comment_included_in_content ... ok
+test ingest::symbols::tests::hs_extracts_top_level_function ... ok
+test ingest::symbols::tests::hs_instance_without_name_gets_fallback ... ok
+test ingest::symbols::tests::hs_line_numbers_are_1_indexed ... ok
+test ingest::symbols::tests::hs_signature_and_body_are_grouped ... ok
+test ingest::symbols::tests::hs_multiequation_function_grouped ... ok
+test ingest::symbols::tests::java_methods_qualified_with_class ... ok
+test ingest::symbols::tests::java_extracts_class_and_methods ... ok
+test ingest::symbols::tests::java_extracts_interface_and_enum ... ok
+test ingest::symbols::tests::nix_extracts_function_binding ... ok
+test ingest::symbols::tests::py_class_and_methods_both_emitted ... ok
+test ingest::symbols::tests::py_decorated_function_extracted ... ok
+test ingest::symbols::tests::py_extracts_class ... ok
+test ingest::symbols::tests::kotlin_extracts_class_and_fun ... ok
+test ingest::symbols::tests::kotlin_extracts_object_declaration ... ok
+test ingest::symbols::tests::nix_extracts_top_level_attr ... ok
+test ingest::symbols::tests::py_decorated_class_extracted ... ok
+test ingest::symbols::tests::py_extracts_decorated_method ... ok
+test ingest::symbols::tests::py_extracts_class_methods ... ok
+test ingest::symbols::tests::py_extracts_function ... ok
+test ingest::symbols::tests::kotlin_methods_qualified_with_class ... ok
+test ingest::symbols::tests::rs_extracts_const ... ok
+test ingest::symbols::tests::rs_extracts_enum ... ok
+test ingest::symbols::tests::rs_extracts_struct ... ok
+test ingest::symbols::tests::rs_extracts_type_alias ... ok
+test ingest::symbols::tests::rs_doc_comment_included_in_content ... ok
+test ingest::symbols::tests::rs_extracts_trait ... ok
+test ingest::symbols::tests::rs_extracts_function ... ok
+test ingest::symbols::tests::rs_inline_mod_items_extracted ... ok
+test ingest::symbols::tests::rs_impl_methods_are_qualified ... ok
+test ingest::symbols::tests::rust_doc_start_includes_doc_comments ... ok
+test ingest::symbols::tests::rust_doc_start_stops_at_non_doc_line ... ok
+test ingest::symbols::tests::ts_exported_function_extracted ... ok
+test ingest::symbols::tests::ts_const_arrow_extracted ... ok
+test ingest::symbols::tests::ts_extracts_class ... ok
+test ingest::symbols::tests::ts_extracts_enum ... ok
+test ingest::symbols::tests::unknown_language_returns_empty ... ok
+test ingest::symbols::tests::ts_extracts_interface ... ok
+test ingest::symbols::tests::ts_extracts_function ... ok
+test ingest::symbols::tests::ts_extracts_type_alias ... ok
+test ingest::code::tests::android_file_discovery_respects_ignores_and_excludes_generated_output ... ok
+test ingest::code::tests::chunk_lines_respects_cap ... ok
+test ingest::embed::retry_tests::permanent_embedding_errors_are_not_retried ... ok
+test ingest::embed::retry_tests::transient_embedding_statuses_retry_and_recover ... ok
+test ingest::embed::retry_tests::transient_embedding_retries_are_bounded_and_keep_error_detail ... ok
+test migration::batch_tests::null_project_metadata_survives_streaming_batch_boundaries ... ok
+test ingest::completion::tests::rows_and_registry_do_not_imply_package_completion ... ok
+test ingest::prune::tests::old_versions_compare_instants_across_imported_timezones ... ok
+test ingest::github::storage_tests::sync_errors_preserve_watermarks_and_success_never_regresses_them ... ok
+test migration::tests::imports_all_collections_metadata_and_nullable_vectors ... ok
+test maintenance::tests::dirty_work_is_batched_and_a_shared_lease_defers_competing_clients ... ok
+
+test result: ok. 94 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.37s
+
+     Running unittests src/main.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/ingest-9d46f429a72332ca)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/local_ingestion.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/local_ingestion-69b2231c70f32f57)
+
+running 5 tests
+test code_docs_retag_shorter_deleted_files_and_prune_survive_process_reopen ... ok
+test android_sources_and_configuration_are_searchable_locally ... ok
+test android_sources_and_configuration_are_searchable_remotely ... ok
+test remote_code_docs_ingestion_retag_and_prune_use_shared_store ... ok
+test git_ingestion_resumes_partial_rows_and_requires_requested_docs_completion ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.15s
+
+     Running unittests src/lib.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/agentix_infer-66162d5ec2d1ed83)
+
+running 18 tests
+test meta::gguf::tests::empty_capabilities_fallback_completion ... ok
+test meta::gguf::tests::empty_capabilities_fallback_embedding_by_name ... ok
+test meta::gguf::tests::embedding_capability_requires_nonzero_pooling ... ok
+test meta::gguf::tests::non_whisper_architecture_does_not_short_circuit ... ok
+test meta::gguf::tests::whisper_architecture_yields_transcription_and_whisper_hint ... ok
+test meta::safetensors::tests::llava_maps_to_completion_and_vision ... ok
+test meta::safetensors::tests::bert_maps_to_embedding ... ok
+test meta::safetensors::tests::invalid_json_returns_error ... ok
+test meta::safetensors::tests::qwen2_maps_to_completion ... ok
+test meta::safetensors::tests::unknown_model_type_defaults_to_completion ... ok
+test store::hf::tests::parse_hf_ref_missing_filename_returns_err ... ok
+test store::hf::tests::parse_hf_ref_without_prefix ... ok
+test store::hf::tests::parse_valid_hf_ref ... ok
+test store::manifest::tests::digest_conversion ... ok
+test store::blob::tests::write_and_verify ... ok
+test store::blob::tests::idempotent_write ... ok
+test store::blob::tests::checksum_mismatch_detected ... ok
+test store::manifest::tests::round_trip_manifest ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/store_integration.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/store_integration-fdaf2758a3a15f73)
+
+running 1 test
+test local_pull_list_remove ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.38s
+
+     Running unittests src/ax_jail/main.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/ax_jail-77b093b4e9ba1488)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/jail/main.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/claude_jail-148f202cd3850b45)
+
+running 9 tests
+test tests::parse_empty_returns_none ... ok
+test tests::parse_malformed_returns_none ... ok
+test tests::parse_gitlab_ssh_returns_none ... ok
+test tests::parse_https_without_git_suffix ... ok
+test tests::parse_ssh_without_git_suffix ... ok
+test tests::parse_non_github_https_returns_none ... ok
+test tests::parse_ssh_with_git_suffix ... ok
+test tests::dedup_same_slug_different_url_forms ... ok
+test tests::parse_https_with_git_suffix ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/codex_jail/main.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/codex_jail-81101a9a28aad54c)
+
+running 22 tests
+test gpu::tests::launcher_fixture_child ... ignored, subprocess fixture for launcher_gpu_argument_assembly; no hardware acceptance
+test gpu::tests::actual_host_rejects_regular_files_as_devices ... ok
+test gpu::tests::invalid_icd_override_fails ... ok
+test gpu::tests::environment_selection_merges_libraries_without_host_secrets ... ok
+test gpu::tests::library_paths_cannot_expand_to_broad_or_sensitive_mounts ... ok
+test gpu::tests::driver_tree_children_are_not_rebound ... ok
+test gpu::tests::nix_loader_and_external_driver_symlinks_are_preserved ... ok
+test gpu::tests::missing_devices_permissions_and_libraries_are_distinct ... ok
+test tests::dedup_same_slug_different_url_forms ... ok
+test gpu::tests::nvidia_compute_mounts_exclude_management_and_preserve_libraries ... ok
+test gpu::tests::render_sysfs_links_point_to_readonly_gpu_subtree ... ok
+test tests::parse_https_with_git_suffix ... ok
+test gpu::tests::vulkan_uses_render_nodes_and_validated_icds ... ok
+test tests::parse_gitlab_ssh_returns_none ... ok
+test tests::parse_malformed_returns_none ... ok
+test tests::parse_https_without_git_suffix ... ok
+test tests::parse_empty_returns_none ... ok
+test tests::parse_non_github_https_returns_none ... ok
+test tests::parse_ssh_with_git_suffix ... ok
+test tests::parse_ssh_without_git_suffix ... ok
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+Initialized empty Git repository in /tmp/nix-shell.hAGdi9/.tmptCOFWJ/.bare/
+Preparing worktree (new branch 'fixture')
+test gpu::tests::real_bwrap_reads_symlinked_icd_without_nested_bind ... ok
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+Initialized empty Git repository in /tmp/nix-shell.hAGdi9/.tmpAfd6oG/.bare/
+Preparing worktree (new branch 'fixture')
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+Initialized empty Git repository in /tmp/nix-shell.hAGdi9/.tmpozJUZX/.bare/
+Preparing worktree (new branch 'fixture')
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+Initialized empty Git repository in /tmp/nix-shell.hAGdi9/.tmpPivsG1/.bare/
+Preparing worktree (new branch 'fixture')
+test gpu::tests::launcher_gpu_argument_assembly ... ok
+
+test result: ok. 21 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+     Running unittests src/gh_proxy/client.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/gh_jail_client-d5fec021b755119d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/gh_proxy/server.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/gh_jail_server-70629a0abce0bdee)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/codex_jail.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/codex_jail-642bc421417704ad)
+
+running 4 tests
+test gpu_help_explains_local_opt_in ... ok
+test no_auth_does_not_start_proxy ... ok
+test write_all_repos_and_ssh_are_explicit_options ... ok
+test proxy_round_trip_and_launcher_contract ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running unittests src/lib.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/agentix_llama-c5f631d3c342fb01)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/agentix_llama-45a520ca7953951e)
+
+running 10 tests
+test tests::developer_role_maps_to_system ... ok
+test tests::array_content_concatenates_input_text_parts ... ok
+test tests::json_object_format_produces_json_gbnf ... ok
+test tests::json_schema_format_missing_schema_handled ... ok
+test tests::string_content_normalizes_to_text ... ok
+test tests::external_ref_schema_rejected ... ok
+test tests::text_format_type_produces_no_grammar ... ok
+test tests::store_and_reasoning_fields_ignored ... ok
+test tests::valid_json_schema_converts_to_gbnf ... ok
+test tests::embedding_routes_reject_oversized_inputs_and_remain_usable ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.01s
+
+     Running tests/complete_integration.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/complete_integration-a2d1235cd91afce6)
+
+running 1 test
+test complete_capability_missing ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.38s
+
+     Running tests/embed_integration.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/embed_integration-e835ccbe765d5b26)
+
+running 1 test
+test embed_with_local_model ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.53s
+
+     Running tests/grammar_integration.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/grammar_integration-0d863c6c3a98b5b1)
+
+running 2 tests
+test json_object_produces_valid_json ... ignored, requires a completion-capable GGUF model via AGENTIX_TEST_COMPLETION_MODEL_PATH
+test no_grammar_output_unchanged ... ignored, requires a completion-capable GGUF model via AGENTIX_TEST_COMPLETION_MODEL_PATH
+
+test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/mcp_server-e4c77cfff980e23a)
+
+running 1 test
+test operations::tests::validate_jobs_before_launch_and_default_to_visible_project ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/local_mcp.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/local_mcp-d94a79a50a7e2199)
+
+running 4 tests
+[agentic-nix] Fetching and indexing rust fixture-0.0.0...
+Crate fixture-0.0.0 already indexed (1 chunks). Use --force to re-index.
+[agentic-nix] Fetching and indexing rust fixture-0.0.0...
+[agentic-nix] Fetching and indexing rust fixture-0.0.0...
+Crate fixture-0.0.0 already indexed (1 chunks). Use --force to re-index.
+Crate fixture-0.0.0 already indexed (1 chunks). Use --force to re-index.
+Done. Indexed 1 chunks (0 files unchanged).
+Done. Indexed 1 doc chunks (0 files unchanged).
+Done. Indexed 1 chunks (0 files unchanged).
+Done. Indexed 1 doc chunks (0 files unchanged).
+Done. Indexed 1 chunks (0 files unchanged).
+Done. Indexed 1 doc chunks (0 files unchanged).
+[dry-run] /tmp/nix-shell.hAGdi9/agentix-mcp-test-91831-1794676064146531773/operational: 1 chunks, 1 docs
+[dry-run] /tmp/nix-shell.hAGdi9/agentix-mcp-test-91831-1794676064146537504/operational: 1 chunks, 1 docs
+Pruned /tmp/nix-shell.hAGdi9/agentix-mcp-test-91831-1794676064146531773/operational: 1 chunks, 1 docs.
+[dry-run] /tmp/nix-shell.hAGdi9/agentix-mcp-test-91831-1794676064146533707/operational: 1 chunks, 1 docs
+Pruned /tmp/nix-shell.hAGdi9/agentix-mcp-test-91831-1794676064146537504/operational: 1 chunks, 1 docs.
+Pruned /tmp/nix-shell.hAGdi9/agentix-mcp-test-91831-1794676064146533707/operational: 1 chunks, 1 docs.
+Cloning /tmp/nix-shell.hAGdi9/agentix-mcp-test-91831-1794676064146531773/operational (HEAD)...
+Done. Indexed 1 chunks (0 files unchanged).
+Done. Indexed 1 doc chunks (0 files unchanged).
+Cloning /tmp/nix-shell.hAGdi9/agentix-mcp-test-91831-1794676064146537504/operational (HEAD)...
+Indexed git::/tmp/nix-shell.hAGdi9/agentix-mcp-test-91831-1794676064146531773/operational@9f584651ad51
+Done. Indexed 1 chunks (0 files unchanged).
+Cloning /tmp/nix-shell.hAGdi9/agentix-mcp-test-91831-1794676064146533707/operational (HEAD)...
+Done. Indexed 1 doc chunks (0 files unchanged).
+Indexed git::/tmp/nix-shell.hAGdi9/agentix-mcp-test-91831-1794676064146537504/operational@9f584651ad51
+Crate fixture-0.0.0 already indexed (1 chunks). Use --force to re-index.
+Done. Indexed 1 chunks (0 files unchanged).
+Done. Indexed 1 doc chunks (0 files unchanged).
+Indexed git::/tmp/nix-shell.hAGdi9/agentix-mcp-test-91831-1794676064146533707/operational@9f584651ad51
+test cli_and_stdio_tools_use_local_storage_for_every_source ... ok
+Crate fixture-0.0.0 already indexed (1 chunks). Use --force to re-index.
+Crate fixture-0.0.0 already indexed (1 chunks). Use --force to re-index.
+test cli_and_stdio_tools_use_remote_storage_for_every_source ... ok
+test cli_and_stdio_tools_use_lan_storage_without_credentials ... ok
+test another_mcp_can_cancel_a_slow_background_ingestion ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.15s
+
+     Running unittests src/lib.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/agentix_ourgroceries-246770e855057561)
+
+running 13 tests
+test tests::local_inspect_snapshot_passes_protocol_and_core_validation ... ignored, explicit local inspect JSON validation; no account access
+test tests::team_id_uses_json_strings_and_rejects_unsafe_ids ... ok
+test tests::inspect_reads_malformed_list_without_decoding_or_writing ... ok
+test tests::discovery_and_reads_use_current_remote_authority ... ok
+test tests::successful_status_without_postcondition_is_not_confirmation ... ok
+test tests::oversized_login_page_is_rejected_without_a_write ... ok
+test tests::wrong_list_and_duplicate_remote_ids_are_rejected ... ok
+test tests::login_does_not_follow_redirects_or_accept_missing_cookie ... ok
+test tests::failed_write_response_is_uncertain_without_resending ... ok
+test tests::item_text_accepts_both_wire_fields_and_legacy_single_fields ... ok
+test tests::stale_targets_and_wrong_list_never_send_writes ... ok
+test tests::specific_mutations_preserve_other_fields_and_verify_readback ... ok
+test tests::failures_identify_stage_without_logging_remote_data ... ok
+
+test result: ok. 12 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+     Running unittests src/main.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/agentix_ourgroceries-b9018698ba37de78)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/agentix_qwen-a0e3c40f66fe746d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/agentix-qwen-bench.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/agentix_qwen_bench-382bfbfa214a525f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/engine.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/engine-ab90addbaad68866)
+
+running 5 tests
+test gpu_fixture_matches_cpu_prefill_decode_and_reset ... ignored, requires explicit GPU access; run with AGENTIX_QWEN_GPU_TEST_BACKEND=cuda or vulkan
+test initialization_fails_without_silent_backend_fallback ... ok
+test cancellation_and_rejected_tokens_do_not_poison_next_request ... ok
+test quantized_model_prefill_matches_steps_and_resets_sequences ... ok
+test benchmark_cli_runs_the_pinned_fixture_and_emits_measured_records ... ok
+
+test result: ok. 4 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 10.35s
+
+     Running tests/tokenizer.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/tokenizer-0ce65e3dd4d46b3e)
+
+running 7 tests
+test greedy_generation_respects_token_limit_and_rejects_bad_logits ... ok
+test greedy_generation_uses_lower_id_ties_and_stops_without_an_extra_logits_call ... ok
+test streaming_decode_keeps_split_unicode_prefixes_valid ... ok
+test unsupported_prompts_and_reasoning_effort_are_rejected ... ok
+test prepared_prompt_admits_rendered_token_count_and_keeps_requested_output ... ok
+test pinned_vocabulary_chat_template_and_generation_stops ... ok
+test pinned_tool_and_reasoning_template_preserves_special_tokens ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.51s
+
+     Running unittests src/main.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/agentix_qwen_worker-565f5b03b2e1be9b)
+
+running 17 tests
+test tests::compute_selection_is_explicit_and_defaults_to_cuda ... ok
+test tests::chat_request_preserves_prior_tool_calls_and_tool_response_ids ... ok
+test tests::reasoning_options_reject_invalid_types_and_unsupported_modes ... ok
+test tests::split_shards_match_automatic_discovery_before_hashing ... ok
+test tests::missing_shard_error_names_the_expected_path ... ok
+test tests::sse_frames_include_event_and_json_data_lines ... ok
+test tests::socket_setup_removes_a_stale_socket ... ok
+test tests::sse_sender_reports_disconnect_without_panicking ... ok
+test tests::socket_setup_preserves_an_existing_regular_file ... ok
+test tool_calls::tests::normalizes_openai_tool_history_for_the_qwen_template ... ok
+test tool_calls::tests::parses_and_validates_a_qwen_tool_call_with_optional_prefix ... ok
+test tool_calls::tests::rejects_duplicate_and_unsupported_tool_schemas ... ok
+test tool_calls::tests::plain_text_and_multiple_calls_are_supported ... ok
+test tool_calls::tests::rejects_unknown_tools_missing_arguments_and_incomplete_markup ... ok
+test tests::shard_integrity_requires_matching_ordered_hashes ... ok
+test tests::dropped_request_cancels_blocking_generation_and_releases_slot ... ok
+test tests::text_prompt_uses_pinned_template_with_thinking_disabled ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.17s
+
+     Running tests/http.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/http-3adb44ef5c8d1913)
+
+running 1 test
+test real_library_worker_http_stream_reset_admission_and_disconnect ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 13.54s
+
+     Running unittests src/lib.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/agentix_router-e47b86a313972cb6)
+
+running 8 tests
+test tests::known_local_families ... ok
+test tests::hf_refs_are_local ... ok
+test tests::gpt_to_openai ... ok
+test tests::claude_to_anthropic ... ok
+test tests::provider_slash_model_to_openrouter ... ok
+test tests::qwen_worker_uses_exact_configured_identity ... ok
+test tests::unknown_model_falls_back_to_local ... ok
+test tests::local_prefix ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/agentix_search-a57a01f810e3851f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/agentix_store-f97fa405ec3ebbdd)
+
+running 1 test
+test tests::guard_release_ends_lock_even_if_a_fork_retains_a_descriptor ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/bin/agentix-store-server.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/agentix_store_server-620d65f9f769734d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/remote.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/remote-95b860bb063232d9)
+
+running 3 tests
+test lan_clients_read_and_write_without_credentials ... ok
+test auth_protocol_payload_and_invalid_records_are_rejected_without_mutation ... ok
+test independent_remote_clients_share_reads_writes_and_atomic_metadata ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.33s
+
+     Running tests/server_process.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/server_process-3a4be51e856deedb)
+
+running 3 tests
+Agentix storage listening on Agentix storage listening on 127127..00..00..11::3739738433
+
+test invalid_configured_tokens_do_not_enable_unauthenticated_access ... ok
+test server_binary_loads_runtime_credential_file_and_serves_remote_writes ... ok
+test server_binary_starts_without_a_token_for_lan_clients ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running tests/storage.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/storage-9c85618751e30caa)
+
+running 5 tests
+test writer_process_fixture ... ok
+test competing_process_writer_is_rejected_while_reads_continue ... ok
+test replacement_projects_reopen_and_failed_writes_preserve_data ... ok
+test graph_maintenance_and_unindexed_updates_are_visible ... ok
+test documents_github_comments_metadata_and_null_vectors ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.26s
+
+     Running unittests src/lib.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/agentix_tts-2dccca4a75a2e7cb)
+
+running 1 test
+test tests::to_wav_produces_valid_wav_header ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/agentix_voice-102059fbb65705ee)
+
+running 7 tests
+test state::tests::idle_accepts_wake_event ... ok
+test state::tests::invalid_transition_returns_err ... ok
+test state::tests::error_event_always_resets_to_idle ... ok
+test vad::tests::silence_samples_not_speech ... ok
+test state::tests::recording_to_transcribing_on_silence ... ok
+test vad::tests::loud_samples_are_speech ... ok
+test vad::tests::end_of_utterance_after_silence_window ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+     Running unittests src/lib.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/agentix_whisper-ee89b7eb020cd83f)
+
+running 4 tests
+test tests::worker_drop_joins_cleanup_without_a_runtime ... ok
+test audio::tests::decode_native_16khz_wav_no_resample ... ok
+test audio::tests::decode_sine_wav_produces_correct_length ... ok
+test tests::runtime_waits_for_worker_cleanup_without_blocking_async_tasks ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running unittests src/main.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/agentix_whisper-a6687c007cbcae2c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/whisper_integration.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/whisper_integration-3f85a7dcf7dbd2a7)
+
+running 1 test
+test whisper_transcribes_sine_wave ... ignored, requires AGENTIX_TEST_WHISPER_MODEL_PATH to point to a whisper model
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests agentix_api
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests agentix_assistant
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests agentix_assistant_core
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests agentix_assistant_lance
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests agentix_assistant_sled
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests agentix_harness
+
+running 1 test
+test agentix-harness/src/agent.rs - agent::AgentLoop (line 37) - compile ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+   Doc-tests agentix_indexer
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests agentix_infer
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests agentix_llama
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests agentix_ourgroceries
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests agentix_qwen
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests agentix_router
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests agentix_search
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests agentix_store
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests agentix_tts
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests agentix_whisper
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

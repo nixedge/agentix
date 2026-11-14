@@ -1,0 +1,140 @@
+warning: Git tree '/home/sam/home/agentix/036-whisper-cuda' is dirty
+warning: Git tree '/home/sam/home/agentix/036-whisper-cuda' is dirty
+   Compiling parking_lot_core v0.9.12
+   Compiling tokio-macros v2.7.2
+   Compiling parking_lot v0.12.5
+   Compiling tokio v1.53.1
+   Compiling tempfile v3.27.0
+   Compiling serde v1.0.229
+   Compiling agentix-jails v0.1.0 (/home/sam/home/agentix/036-whisper-cuda/agentix-jails)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.73s
+     Running unittests src/ax_jail/main.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/ax_jail-0410108d37a81aba)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/jail/main.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/claude_jail-19a896221d544001)
+
+running 9 tests
+test tests::dedup_same_slug_different_url_forms ... ok
+test tests::parse_empty_returns_none ... ok
+test tests::parse_malformed_returns_none ... ok
+test tests::parse_gitlab_ssh_returns_none ... ok
+test tests::parse_https_without_git_suffix ... ok
+test tests::parse_https_with_git_suffix ... ok
+test tests::parse_ssh_with_git_suffix ... ok
+test tests::parse_non_github_https_returns_none ... ok
+test tests::parse_ssh_without_git_suffix ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/codex_jail/main.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/codex_jail-79c8f7f75d36ab64)
+
+running 22 tests
+test gpu::tests::launcher_fixture_child ... ignored, subprocess fixture for launcher_gpu_argument_assembly; no hardware acceptance
+test gpu::tests::actual_host_rejects_regular_files_as_devices ... ok
+test gpu::tests::environment_selection_merges_libraries_without_host_secrets ... ok
+test gpu::tests::invalid_icd_override_fails ... ok
+test gpu::tests::library_paths_cannot_expand_to_broad_or_sensitive_mounts ... ok
+test gpu::tests::missing_devices_permissions_and_libraries_are_distinct ... ok
+test gpu::tests::driver_tree_children_are_not_rebound ... ok
+test tests::parse_empty_returns_none ... ok
+test tests::dedup_same_slug_different_url_forms ... ok
+test gpu::tests::nix_loader_and_external_driver_symlinks_are_preserved ... ok
+test tests::parse_gitlab_ssh_returns_none ... ok
+test gpu::tests::render_sysfs_links_point_to_readonly_gpu_subtree ... ok
+test tests::parse_https_with_git_suffix ... ok
+test tests::parse_https_without_git_suffix ... ok
+test gpu::tests::nvidia_compute_mounts_exclude_management_and_preserve_libraries ... ok
+test gpu::tests::vulkan_uses_render_nodes_and_validated_icds ... ok
+test tests::parse_malformed_returns_none ... ok
+test tests::parse_non_github_https_returns_none ... ok
+test tests::parse_ssh_with_git_suffix ... ok
+test tests::parse_ssh_without_git_suffix ... ok
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+Initialized empty Git repository in /tmp/nix-shell.x4OIOC/.tmpkIJLLP/.bare/
+Preparing worktree (new branch 'fixture')
+test gpu::tests::real_bwrap_reads_symlinked_icd_without_nested_bind ... ok
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+Initialized empty Git repository in /tmp/nix-shell.x4OIOC/.tmpCDodnO/.bare/
+Preparing worktree (new branch 'fixture')
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+Initialized empty Git repository in /tmp/nix-shell.x4OIOC/.tmpgIfgse/.bare/
+Preparing worktree (new branch 'fixture')
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+Initialized empty Git repository in /tmp/nix-shell.x4OIOC/.tmpGTMnGL/.bare/
+Preparing worktree (new branch 'fixture')
+test gpu::tests::launcher_gpu_argument_assembly ... ok
+
+test result: ok. 21 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running unittests src/gh_proxy/client.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/gh_jail_client-17f88ead5321ac42)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/gh_proxy/server.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/gh_jail_server-d231701be8b6d909)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/codex_jail.rs (/home/sam/home/agentix/033-rustingstrata-qwen/target/debug/deps/codex_jail-6275004d60a2f94a)
+
+running 4 tests
+test gpu_help_explains_local_opt_in ... ok
+test no_auth_does_not_start_proxy ... ok
+test write_all_repos_and_ssh_are_explicit_options ... ok
+test proxy_round_trip_and_launcher_contract ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s

@@ -1,0 +1,5 @@
+warning: Git tree '/home/sam/home/agentix/036-whisper-cuda' is dirty
+this derivation will be built:
+  /nix/store/df4ir0s0w9d9pspm8qbkzmqr9g7c3cv5-ggml-tiny.en.bin.drv
+building '/nix/store/df4ir0s0w9d9pspm8qbkzmqr9g7c3cv5-ggml-tiny.en.bin.drv'...
+/nix/store/pbhdzdlc0y9n0bn3yysy7zhp0w7pkw6b-ggml-tiny.en.bin

@@ -1,8 +1,8 @@
 //! Whisper backend for in-process speech-to-text transcription.
 //!
 //! `WhisperContext` is `Send + Sync` (upstream `unsafe impl` in whisper-rs).
-//! `WhisperState` is `!Send`, so it is always created and dropped inside `spawn_blocking`.
-//! `FullParams` has lifetime parameters, so it is also created inside `spawn_blocking`.
+//! A persistent native worker owns transcription state and parameters. Its cleanup
+//! is joined outside async worker threads before the Tokio runtime shuts down.
 
 pub mod audio;
 
@@ -70,7 +70,8 @@ struct WorkItem {
 /// Owns a `WhisperState` on a dedicated OS thread so state is created once and
 /// reused across requests, avoiding the per-request GPU allocation overhead.
 struct WhisperWorker {
-    tx: std::sync::mpsc::SyncSender<WorkItem>,
+    tx: Option<std::sync::mpsc::SyncSender<WorkItem>>,
+    thread: Option<std::thread::JoinHandle<()>>,
 }
 
 impl WhisperWorker {
@@ -81,24 +82,29 @@ impl WhisperWorker {
             .create_state()
             .map_err(|e| InferError::Backend(format!("whisper state init failed: {e:?}")))?;
 
-        std::thread::Builder::new()
+        let thread = std::thread::Builder::new()
             .name("whisper-worker".into())
             .spawn(move || {
-                // ctx is moved here so it outlives state on this thread.
-                let _ctx = ctx;
                 while let Ok(work) = rx.recv() {
                     let result = run_transcription(&mut state, &work.pcm);
                     let _ = work.reply.send(result);
                 }
+                drop(state);
+                drop(ctx);
             })
             .map_err(|e| InferError::Backend(format!("whisper thread spawn failed: {e}")))?;
 
-        Ok(Self { tx })
+        Ok(Self {
+            tx: Some(tx),
+            thread: Some(thread),
+        })
     }
 
     async fn transcribe(&self, pcm: Vec<f32>) -> Result<String, InferError> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.tx
+            .as_ref()
+            .ok_or_else(|| InferError::Backend("whisper worker is shutting down".into()))?
             .send(WorkItem {
                 pcm,
                 reply: reply_tx,
@@ -107,6 +113,26 @@ impl WhisperWorker {
         reply_rx
             .await
             .map_err(|_| InferError::Backend("whisper worker dropped".into()))?
+    }
+}
+
+impl Drop for WhisperWorker {
+    fn drop(&mut self) {
+        drop(self.tx.take());
+        if let Some(thread) = self.thread.take() {
+            let join = move || {
+                if thread.join().is_err() {
+                    tracing::error!("whisper worker panicked during cleanup");
+                }
+            };
+            if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+                // Runtime shutdown waits for blocking tasks, keeping CUDA alive
+                // until the native thread has destroyed its buffers and context.
+                runtime.spawn_blocking(join);
+            } else {
+                join();
+            }
+        }
     }
 }
 
@@ -147,9 +173,6 @@ pub struct WhisperLoadedModel {
     size_bytes: u64,
 }
 
-unsafe impl Send for WhisperLoadedModel {}
-unsafe impl Sync for WhisperLoadedModel {}
-
 #[async_trait::async_trait]
 impl LoadedModel for WhisperLoadedModel {
     fn vram_bytes(&self) -> u64 {
@@ -186,5 +209,76 @@ impl LoadedModel for WhisperLoadedModel {
 
     async fn transcribe(&self, audio_pcm: &[f32]) -> Result<String, InferError> {
         self.worker.transcribe(audio_pcm.to_vec()).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{WhisperWorker, WorkItem};
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc, Arc,
+    };
+    use std::time::Duration;
+
+    #[test]
+    fn worker_drop_joins_cleanup_without_a_runtime() -> Result<(), Box<dyn std::error::Error>> {
+        let (tx, rx) = mpsc::sync_channel::<WorkItem>(4);
+        let cleaned = Arc::new(AtomicBool::new(false));
+        let worker_cleaned = Arc::clone(&cleaned);
+        let thread = std::thread::spawn(move || {
+            while rx.recv().is_ok() {}
+            worker_cleaned.store(true, Ordering::SeqCst);
+        });
+        drop(WhisperWorker {
+            tx: Some(tx),
+            thread: Some(thread),
+        });
+        assert!(cleaned.load(Ordering::SeqCst));
+        Ok(())
+    }
+
+    #[test]
+    fn runtime_waits_for_worker_cleanup_without_blocking_async_tasks(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?;
+        let (tx, rx) = mpsc::sync_channel::<WorkItem>(4);
+        let (cleanup_started, cleanup_started_rx) = tokio::sync::oneshot::channel();
+        let (finish_cleanup, finish_cleanup_rx) = mpsc::channel();
+        let (begin_shutdown, begin_shutdown_rx) = mpsc::channel();
+        let cleaned = Arc::new(AtomicBool::new(false));
+        let worker_cleaned = Arc::clone(&cleaned);
+        let thread = std::thread::spawn(move || {
+            while rx.recv().is_ok() {}
+            let _ = cleanup_started.send(());
+            let _ = finish_cleanup_rx.recv_timeout(Duration::from_secs(2));
+            worker_cleaned.store(true, Ordering::SeqCst);
+        });
+        let release = std::thread::spawn(move || {
+            if begin_shutdown_rx.recv().is_ok() {
+                // Keep cleanup pending as runtime shutdown begins, so merely
+                // detaching the native worker cannot satisfy the assertion.
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            let _ = finish_cleanup.send(());
+        });
+        runtime.block_on(async {
+            drop(WhisperWorker {
+                tx: Some(tx),
+                thread: Some(thread),
+            });
+            tokio::time::timeout(Duration::from_secs(1), cleanup_started_rx).await??;
+            assert!(!cleaned.load(Ordering::SeqCst));
+            Ok::<_, Box<dyn std::error::Error>>(())
+        })?;
+        begin_shutdown.send(())?;
+        drop(runtime);
+        assert!(cleaned.load(Ordering::SeqCst));
+        release
+            .join()
+            .map_err(|_| "cleanup release thread panicked")?;
+        Ok(())
     }
 }

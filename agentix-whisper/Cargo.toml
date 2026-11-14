@@ -5,8 +5,6 @@ edition = "2021"
 license = "Apache-2.0"
 description = "Whisper speech-to-text backend for agentix"
 
-build = "build.rs"
-
 [[bin]]
 name = "agentix-whisper"
 path = "src/main.rs"
@@ -15,7 +13,7 @@ path = "src/main.rs"
 workspace = true
 
 [features]
-cuda = []
+cuda = ["whisper-rs/cuda"]
 
 [dependencies]
 agentix-api = { path = "../agentix-api" }

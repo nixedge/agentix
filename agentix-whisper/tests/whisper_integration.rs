@@ -38,32 +38,30 @@ fn make_sine_wav(sample_rate: u32, duration_secs: f32) -> Vec<u8> {
 
 #[tokio::test]
 #[ignore = "requires AGENTIX_TEST_WHISPER_MODEL_PATH to point to a whisper model"]
-async fn whisper_transcribes_sine_wave() {
+async fn whisper_transcribes_sine_wave() -> Result<(), Box<dyn std::error::Error>> {
     let model_path = match std::env::var("AGENTIX_TEST_WHISPER_MODEL_PATH") {
         Ok(p) => p,
         Err(_) => {
             eprintln!("AGENTIX_TEST_WHISPER_MODEL_PATH not set — skipping");
-            return;
+            return Ok(());
         }
     };
 
-    let tmp = tempfile::tempdir().expect("tmpdir");
+    let tmp = tempfile::tempdir()?;
     let cfg = InferConfig::new(tmp.path().to_path_buf(), None, 2, 0);
-    let engine = InferEngine::new(cfg).await.expect("engine");
+    let engine = InferEngine::new(cfg).await?;
     engine.register_backend(Arc::new(WhisperBackend));
 
     // Register the local whisper model
-    engine.pull(&model_path).await.expect("pull local model");
+    engine.pull(&model_path).await?;
     let model_name = std::path::Path::new(&model_path)
         .file_name()
         .and_then(|n| n.to_str())
-        .expect("filename");
+        .ok_or("model path has no UTF-8 filename")?;
 
     // Synthesize 3 seconds of silence (sine wave — whisper may produce empty or noise text)
     let wav = make_sine_wav(16_000, 3.0);
-    let pcm = agentix_whisper::decode_audio_to_pcm(wav)
-        .await
-        .expect("decode");
+    let pcm = agentix_whisper::decode_audio_to_pcm(wav).await?;
 
     let result = engine.transcribe_pcm(model_name, &pcm).await;
     assert!(
@@ -72,5 +70,6 @@ async fn whisper_transcribes_sine_wave() {
         result
     );
     // Not checking the actual text — a sine wave may produce empty or noise text.
-    println!("transcript: {:?}", result.unwrap());
+    println!("transcript: {:?}", result?);
+    Ok(())
 }
