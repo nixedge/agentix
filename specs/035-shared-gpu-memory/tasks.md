@@ -16,3 +16,7 @@
 - [x] T014 Record implementation limits and operator-owned physical kursk acceptance; no laptop GPU load.
 - [x] T015 Record owner-authorized bounded 5090 validation, initial failures, thermal/RAM monitoring and unchanged niri session.
 - [x] T016 Diagnose cross-placement rounding with a matched saved-state replay; verify 480 MiB real release, exact CPU-expert continuation and public Engine refill in optimized production tests. Kursk calibration/coexistence remains separate.
+- [x] T017 Rebase onto master's CUDA Whisper fix; combine cleanup join with lease ownership, refresh calibration deployment instructions, and verify CPU/Nix/module checks.
+- [x] T018 Verify bounded real-worker Qwen-cache-to-Jina/Whisper handoff: automatic480MiB device release, actual1536dim Jina embedding, tiny CUDA Whisper and unchanged Qwen PID reply; max56C, approved120s/30s HTTP/65C/8GiB guards. Sequential handoff, not production calibration.
+- [x] T019 Correct embedding capability discovery from GGUF general.name at hashed blob paths; real-parser regressions and guarded real-model handoff pass.
+- [x] T020 Join llama native cleanup through runtime shutdown, including cancelled initialization; lifetime regressions and clean bounded handoff pass. Workspace367passed/13ignored; strict Clippy and eight canonical Nix builds pass.

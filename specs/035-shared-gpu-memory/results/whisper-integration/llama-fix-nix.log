@@ -1,0 +1,20 @@
+warning: Git tree '/home/sam/home/agentix/035-shared-gpu-memory' is dirty
+these 5 derivations will be built:
+  /nix/store/lfxxi119jdd4hf1vp9sqcr3ml26za1ac-isolated-workspace-src.drv
+  /nix/store/p55bmb89wq4q83wp1nw2pdxax2vn6cz9-agentix-llama-locked-workspace.drv
+  /nix/store/3sn4383ldyr8kcldmb3yp0r3zi6bbyhr-workspace-locks.drv
+  /nix/store/q5q5dahvnrq7i5lnb5pgli5afkgpknkx-agentix-llama-0.1.0.drv
+  /nix/store/c5jwmq9ini6sf4frg5ysrah1mzkl219p-agentix-llama.drv
+building '/nix/store/lfxxi119jdd4hf1vp9sqcr3ml26za1ac-isolated-workspace-src.drv'...
+building '/nix/store/q5q5dahvnrq7i5lnb5pgli5afkgpknkx-agentix-llama-0.1.0.drv'...
+building '/nix/store/p55bmb89wq4q83wp1nw2pdxax2vn6cz9-agentix-llama-locked-workspace.drv'...
+building '/nix/store/c5jwmq9ini6sf4frg5ysrah1mzkl219p-agentix-llama.drv'...
+building '/nix/store/3sn4383ldyr8kcldmb3yp0r3zi6bbyhr-workspace-locks.drv'...
+/nix/store/gibv80402gs4pb0c2jnh4nlwfk49516d-agentix-gpu-0.1.0
+/nix/store/nhan33cgrb9n8kzg74dfajqy2rcbcdka-agentix-qwen-worker
+/nix/store/bg7wh39ywp5vvb96x0fkfgvawyvldpz1-agentix-llama
+/nix/store/428ml2p4sazs6chdmk7mhzhvzb7dq1rm-agentix-whisper-0.1.0
+/nix/store/rh9j6nh30alvk87nrw5ncfj06a4ila7m-agentix-whisper-0.1.0
+/nix/store/ik2pbz3g7kpvdmacf4xvrhhmbc7yxb5m-agentix-daemon
+/nix/store/821ppfsazj3mq0asc3flvjwcv355pmip-whisper-runtime
+/nix/store/n2w5r3583vkh58fp8hwiv296cjz8g82r-workspace-locks

@@ -1,0 +1,8 @@
+warning: Git tree '/home/sam/home/agentix/035-shared-gpu-memory' is dirty
+qwen_pid=119035
+qwen_cache_bytes=530073600
+admission_headroom_bytes=11871977472
+jina_test_ceiling_bytes=12006195200
+agentix_gpu_cache_reserved_bytes{worker="qwen"} 0
+agentix_gpu_reclaimed_bytes_total 530073600
+/tmp/035-qwen-handoff.sh: line 129: 122523 Aborted                    (core dumped) AGENTIX_GPU_ROLE=llama AGENTIX_GPU_PLANS="$jina_plan" "$llama/bin/agentix-llama" > "$results/handoff-llama.log" 2>&1

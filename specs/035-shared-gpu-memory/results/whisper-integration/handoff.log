@@ -1,0 +1,12 @@
+warning: Git tree '/home/sam/home/agentix/035-shared-gpu-memory' is dirty
+qwen_pid=126959
+qwen_cache_bytes=530073600
+admission_headroom_bytes=11871977472
+jina_test_ceiling_bytes=12006195200
+agentix_gpu_cache_reserved_bytes{worker="qwen"} 0
+agentix_gpu_reclaimed_bytes_total 530073600
+whisper_model_load:    CUDA0 total size =    77.11 MB
+whisper_backend_init_gpu: using CUDA0 backend
+2026-11-14T19:32:10.568171Z  INFO agentix_llama: LlamaCppBackend initialised n_gpu_layers=4294967295 max_ctx=256 cuda=true
+agentix_gpu_resident_bytes{worker="llama"} 2502950912
+PASS: Qwen cache reclaimed automatically; Jina embedding and CUDA Whisper succeeded; same Qwen PID answered afterward.

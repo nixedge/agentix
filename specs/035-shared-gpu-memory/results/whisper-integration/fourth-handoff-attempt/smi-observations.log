@@ -1,0 +1,25 @@
+2026-11-14T19:25:39.028Z|--query-gpu=uuid,memory.total,memory.free --format=csv,noheader,nounits --id 0|GPU-ab700050-5279-30d5-4464-9bc045d76a63, 24463, 23026
+2026-11-14T19:25:39.060Z|--query-compute-apps=gpu_uuid,pid,used_gpu_memory --format=csv,noheader,nounits --id 0|GPU-ab700050-5279-30d5-4464-9bc045d76a63, 82142, 516
+GPU-ab700050-5279-30d5-4464-9bc045d76a63, 82318, 368
+2026-11-14T19:25:39.084Z|--query-gpu=uuid,memory.total,memory.free --format=csv,noheader,nounits --id 0|GPU-ab700050-5279-30d5-4464-9bc045d76a63, 24463, 23026
+2026-11-14T19:25:39.104Z|--query-compute-apps=gpu_uuid,pid,used_gpu_memory --format=csv,noheader,nounits --id 0|GPU-ab700050-5279-30d5-4464-9bc045d76a63, 82142, 516
+GPU-ab700050-5279-30d5-4464-9bc045d76a63, 82318, 368
+2026-11-14T19:25:52.772Z|--query-gpu=uuid,memory.total,memory.free --format=csv,noheader,nounits --id 0|GPU-ab700050-5279-30d5-4464-9bc045d76a63, 24463, 17979
+2026-11-14T19:25:52.799Z|--query-compute-apps=gpu_uuid,pid,used_gpu_memory --format=csv,noheader,nounits --id 0|GPU-ab700050-5279-30d5-4464-9bc045d76a63, 82142, 516
+GPU-ab700050-5279-30d5-4464-9bc045d76a63, 82318, 368
+GPU-ab700050-5279-30d5-4464-9bc045d76a63, 119035, 5042
+BEGIN_JINA
+2026-11-14T19:25:54.111Z|--query-gpu=uuid,memory.total,memory.free --format=csv,noheader,nounits --id 0|GPU-ab700050-5279-30d5-4464-9bc045d76a63, 24463, 17979
+2026-11-14T19:25:54.131Z|--query-compute-apps=gpu_uuid,pid,used_gpu_memory --format=csv,noheader,nounits --id 0|GPU-ab700050-5279-30d5-4464-9bc045d76a63, 82142, 516
+GPU-ab700050-5279-30d5-4464-9bc045d76a63, 82318, 368
+GPU-ab700050-5279-30d5-4464-9bc045d76a63, 119035, 5042
+2026-11-14T19:25:54.169Z|--query-gpu=uuid,memory.total,memory.free --format=csv,noheader,nounits --id 0|GPU-ab700050-5279-30d5-4464-9bc045d76a63, 24463, 18459
+2026-11-14T19:25:54.190Z|--query-compute-apps=gpu_uuid,pid,used_gpu_memory --format=csv,noheader,nounits --id 0|GPU-ab700050-5279-30d5-4464-9bc045d76a63, 82142, 516
+GPU-ab700050-5279-30d5-4464-9bc045d76a63, 82318, 368
+GPU-ab700050-5279-30d5-4464-9bc045d76a63, 119035, 4562
+END_JINA
+2026-11-14T19:25:54.711Z|--query-gpu=uuid,memory.total,memory.free --format=csv,noheader,nounits --id 0|GPU-ab700050-5279-30d5-4464-9bc045d76a63, 24463, 16066
+2026-11-14T19:25:54.738Z|--query-compute-apps=gpu_uuid,pid,used_gpu_memory --format=csv,noheader,nounits --id 0|GPU-ab700050-5279-30d5-4464-9bc045d76a63, 82142, 516
+GPU-ab700050-5279-30d5-4464-9bc045d76a63, 82318, 368
+GPU-ab700050-5279-30d5-4464-9bc045d76a63, 119035, 4562
+GPU-ab700050-5279-30d5-4464-9bc045d76a63, 122523, 2388

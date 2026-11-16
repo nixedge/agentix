@@ -57,6 +57,7 @@ pub fn read_gguf_metadata(path: &Path) -> Result<GgufMeta, InferError> {
     let kv_count = read_u64(&mut r)?;
 
     let mut architecture = String::new();
+    let mut general_name = String::new();
     let mut pooling_type: Option<u32> = None;
     let mut has_chat_template = false;
     let mut has_vision = false;
@@ -69,6 +70,8 @@ pub fn read_gguf_metadata(path: &Path) -> Result<GgufMeta, InferError> {
 
         if key == "general.architecture" && value_type == TYPE_STRING {
             architecture = read_string(&mut r)?;
+        } else if key == "general.name" && value_type == TYPE_STRING {
+            general_name = read_string(&mut r)?;
         } else if key == "tokenizer.chat_template" {
             has_chat_template = value_type == TYPE_STRING;
             skip_value(&mut r, value_type)?;
@@ -128,10 +131,14 @@ pub fn read_gguf_metadata(path: &Path) -> Result<GgufMeta, InferError> {
             .unwrap_or("")
             .to_lowercase();
         const EMBEDDING_ARCHS: &[&str] = &["bert", "nomic_bert", "roberta", "xlm_roberta"];
-        if filename.contains("embed") || EMBEDDING_ARCHS.contains(&architecture.as_str()) {
+        if general_name.to_lowercase().contains("embed")
+            || filename.contains("embed")
+            || EMBEDDING_ARCHS.contains(&architecture.as_str())
+        {
             tracing::info!(
                 path = %path.display(),
                 architecture = %architecture,
+                general_name = %general_name,
                 "no pooling_type/chat_template; name/arch heuristic identifies embedding model"
             );
             capabilities.push(Capability::Embedding);
@@ -249,29 +256,52 @@ mod tests {
     }
 
     #[test]
-    fn empty_capabilities_fallback_completion() {
-        let caps: Vec<Capability> = vec![];
-        let general_name = "mistral-7b-instruct";
-        let result = if caps.is_empty() && !general_name.contains("embed") {
-            vec![Capability::Completion]
-        } else {
-            caps
-        };
-        assert_eq!(result, vec![Capability::Completion]);
+    fn empty_capabilities_fallback_completion() -> Result<(), Box<dyn std::error::Error>> {
+        let meta = metadata_at_hashed_path("mistral-7b-instruct", false)?;
+        assert_eq!(meta.capabilities, vec![Capability::Completion]);
+        Ok(())
     }
 
     #[test]
-    fn empty_capabilities_fallback_embedding_by_name() {
-        let caps: Vec<Capability> = vec![];
-        let general_name = "jinaai/test-qwen25-coder-jina-code-embeddings-1.5b";
-        let result: Vec<Capability> = if caps.is_empty() && general_name.contains("embed") {
-            vec![Capability::Embedding]
-        } else if caps.is_empty() {
-            vec![Capability::Completion]
-        } else {
-            caps
-        };
-        assert_eq!(result, vec![Capability::Embedding]);
+    fn empty_capabilities_fallback_embedding_by_name() -> Result<(), Box<dyn std::error::Error>> {
+        let meta =
+            metadata_at_hashed_path("jinaai/test-qwen25-coder-jina-code-embeddings-1.5b", false)?;
+        assert_eq!(meta.capabilities, vec![Capability::Embedding]);
+        Ok(())
+    }
+
+    #[test]
+    fn explicit_capability_takes_precedence_over_name_hint(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let meta = metadata_at_hashed_path("embedding-examples-chat-model", true)?;
+        assert_eq!(meta.capabilities, vec![Capability::Completion]);
+        Ok(())
+    }
+
+    fn metadata_at_hashed_path(
+        name: &str,
+        chat_template: bool,
+    ) -> Result<GgufMeta, Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join(format!("sha256-{}", "a".repeat(64)));
+        let mut fields = vec![("general.architecture", "qwen2"), ("general.name", name)];
+        if chat_template {
+            fields.push(("tokenizer.chat_template", "{{ messages }}"));
+        }
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&GGUF_MAGIC.to_le_bytes());
+        bytes.extend_from_slice(&3_u32.to_le_bytes());
+        bytes.extend_from_slice(&0_u64.to_le_bytes());
+        bytes.extend_from_slice(&(fields.len() as u64).to_le_bytes());
+        for (key, value) in fields {
+            bytes.extend_from_slice(&(key.len() as u64).to_le_bytes());
+            bytes.extend_from_slice(key.as_bytes());
+            bytes.extend_from_slice(&TYPE_STRING.to_le_bytes());
+            bytes.extend_from_slice(&(value.len() as u64).to_le_bytes());
+            bytes.extend_from_slice(value.as_bytes());
+        }
+        std::fs::write(&path, bytes)?;
+        Ok(read_gguf_metadata(&path)?)
     }
 
     #[test]

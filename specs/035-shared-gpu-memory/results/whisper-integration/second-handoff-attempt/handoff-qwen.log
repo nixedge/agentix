@@ -1,0 +1,10 @@
+cuda device 0: NVIDIA GeForce RTX 5090 Laptop GPU, sm_120
+cuda shared memory: opt-in 101376 B per block, attn_decode_gqa*: 2112 B static, dynamic max 73728 B, carveout default
+cuda shared memory: opt-in 101376 B per block, attn_prefill_*: 0 B static, dynamic max 72704 B, carveout default
+cuda shared memory: opt-in 101376 B per block, gemvn_*: 0 B static, dynamic max 101376 B, carveout default
+plan: weights+state+scratch 4224 MB (KV 3 MB for 128 tokens, prefill 143 MB), expert slots 506 MB, resident experts 259/24576
+expert traffic: 25.4 MB per layer active set (top-10), 936.8 MB per token over 48 MoE layers
+2026-11-14T19:16:24.518254Z  INFO agentix_qwen_worker: Qwen worker ready socket=/tmp/035-qwen-handoff.SjECPX/qwen.sock model=qwen3.8-flash-next shards=2 context_limit=128 compute="cuda" cuda_device=Some(0)
+2026-11-14T19:16:24.560074Z  INFO agentix_qwen_worker: Qwen request admitted compute="cuda" prompt_tokens=15 max_tokens=1 streaming=false
+2026-11-14T19:16:37.281710Z  INFO agentix_qwen_worker: Qwen token processed position=15 prompt_tokens=15 elapsed_ms=12721
+2026-11-14T19:16:37.281908Z  INFO agentix_qwen_worker: Qwen generation finished elapsed_ms=12721 generated_tokens=1

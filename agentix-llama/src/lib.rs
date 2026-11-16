@@ -39,7 +39,8 @@ enum InferMessage {
 }
 
 pub struct LlamaCppLoadedModel {
-    tx: std::sync::mpsc::SyncSender<InferMessage>,
+    tx: Option<std::sync::mpsc::SyncSender<InferMessage>>,
+    thread: Option<std::thread::JoinHandle<()>>,
     vram_est: u64,
     is_embedding: bool,
     #[allow(dead_code)] // stored for future tokenize/context-info APIs
@@ -184,7 +185,7 @@ impl InferBackend for LlamaCppBackend {
         let (tx, rx) = std::sync::mpsc::sync_channel::<InferMessage>(16);
         let (ready, initialized) = tokio::sync::oneshot::channel();
 
-        std::thread::Builder::new()
+        let thread = std::thread::Builder::new()
             .name(format!(
                 "llama-{}",
                 blob_path
@@ -288,19 +289,26 @@ impl InferBackend for LlamaCppBackend {
                     }
                 }
                 tracing::debug!("inference thread exiting");
+                drop(ctx);
+                drop(model);
+                drop(backend);
+                drop(allocation);
             })
             .map_err(|e| InferError::Backend(format!("failed to spawn inference thread: {e}")))?;
 
+        // Own the join before awaiting so cancellation also waits for cleanup.
+        let loaded = LlamaCppLoadedModel {
+            tx: Some(tx),
+            thread: Some(thread),
+            vram_est: size_bytes,
+            is_embedding,
+            n_ctx: n_ctx_val,
+        };
         initialized
             .await
             .map_err(|_| InferError::Backend("native model initialization stopped".into()))??;
 
-        Ok(Arc::new(LlamaCppLoadedModel {
-            tx,
-            vram_est: size_bytes,
-            is_embedding,
-            n_ctx: n_ctx_val,
-        }))
+        Ok(Arc::new(loaded))
     }
 }
 
@@ -592,10 +600,108 @@ impl LoadedModel for LlamaCppLoadedModel {
 
 impl LlamaCppLoadedModel {
     async fn dispatch(&self, message: InferMessage) -> Result<(), InferError> {
-        let sender = self.tx.clone();
+        let sender = self
+            .tx
+            .as_ref()
+            .ok_or_else(|| InferError::Backend("inference thread closed".into()))?
+            .clone();
         tokio::task::spawn_blocking(move || sender.send(message))
             .await
             .map_err(|e| InferError::Backend(e.to_string()))?
             .map_err(|_| InferError::Backend("inference thread closed".into()))
+    }
+}
+
+impl Drop for LlamaCppLoadedModel {
+    fn drop(&mut self) {
+        drop(self.tx.take());
+        if let Some(thread) = self.thread.take() {
+            let join = move || {
+                if thread.join().is_err() {
+                    tracing::error!("llama worker panicked during cleanup");
+                }
+            };
+            if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+                // Runtime shutdown must wait before CUDA's process teardown.
+                runtime.spawn_blocking(join);
+            } else {
+                join();
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{InferMessage, LlamaCppLoadedModel};
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc, Arc,
+    };
+    use std::time::Duration;
+
+    fn model(
+        tx: mpsc::SyncSender<InferMessage>,
+        thread: std::thread::JoinHandle<()>,
+    ) -> LlamaCppLoadedModel {
+        LlamaCppLoadedModel {
+            tx: Some(tx),
+            thread: Some(thread),
+            vram_est: 0,
+            is_embedding: true,
+            n_ctx: 256,
+        }
+    }
+
+    #[test]
+    fn drop_joins_native_cleanup_without_runtime() {
+        let (tx, rx) = mpsc::sync_channel::<InferMessage>(1);
+        let cleaned = Arc::new(AtomicBool::new(false));
+        let worker_cleaned = Arc::clone(&cleaned);
+        let thread = std::thread::spawn(move || {
+            while rx.recv().is_ok() {}
+            worker_cleaned.store(true, Ordering::SeqCst);
+        });
+        drop(model(tx, thread));
+        assert!(cleaned.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn runtime_waits_for_cleanup_without_blocking_async_tasks(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?;
+        let (tx, rx) = mpsc::sync_channel::<InferMessage>(1);
+        let (started, started_rx) = tokio::sync::oneshot::channel();
+        let (finish, finish_rx) = mpsc::channel();
+        let (shutdown, shutdown_rx) = mpsc::channel();
+        let cleaned = Arc::new(AtomicBool::new(false));
+        let worker_cleaned = Arc::clone(&cleaned);
+        let thread = std::thread::spawn(move || {
+            while rx.recv().is_ok() {}
+            let _ = started.send(());
+            let _ = finish_rx.recv_timeout(Duration::from_secs(2));
+            worker_cleaned.store(true, Ordering::SeqCst);
+        });
+        let release = std::thread::spawn(move || {
+            if shutdown_rx.recv().is_ok() {
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            let _ = finish.send(());
+        });
+        runtime.block_on(async {
+            drop(model(tx, thread));
+            tokio::time::timeout(Duration::from_secs(1), started_rx).await??;
+            assert!(!cleaned.load(Ordering::SeqCst));
+            Ok::<_, Box<dyn std::error::Error>>(())
+        })?;
+        shutdown.send(())?;
+        drop(runtime);
+        assert!(cleaned.load(Ordering::SeqCst));
+        release
+            .join()
+            .map_err(|_| "cleanup release thread panicked")?;
+        Ok(())
     }
 }

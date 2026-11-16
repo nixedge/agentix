@@ -1,0 +1,19 @@
+2026-11-14T19:22:53.392Z|--query-gpu=uuid,memory.total,memory.free --format=csv,noheader,nounits --id 0|GPU-ab700050-5279-30d5-4464-9bc045d76a63, 24463, 23026
+2026-11-14T19:22:53.412Z|--query-compute-apps=gpu_uuid,pid,used_gpu_memory --format=csv,noheader,nounits --id 0|GPU-ab700050-5279-30d5-4464-9bc045d76a63, 82142, 516
+GPU-ab700050-5279-30d5-4464-9bc045d76a63, 82318, 368
+2026-11-14T19:22:53.432Z|--query-gpu=uuid,memory.total,memory.free --format=csv,noheader,nounits --id 0|GPU-ab700050-5279-30d5-4464-9bc045d76a63, 24463, 23026
+2026-11-14T19:22:53.454Z|--query-compute-apps=gpu_uuid,pid,used_gpu_memory --format=csv,noheader,nounits --id 0|GPU-ab700050-5279-30d5-4464-9bc045d76a63, 82142, 516
+GPU-ab700050-5279-30d5-4464-9bc045d76a63, 82318, 368
+2026-11-14T19:23:07.916Z|--query-gpu=uuid,memory.total,memory.free --format=csv,noheader,nounits --id 0|GPU-ab700050-5279-30d5-4464-9bc045d76a63, 24463, 17979
+2026-11-14T19:23:07.942Z|--query-compute-apps=gpu_uuid,pid,used_gpu_memory --format=csv,noheader,nounits --id 0|GPU-ab700050-5279-30d5-4464-9bc045d76a63, 82142, 516
+GPU-ab700050-5279-30d5-4464-9bc045d76a63, 82318, 368
+GPU-ab700050-5279-30d5-4464-9bc045d76a63, 115230, 5042
+BEGIN_JINA
+2026-11-14T19:23:09.375Z|--query-gpu=uuid,memory.total,memory.free --format=csv,noheader,nounits --id 0|GPU-ab700050-5279-30d5-4464-9bc045d76a63, 24463, 17979
+2026-11-14T19:23:09.397Z|--query-compute-apps=gpu_uuid,pid,used_gpu_memory --format=csv,noheader,nounits --id 0|GPU-ab700050-5279-30d5-4464-9bc045d76a63, 82142, 516
+GPU-ab700050-5279-30d5-4464-9bc045d76a63, 82318, 368
+GPU-ab700050-5279-30d5-4464-9bc045d76a63, 115230, 5042
+2026-11-14T19:23:09.534Z|--query-gpu=uuid,memory.total,memory.free --format=csv,noheader,nounits --id 0|GPU-ab700050-5279-30d5-4464-9bc045d76a63, 24463, 18459
+2026-11-14T19:23:09.560Z|--query-compute-apps=gpu_uuid,pid,used_gpu_memory --format=csv,noheader,nounits --id 0|GPU-ab700050-5279-30d5-4464-9bc045d76a63, 82142, 516
+GPU-ab700050-5279-30d5-4464-9bc045d76a63, 82318, 368
+GPU-ab700050-5279-30d5-4464-9bc045d76a63, 115230, 4562

@@ -1,0 +1,6 @@
+warning: Git tree '/home/sam/home/agentix/035-shared-gpu-memory' is dirty
+qwen_pid=115230
+qwen_cache_bytes=530073600
+admission_headroom_bytes=11871977472
+jina_test_ceiling_bytes=12006195200
+curl: (22) The requested URL returned error: 503

@@ -55,3 +55,18 @@ refill cooldown. Run focused Clippy/format, workspace tests and canonical Nix
 packages. Do not claim GPU cache release from CPU tests. Prepare a short kursk
 acceptance run with before/during/after metrics and same-process Qwen generation;
 deployment remains operator-owned.
+
+## Jina import integration correction
+
+Real-worker acceptance discovered that the capability detector loses the source
+filename after blob hashing and ignores GGUF general.name. Preserve that embedded
+identity for the existing embedding fallback heuristic. Replace mock name-based
+unit checks with real binary GGUF reads at hashed paths, including explicit
+completion metadata precedence, then rebuild affected packages and repeat the
+approved120s/65C handoff. This keeps the same model bytes and inference backend.
+
+Real Jina embedding exposed detached llama native cleanup during shutdown.
+Retain its thread handle before awaiting initialization; close the channel and
+join through Tokio's blocking pool at drop, as with Whisper. Destroy native
+context/model/backend before releasing admission. Verify async responsiveness
+and runtime cleanup completion, then repeat unchanged bounded acceptance.

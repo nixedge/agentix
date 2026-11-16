@@ -1,0 +1,6 @@
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 23983 MiB):
+  Device 0: NVIDIA GeForce RTX 5090 Laptop GPU, compute capability 12.0, VMM: yes, VRAM: 23983 MiB
+2026-11-14T19:15:28.928010Z  INFO agentix_llama: LlamaCppBackend initialised n_gpu_layers=4294967295 max_ctx=256 cuda=true
+2026-11-14T19:15:28.928039Z  INFO agentix_llama: registered LlamaCppBackend
+2026-11-14T19:15:28.928144Z  INFO agentix_llama: agentix-llama listening socket=/tmp/035-qwen-handoff.SjECPX/llama.sock
+2026-11-14T19:16:37.366800Z  INFO agentix_llama: shutdown requested via /control/shutdown

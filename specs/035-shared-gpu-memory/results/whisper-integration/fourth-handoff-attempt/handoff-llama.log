@@ -1,0 +1,25 @@
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 23983 MiB):
+  Device 0: NVIDIA GeForce RTX 5090 Laptop GPU, compute capability 12.0, VMM: yes, VRAM: 23983 MiB
+2026-11-14T19:25:52.901245Z  INFO agentix_llama: LlamaCppBackend initialised n_gpu_layers=4294967295 max_ctx=256 cuda=true
+2026-11-14T19:25:52.901286Z  INFO agentix_llama: registered LlamaCppBackend
+2026-11-14T19:25:52.901571Z  INFO agentix_llama: agentix-llama listening socket=/tmp/035-qwen-handoff.NZ4iPp/llama.sock
+2026-11-14T19:25:52.919818Z  INFO agentix_llama: pull requested model=/nix/store/98an1mnnplfcm0yx071jpwngmk5mwx8n-jina-code-embeddings-1.5b-Q8_0.gguf
+2026-11-14T19:25:54.082684Z  INFO agentix_infer::meta::gguf: no pooling_type/chat_template; name/arch heuristic identifies embedding model path=/tmp/035-qwen-handoff.NZ4iPp/models/blobs/sha256-3a09a8817b852b5a4faaa6ebb1a5590322746d2b570b578d0b7e3b6e849062aa architecture=qwen2 general_name=jinaai/test-qwen25-coder-jina-code-embeddings-1.5b
+2026-11-14T19:25:54.091723Z  INFO agentix_infer::engine: loading model model=98an1mnnplfcm0yx071jpwngmk5mwx8n-jina-code-embeddings-1.5b-Q8_0.gguf backend=llamacpp
+2026-11-14T19:25:54.195611Z  INFO agentix_llama: loading model model=98an1mnnplfcm0yx071jpwngmk5mwx8n-jina-code-embeddings-1.5b-Q8_0.gguf architecture=qwen2 is_embedding=true use_encoder_path=false n_gpu_layers=4294967295
+2026-11-14T19:25:54.753523Z  INFO agentix_llama: shutdown requested via /control/shutdown
+/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-vendor-cargo-deps/c19b7c6f923b580ac259164a89f2577984ad5ab09ee9d583b888f934adbbe8d0/llama-cpp-sys-2-0.1.154/llama.cpp/ggml/src/ggml-cuda/ggml-cuda.cu:106: CUDA error
+/nix/store/1gimjm3ddxgb47jzgplc0cjw025ywr2d-agentix-llama-0.1.0/bin/agentix-llama(+0x236fc39a) [0x555578c5039a]
+/nix/store/1gimjm3ddxgb47jzgplc0cjw025ywr2d-agentix-llama-0.1.0/bin/agentix-llama(+0x236fc864) [0x555578c50864]
+/nix/store/1gimjm3ddxgb47jzgplc0cjw025ywr2d-agentix-llama-0.1.0/bin/agentix-llama(+0x236fca19) [0x555578c50a19]
+/nix/store/1gimjm3ddxgb47jzgplc0cjw025ywr2d-agentix-llama-0.1.0/bin/agentix-llama(+0x2377c651) [0x555578cd0651]
+/nix/store/1gimjm3ddxgb47jzgplc0cjw025ywr2d-agentix-llama-0.1.0/bin/agentix-llama(+0x2377cccb) [0x555578cd0ccb]
+/nix/store/1gimjm3ddxgb47jzgplc0cjw025ywr2d-agentix-llama-0.1.0/bin/agentix-llama(+0x2377ce4e) [0x555578cd0e4e]
+/nix/store/1gimjm3ddxgb47jzgplc0cjw025ywr2d-agentix-llama-0.1.0/bin/agentix-llama(+0x2c263a21) [0x5555817b7a21]
+/nix/store/1gimjm3ddxgb47jzgplc0cjw025ywr2d-agentix-llama-0.1.0/bin/agentix-llama(+0x2c2640c6) [0x5555817b80c6]
+/nix/store/1gimjm3ddxgb47jzgplc0cjw025ywr2d-agentix-llama-0.1.0/bin/agentix-llama(+0x236d5d34) [0x555578c29d34]
+/nix/store/1gimjm3ddxgb47jzgplc0cjw025ywr2d-agentix-llama-0.1.0/bin/agentix-llama(+0x236d763f) [0x555578c2b63f]
+/nix/store/1gimjm3ddxgb47jzgplc0cjw025ywr2d-agentix-llama-0.1.0/bin/agentix-llama(+0x236de6c6) [0x555578c326c6]
+/nix/store/1gimjm3ddxgb47jzgplc0cjw025ywr2d-agentix-llama-0.1.0/bin/agentix-llama(+0x2c641a9f) [0x555581b95a9f]
+/nix/store/0d8g8n0a11v6f5m2h416ajyxmnkwc3md-glibc-2.42-67/lib/libc.so.6(+0x9ce53) [0x7ffff22a0e53]
+/nix/store/0d8g8n0a11v6f5m2h416ajyxmnkwc3md-glibc-2.42-67/lib/libc.so.6(+0x12407c) [0x7ffff232807c]

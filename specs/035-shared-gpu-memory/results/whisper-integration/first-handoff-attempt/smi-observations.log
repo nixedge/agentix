@@ -1,0 +1,6 @@
+2026-11-14T19:04:08.816Z|--query-gpu=uuid,memory.total,memory.free --format=csv,noheader,nounits --id 0|GPU-ab700050-5279-30d5-4464-9bc045d76a63, 24463, 23026
+2026-11-14T19:04:08.845Z|--query-compute-apps=gpu_uuid,pid,used_gpu_memory --format=csv,noheader,nounits --id 0|GPU-ab700050-5279-30d5-4464-9bc045d76a63, 82142, 516
+GPU-ab700050-5279-30d5-4464-9bc045d76a63, 82318, 368
+2026-11-14T19:04:08.867Z|--query-gpu=uuid,memory.total,memory.free --format=csv,noheader,nounits --id 0|GPU-ab700050-5279-30d5-4464-9bc045d76a63, 24463, 23026
+2026-11-14T19:04:08.888Z|--query-compute-apps=gpu_uuid,pid,used_gpu_memory --format=csv,noheader,nounits --id 0|GPU-ab700050-5279-30d5-4464-9bc045d76a63, 82142, 516
+GPU-ab700050-5279-30d5-4464-9bc045d76a63, 82318, 368

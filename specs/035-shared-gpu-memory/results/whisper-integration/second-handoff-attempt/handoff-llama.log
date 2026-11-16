@@ -1,0 +1,7 @@
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 23983 MiB):
+  Device 0: NVIDIA GeForce RTX 5090 Laptop GPU, compute capability 12.0, VMM: yes, VRAM: 23983 MiB
+2026-11-14T19:16:37.596000Z  INFO agentix_llama: LlamaCppBackend initialised n_gpu_layers=4294967295 max_ctx=256 cuda=true
+2026-11-14T19:16:37.596037Z  INFO agentix_llama: registered LlamaCppBackend
+2026-11-14T19:16:37.596306Z  INFO agentix_llama: agentix-llama listening socket=/tmp/035-qwen-handoff.SjECPX/llama.sock
+2026-11-14T19:16:37.613757Z  INFO agentix_llama: pull requested model=/nix/store/98an1mnnplfcm0yx071jpwngmk5mwx8n-jina-code-embeddings-1.5b-Q8_0.gguf
+2026-11-14T19:16:38.873396Z  WARN agentix_infer::meta::gguf: no capability keys in GGUF; defaulting to Completion path=/tmp/035-qwen-handoff.SjECPX/models/blobs/sha256-3a09a8817b852b5a4faaa6ebb1a5590322746d2b570b578d0b7e3b6e849062aa architecture=qwen2

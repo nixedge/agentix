@@ -60,3 +60,24 @@ Base: Agentix `bc91122`; RustingStrata `9dd6340d25c7c6770f7918134a27984cf20d7ce3
 Remaining operator gate: calibrated production peaks and bounded physical
 reclamation/coexistence acceptance on kursk. No hardware evidence is inferred
 from fake-observation IPC tests or CPU inference fixtures.
+
+The approved real-Jina handoff exposed an import defect before admission:
+capability detection examines the content-addressed blob path, whose filename
+contains no embedding hint, while skipping GGUF general.name. The verified Jina
+Q8 GGUF names itself jinaai/test-qwen25-coder-jina-code-embeddings-1.5b. Its fresh
+manifest was incorrectly Completion-only and /v1/embeddings returned500 before
+any reclaim. Read general.name in the existing fallback detector, preserving
+explicit capability metadata precedence. Cover the actual parser with minimal
+binary GGUFs stored under SHA256 filenames; do not hand-edit test manifests.
+
+## Llama native shutdown ownership
+
+The fourth bounded worker attempt successfully produced the real Jina model's
+1536-dimensional embedding after Qwen reclaimed its expert cache, then aborted
+inside ggml CUDA cleanup on worker shutdown. Llama discarded its native thread's
+JoinHandle. Apply the already verified Whisper pattern: the loaded model retains
+the handle before awaiting initialization; drop closes dispatch and registers a
+blocking join with the runtime, which waits before process teardown. Normal
+cleanup explicitly destroys context, model and backend before releasing its lease.
+Mocked-worker regressions verify outside-runtime joining and current-thread async
+responsiveness while shutdown waits for delayed native cleanup.
