@@ -19,6 +19,8 @@ pub struct AgentConfig {
 pub struct AssistantConfig {
     pub db_path: String,
     pub index_path: String,
+    pub recordings_path: Option<String>,
+    pub recordings_transcription_url: Option<String>,
     #[serde(default)]
     pub token_env: Option<String>,
     #[serde(default = "default_inference_timeout")]
@@ -111,6 +113,10 @@ impl AgentConfig {
         if let Some(ref mut assistant) = config.assistant {
             assistant.db_path = expand_home(&assistant.db_path);
             assistant.index_path = expand_home(&assistant.index_path);
+            assistant.recordings_path = assistant
+                .recordings_path
+                .as_ref()
+                .map(|path| expand_home(path));
         }
         if let Some(ref mut g) = config.google {
             g.credentials_path = expand_home(&g.credentials_path);

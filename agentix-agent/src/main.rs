@@ -161,9 +161,10 @@ async fn run_daemon(config: AgentConfig) -> anyhow::Result<()> {
 
     let mut app = http::router(Arc::clone(&state));
     if let Some(personal) = &personal {
-        app = app.merge(assistant::routes(
+        app = app.merge(assistant::routes_with_recordings(
             Arc::clone(&personal.service),
             personal.owner_token.clone(),
+            Some(personal.recordings.clone()),
         )?);
         personal.spawn_projection_worker(token.clone());
     }

@@ -48,6 +48,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.KeyboardType
 import us.disasm.agentix.device.PlaudScanner
+import us.disasm.agentix.device.PlaudSyncController
+import us.disasm.agentix.device.PlaudSyncStatus
+import us.disasm.agentix.device.PlaudSyncActions
+import us.disasm.agentix.device.RecordingServerControls
 import us.disasm.agentix.settings.AssistantSettings
 import us.disasm.agentix.assistant.AgentixVoiceService
 import us.disasm.agentix.assistant.AssistantSetupScreen
@@ -192,6 +196,9 @@ private fun AgentixApp(
 
 @Composable
 private fun DevicesScreen(scanner: PlaudScanner) {
+    val context = LocalContext.current.applicationContext
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val sync = remember(context, scope) { PlaudSyncController(context, scope) }
     val permissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { _ ->
         // A result can arrive after navigation or backgrounding; require another explicit scan.
         if (!scanner.hasPermissions()) scanner.permissionDenied()
@@ -200,6 +207,8 @@ private fun DevicesScreen(scanner: PlaudScanner) {
 
     Text(stringResource(R.string.devices_title), style = MaterialTheme.typography.headlineSmall)
     Text(stringResource(R.string.devices_detail))
+    RecordingServerControls()
+    PlaudSyncStatus(sync)
     Button(onClick = {
         if (scanner.scanning) {
             scanner.stop()
@@ -208,7 +217,7 @@ private fun DevicesScreen(scanner: PlaudScanner) {
         } else {
             permissions.launch(scanner.permissions)
         }
-    }) {
+    }, enabled = !sync.busy) {
         Text(stringResource(if (scanner.scanning) R.string.stop_scan else R.string.scan))
     }
     Text(scanner.status)
@@ -220,6 +229,7 @@ private fun DevicesScreen(scanner: PlaudScanner) {
                 Text(stringResource(R.string.device_signal, device.address, device.rssi))
                 device.projectCode?.let { Text(stringResource(R.string.device_project, it)) }
                 Text(stringResource(R.string.device_unverified))
+                PlaudSyncActions(device, sync, scanner)
             }
         }
     }

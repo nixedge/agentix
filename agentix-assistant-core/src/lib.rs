@@ -4,7 +4,9 @@ mod groceries;
 mod model;
 mod ports;
 mod projection;
+mod recordings;
 mod reminders;
+pub use recordings::*;
 pub use reminders::*;
 
 pub use command::{Command, CommandReceipt, CommandRequest, ProjectionJob};

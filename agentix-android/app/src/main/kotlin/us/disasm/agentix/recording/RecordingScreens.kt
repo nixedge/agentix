@@ -23,6 +23,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -94,6 +95,28 @@ fun RecordingCard(recording: PhoneRecording, playback: PhonePlayback, actions: @
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(stringResource(R.string.recording_title, DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(recording.startedAtMillis))))
+            if (recording.fromPlaud) Text("Plaud recording")
+            if (recording.fromPlaud) {
+                val serverStatus by produceState("Checking server copy…", recording.file.name, PhoneCaptureState.revision) {
+                    value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        runCatching {
+                            val id = us.disasm.agentix.core.plaud.RecordingUploadMetadata.idFor(recording.file)
+                            val entry = us.disasm.agentix.core.plaud.RecordingUploadJournal(context.filesDir).load(id)
+                            val receipt = entry?.receipt
+                            val description = when {
+                                entry == null -> "On this phone · not uploaded"
+                                receipt == null -> "Server upload unresolved · retry from Devices"
+                                receipt.transcribed && receipt.searchPending -> "Stored on server · transcript ready · search pending"
+                                receipt.transcribed -> "Stored on server · transcription complete"
+                                receipt.retrying -> "Stored on server · transcription pending or retrying"
+                                else -> "Stored on server · transcription pending"
+                            }
+                            if (entry == null) description else description + " · " + java.net.URI(entry.endpoint).host
+                        }.getOrDefault("Could not read server sync status; local audio is available")
+                    }
+                }
+                Text(serverStatus, style = MaterialTheme.typography.bodySmall)
+            }
             Text(stringResource(R.string.recording_details,
                 DateUtils.formatElapsedTime(recording.durationMillis / 1000),
                 Formatter.formatFileSize(context, recording.file.length())))
@@ -111,7 +134,7 @@ fun RecordingCard(recording: PhoneRecording, playback: PhonePlayback, actions: @
                     try {
                         val uri = FileProvider.getUriForFile(context, "${context.packageName}.recordings", recording.file)
                         val share = Intent(Intent.ACTION_SEND).apply {
-                            type = "audio/wav"
+                            type = recording.mimeType
                             putExtra(Intent.EXTRA_STREAM, uri)
                             clipData = android.content.ClipData.newRawUri("Voice note", uri)
                             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)

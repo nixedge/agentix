@@ -6,8 +6,12 @@ import java.util.UUID
 import us.disasm.agentix.core.audio.PcmWave
 
 data class PhoneRecording(val file: File, val startedAtMillis: Long, val recovered: Boolean) {
+    val fromPlaud: Boolean get() = file.extension == "ogg"
+    val mimeType: String get() = if (fromPlaud) "audio/ogg" else "audio/wav"
     val durationMillis: Long
-        get() = (file.length() - PcmWave.HEADER_BYTES).coerceAtLeast(0) * 1000 / PcmWave.BYTES_PER_SECOND
+        get() = if (fromPlaud) {
+            (file.nameWithoutExtension.substringAfterLast('-').toLongOrNull() ?: 0) / 80 * 20
+        } else (file.length() - PcmWave.HEADER_BYTES).coerceAtLeast(0) * 1000 / PcmWave.BYTES_PER_SECOND
 }
 
 data class RecordingLibrary(val recordings: List<PhoneRecording>, val hasReadErrors: Boolean)
@@ -39,9 +43,10 @@ class PhoneRecordingStore(filesDir: File) {
             }
         }
         val completed = directory.listFiles() ?: return RecordingLibrary(emptyList(), true)
-        val recordings = completed.filter { it.isFile && it.name.endsWith(".wav") }.mapNotNull { file ->
+        val recordings = completed.filter { it.isFile && (it.name.endsWith(".wav") || it.name.endsWith(".ogg")) }.mapNotNull { file ->
             val timestamp = file.name.substringBefore('-').toLongOrNull()
-            if (timestamp == null || file.length() < PcmWave.HEADER_BYTES) {
+            val validPlaudName = !file.name.endsWith(".ogg") || Regex("[0-9]+-plaud-[0-9a-f]{32}-[0-9]+\\.ogg").matches(file.name)
+            if (timestamp == null || file.length() < PcmWave.HEADER_BYTES || !validPlaudName) {
                 hasErrors = true
                 null
             } else {

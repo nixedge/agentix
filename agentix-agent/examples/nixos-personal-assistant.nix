@@ -27,6 +27,7 @@
       {
         db_path = "/var/lib/agentix-agent/personal";
         index_path = "/var/lib/agentix-agent/personal-index";
+        recordings_path = "/var/lib/agentix-agent/recordings";
         inference_timeout_secs = 30;
       }
       // lib.optionalAttrs (config.services.agentix.agent.environmentFile != null) {
@@ -49,7 +50,8 @@
     extraConfig = ''
       proxy_set_header Authorization $http_authorization;
       proxy_read_timeout 150s;
-      client_max_body_size 16k;
+      # Recording uploads are bounded again by Rust; instruction JSON remains16KiB.
+      client_max_body_size 64m;
     '';
   };
 }

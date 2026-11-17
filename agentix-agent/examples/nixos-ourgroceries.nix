@@ -31,6 +31,7 @@ in {
       {
         db_path = "/var/lib/agentix-agent/personal";
         index_path = "/var/lib/agentix-agent/personal-index";
+        recordings_path = "/var/lib/agentix-agent/recordings";
         inference_timeout_secs = 30;
         ourgroceries.list_id = "REPLACE_WITH_EXISTING_LIST_ID";
       }
@@ -43,7 +44,8 @@ in {
     extraConfig = ''
       proxy_set_header Authorization $http_authorization;
       proxy_read_timeout 150s;
-      client_max_body_size 16k;
+      # Recording uploads are bounded again by Rust; instruction JSON remains16KiB.
+      client_max_body_size 64m;
     '';
   };
 }

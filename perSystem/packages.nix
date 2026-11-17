@@ -177,8 +177,18 @@
       cargoExtraArgs = "${extraArgs "agentix-store"} --bin agentix-store-server";
       meta.mainProgram = "agentix-store-server";
     };
-    agentixAgentPkg = memberPackages.agentix-agent;
-    assistantApiCheck = checkFor "agentix-agent" "assistant::";
+    agentixAgentPkg = memberPackages.agentix-agent.overrideAttrs (old: {
+      AGENTIX_RECORDING_FFMPEG = "${pkgs.ffmpeg-headless}/bin/ffmpeg";
+      nativeBuildInputs = (old.nativeBuildInputs or []) ++ [pkgs.makeWrapper];
+      postFixup =
+        (old.postFixup or "")
+        + ''
+          wrapProgram $out/bin/agentix-agent --set-default AGENTIX_RECORDING_FFMPEG ${pkgs.ffmpeg-headless}/bin/ffmpeg
+        '';
+    });
+    assistantApiCheck = (checkFor "agentix-agent" "assistant::").overrideAttrs (_: {
+      AGENTIX_RECORDING_FFMPEG = "${pkgs.ffmpeg-headless}/bin/ffmpeg";
+    });
     agentixVoicePkg = memberPackages.agentix-voice;
     jailPackage = name:
       buildMember "agentix-jails" {
@@ -380,7 +390,7 @@
     checks.agentix-store = agentixStoreCheck;
 
     devShells.assistant = pkgs.mkShell {
-      packages = [toolchain pkgs.alejandra];
+      packages = [toolchain pkgs.alejandra pkgs.ffmpeg-headless];
       nativeBuildInputs = (argsFor ["agentix-agent"]).nativeBuildInputs;
       buildInputs = (argsFor ["agentix-agent"]).buildInputs;
       LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";

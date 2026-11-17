@@ -789,7 +789,7 @@
    "pom": "sha256-O7RSgN8d0clrmgFySmFFZrfWDTNFP81SwsdB+ZmcOk4="
   },
   "play-sdk/index/snapshot": {
-   "gz": "sha256-0BKlWxCAFyAcjX47XWXE7UB/Rahhl4SPxpNQi8nMpb8="
+   "gz": "sha256-Qse+oZofJsXmNTRotYFUVZciaMCH4VVA298wlGcYBTM="
   }
  },
  "https://maven.google.com": {
@@ -797,16 +797,16 @@
    "xml": "sha256-AkMgYEHPJ9kkrrhCfyWJDvuqIYieiaX4dcvB/2MHqKE="
   },
   "androidx/compose/group-index": {
-   "xml": "sha256-Ou+J0oFIYT8lrc/JFj1FlAf2N6ZioEAfNEytsrl3xBk="
+   "xml": "sha256-XNR+HU2MilTBi6ifSA2QhuDX9wbBya3CvbLoUyylKsg="
   },
   "androidx/core/group-index": {
-   "xml": "sha256-qVZcSop417T0yjKyElIbxn1LxsZZGwnQ+gWqUzpvqFM="
+   "xml": "sha256-ymF3q/tqF9HgO8yPnOSjl2GWq9ygMjaa3J6WoV+kO+E="
   },
   "com/google/mediapipe/group-index": {
-   "xml": "sha256-joX5FopiQ3EQTlMzq9Q1UAjBvzO+GDfNCLQBnhYxKrY="
+   "xml": "sha256-yuMxiHNllh1AF7y4/ieO7AFsBL5Z70XXfVDRHMUClx8="
   },
   "master-index": {
-   "xml": "sha256-tDZ2bgU/cIUJgBMT/7ZEZFcetEWThChJjdEygSXMlRw="
+   "xml": "sha256-bSHnsKAmpz5WAp1Ja3cXJLGrqMM4UEqX4MwQeItX0ZE="
   }
  },
  "https://repo.maven.apache.org/maven2": {

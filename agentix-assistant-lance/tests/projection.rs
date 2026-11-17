@@ -374,3 +374,41 @@ async fn cancelled_worker_keeps_committed_projection_replayable_until_acknowledg
     assert_eq!(project_pending(&store, &index, 1).await?.acknowledged, 1);
     Ok(())
 }
+
+#[path = "../../agentix-assistant-sled/tests/support/mod.rs"]
+mod recording_fixture;
+
+#[tokio::test]
+async fn recording_transcript_projects_to_real_lance_and_rebuilds() -> TestResult {
+    let directory = tempfile::tempdir()?;
+    let repository = SledRepository::open(directory.path().join("db")).await?;
+    let archive = agentix_assistant_sled::RecordingArchive::new(
+        repository.clone(),
+        directory.path().join("audio"),
+    );
+    let bytes = recording_fixture::fixture();
+    let metadata = recording_fixture::metadata(&bytes);
+    archive.put(metadata.clone(), bytes).await?;
+    archive
+        .finish_transcript(
+            metadata.id,
+            "Remember the cobalt accordion at rehearsal".into(),
+            "fixture-local".into(),
+        )
+        .await?;
+    let projection = LanceProjection::open(directory.path().join("index")).await?;
+    project_pending(&repository, &projection, 100).await?;
+    let found = search_records(&repository, &projection, search("cobalt")).await?;
+    assert_eq!(found.records.len(), 1);
+    assert!(!archive.get(metadata.id).await?.search_pending);
+    let fresh = LanceProjection::open_fresh(directory.path().join("rebuilt")).await?;
+    rebuild_projection(&repository, &fresh).await?;
+    assert_eq!(
+        search_records(&repository, &fresh, search("accordion"))
+            .await?
+            .records
+            .len(),
+        1
+    );
+    Ok(())
+}

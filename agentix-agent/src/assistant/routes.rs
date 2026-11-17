@@ -17,6 +17,7 @@ use uuid::Uuid;
 struct HttpState {
     service: Arc<Assistant>,
     token: Option<Arc<str>>,
+    recordings: Option<agentix_assistant_sled::RecordingArchive>,
 }
 
 pub fn validate_token(token: &str) -> anyhow::Result<()> {
@@ -27,7 +28,16 @@ pub fn validate_token(token: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+#[cfg(test)]
 pub fn routes(service: Arc<Assistant>, owner_token: Option<String>) -> anyhow::Result<Router> {
+    routes_with_recordings(service, owner_token, None)
+}
+
+pub fn routes_with_recordings(
+    service: Arc<Assistant>,
+    owner_token: Option<String>,
+    recordings: Option<agentix_assistant_sled::RecordingArchive>,
+) -> anyhow::Result<Router> {
     if let Some(token) = &owner_token {
         validate_token(token)?;
     }
@@ -36,10 +46,20 @@ pub fn routes(service: Arc<Assistant>, owner_token: Option<String>) -> anyhow::R
         .route("/v1/assistant/reminders/enroll", post(enroll))
         .route("/v1/assistant/reminders/snapshot", get(snapshot))
         .route("/v1/assistant/reminders/report", post(report))
+        .route(
+            "/v1/assistant/recordings/{id}",
+            axum::routing::put(recording_put).get(recording_get),
+        )
+        .route("/v1/assistant/recordings/{id}/audio", get(recording_audio))
+        .route(
+            "/v1/assistant/recordings/{id}/transcript",
+            get(recording_transcript),
+        )
         .layer(DefaultBodyLimit::max(16_384))
         .with_state(HttpState {
             service,
             token: owner_token.map(Arc::from),
+            recordings,
         }))
 }
 
@@ -198,4 +218,102 @@ async fn report(
     Ok(Json(
         json!({"accepted":state.service.reminder_store().map_err(service_error)?.report(reports).await.map_err(service_error)?}),
     ))
+}
+
+fn recording_archive(
+    state: &HttpState,
+) -> std::result::Result<&agentix_assistant_sled::RecordingArchive, HttpError> {
+    state.recordings.as_ref().ok_or_else(|| {
+        error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "recordings_not_configured",
+            true,
+        )
+    })
+}
+
+async fn recording_put(
+    State(state): State<HttpState>,
+    axum::extract::Path(id): axum::extract::Path<Uuid>,
+    headers: HeaderMap,
+    body: axum::body::Body,
+) -> std::result::Result<Json<agentix_assistant_core::RecordingReceipt>, HttpError> {
+    authorized(&state, &headers)?;
+    let archive = recording_archive(&state)?;
+    let raw = headers
+        .get("x-agentix-recording-metadata")
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| value.len() <= 4096)
+        .ok_or_else(|| error(StatusCode::BAD_REQUEST, "invalid_recording_metadata", false))?;
+    let metadata: agentix_assistant_core::RecordingMetadata = serde_json::from_str(raw)
+        .map_err(|_| error(StatusCode::BAD_REQUEST, "invalid_recording_metadata", false))?;
+    metadata.validate().map_err(service_error)?;
+    if metadata.id != id
+        || headers.get("content-type").and_then(|v| v.to_str().ok()) != Some("audio/ogg")
+    {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            "recording_identity_or_type_mismatch",
+            false,
+        ));
+    }
+    let bytes = axum::body::to_bytes(body, agentix_assistant_core::MAX_RECORDING_BYTES)
+        .await
+        .map_err(|_| {
+            error(
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "invalid_or_oversized_recording",
+                false,
+            )
+        })?;
+    let receipt = archive
+        .put(metadata, bytes.to_vec())
+        .await
+        .map_err(service_error)?;
+    Ok(Json(receipt))
+}
+
+async fn recording_get(
+    State(state): State<HttpState>,
+    axum::extract::Path(id): axum::extract::Path<Uuid>,
+    headers: HeaderMap,
+) -> std::result::Result<Json<agentix_assistant_core::RecordingReceipt>, HttpError> {
+    authorized(&state, &headers)?;
+    Ok(Json(
+        recording_archive(&state)?
+            .get(id)
+            .await
+            .map_err(service_error)?,
+    ))
+}
+
+async fn recording_audio(
+    State(state): State<HttpState>,
+    axum::extract::Path(id): axum::extract::Path<Uuid>,
+    headers: HeaderMap,
+) -> std::result::Result<axum::response::Response, HttpError> {
+    use axum::response::IntoResponse;
+    authorized(&state, &headers)?;
+    let bytes = recording_archive(&state)?
+        .audio(id)
+        .await
+        .map_err(service_error)?;
+    Ok((
+        [("content-type", "audio/ogg"), ("cache-control", "no-store")],
+        bytes,
+    )
+        .into_response())
+}
+
+async fn recording_transcript(
+    State(state): State<HttpState>,
+    axum::extract::Path(id): axum::extract::Path<Uuid>,
+    headers: HeaderMap,
+) -> std::result::Result<Json<agentix_assistant_core::RecordingTranscript>, HttpError> {
+    authorized(&state, &headers)?;
+    match recording_archive(&state)?.transcript(id).await {
+        Ok(transcript) => Ok(Json(transcript)),
+        Err(Error::Busy) => Err(error(StatusCode::CONFLICT, "transcription_pending", true)),
+        Err(failure) => Err(service_error(failure)),
+    }
 }

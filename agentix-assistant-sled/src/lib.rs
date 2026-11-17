@@ -2,7 +2,9 @@ mod apply;
 mod conversations;
 mod keys;
 mod queries;
+mod recordings;
 mod reminders;
+pub use recordings::{recording_hash, RecordingArchive};
 
 use agentix_assistant_core::{Error, Result, SCHEMA_VERSION};
 use serde::{de::DeserializeOwned, Serialize};

@@ -1,4 +1,5 @@
 pub mod gateway;
+mod recording_worker;
 mod routes;
 #[cfg(test)]
 mod tests;
@@ -8,13 +9,17 @@ use agentix_assistant_core::project_pending;
 use agentix_assistant_lance::LanceProjection;
 use agentix_assistant_sled::SledRepository;
 use anyhow::ensure;
+#[cfg(test)]
 pub use routes::routes;
+pub use routes::routes_with_recordings;
 use std::{sync::Arc, time::Duration};
 use tokio_util::sync::CancellationToken;
 
 pub struct HostedAssistant {
     pub service: Arc<Assistant>,
     pub owner_token: Option<String>,
+    pub recordings: agentix_assistant_sled::RecordingArchive,
+    recording_gateway: String,
     repository: SledRepository,
     projection: LanceProjection,
 }
@@ -38,6 +43,18 @@ impl HostedAssistant {
             &config.local_model,
         )?);
         let repository = SledRepository::open(&settings.db_path).await?;
+        let audio_path = settings
+            .recordings_path
+            .clone()
+            .unwrap_or_else(|| format!("{}.recordings", settings.db_path));
+        ensure!(
+            audio_path != settings.db_path
+                && audio_path != settings.index_path
+                && audio_path != config.db_path,
+            "recordings require a separate blob directory"
+        );
+        let recordings =
+            agentix_assistant_sled::RecordingArchive::new(repository.clone(), audio_path.into());
         let projection = LanceProjection::open(&settings.index_path).await?;
         let shared = Arc::new(repository.clone());
         let mut service = Assistant::new(shared.clone(), shared.clone(), gateway.clone())
@@ -60,10 +77,20 @@ impl HostedAssistant {
             owner_token: token,
             repository,
             projection,
+            recordings,
+            recording_gateway: settings
+                .recordings_transcription_url
+                .clone()
+                .unwrap_or_else(|| config.gateway_url.clone()),
         }))
     }
 
     pub fn spawn_projection_worker(&self, cancellation: CancellationToken) {
+        recording_worker::spawn(
+            self.recordings.clone(),
+            self.recording_gateway.clone(),
+            cancellation.clone(),
+        );
         let repository = self.repository.clone();
         let projection = self.projection.clone();
         tokio::spawn(async move {

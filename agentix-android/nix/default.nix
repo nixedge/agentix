@@ -7,6 +7,7 @@
   aapt2,
   wake,
   kokoro,
+  ffmpeg-headless,
 }:
 stdenv.mkDerivation (finalAttrs: {
   pname = "agentix-android";
@@ -31,6 +32,11 @@ stdenv.mkDerivation (finalAttrs: {
   gradleBuildTask = ":app:assembleDebug";
   doCheck = true;
   gradleCheckTask = ":core:test :app:lintDebug";
+  nativeCheckInputs = [ffmpeg-headless];
+  postCheck = ''
+    ffmpeg -v error -i core/build/plaud-fixtures/silence.ogg -f s16le -ar 16000 -ac 1 plaud-silence.pcm
+    test "$(stat -c %s plaud-silence.pcm)" -eq 1280
+  '';
   gradleUpdateTask = ":app:assembleDebug :core:test :app:lintDebug";
 
   mitmCache = gradle.fetchDeps {

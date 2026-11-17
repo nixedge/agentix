@@ -1129,3 +1129,194 @@ async fn device_http_auth_enrollment_reminder_replay_and_sync_use_real_store() -
     assert!(store.records().await?.is_empty());
     Ok(())
 }
+
+#[path = "../../../agentix-assistant-sled/tests/support/mod.rs"]
+mod recording_fixture;
+
+#[tokio::test]
+async fn recording_api_auth_replay_conflict_storage_and_transcript() -> TestResult {
+    use agentix_assistant_core::RecordingReceipt;
+    use agentix_assistant_sled::RecordingArchive;
+    let directory = tempfile::tempdir()?;
+    let store = SledRepository::open(directory.path().join("db")).await?;
+    let archive = RecordingArchive::new(store.clone(), directory.path().join("audio"));
+    let shared = Arc::new(store);
+    let service = Arc::new(Assistant::new(
+        shared.clone(),
+        shared,
+        Arc::new(MustNotInfer),
+    ));
+    let app = super::routes_with_recordings(service, Some(TOKEN.into()), Some(archive.clone()))?;
+    // Exercise the audio route above the instruction API's16KiB body limit.
+    let audio = recording_fixture::fixture_frames(1501);
+    let mut metadata = recording_fixture::metadata(&audio);
+    metadata.source_bytes = 1501 * 80;
+    metadata.duration_ms = 30_020;
+    let url = format!("/v1/assistant/recordings/{}", metadata.id);
+    let send = |token: Option<&str>,
+                metadata: &agentix_assistant_core::RecordingMetadata,
+                audio: Vec<u8>| {
+        let mut request = Request::builder()
+            .method("PUT")
+            .uri(&url)
+            .header("content-type", "audio/ogg")
+            .header(
+                "x-agentix-recording-metadata",
+                serde_json::to_string(metadata).unwrap_or_default(),
+            );
+        if let Some(token) = token {
+            request = request.header("authorization", format!("Bearer {token}"));
+        }
+        request.body(Body::from(audio))
+    };
+    assert_eq!(
+        app.clone()
+            .oneshot(send(None, &metadata, audio.clone())?)
+            .await?
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
+    assert!(matches!(
+        archive.get(metadata.id).await,
+        Err(Error::NotFound(_))
+    ));
+    let mut invalid_audio = recording_fixture::fixture();
+    invalid_audio[0] = 0;
+    let mut invalid_metadata = recording_fixture::metadata(&invalid_audio);
+    invalid_metadata.id = metadata.id;
+    assert_eq!(
+        app.clone()
+            .oneshot(send(Some(TOKEN), &invalid_metadata, invalid_audio)?)
+            .await?
+            .status(),
+        StatusCode::BAD_REQUEST
+    );
+    let response = app
+        .clone()
+        .oneshot(send(Some(TOKEN), &metadata, audio.clone())?)
+        .await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    let receipt: RecordingReceipt =
+        serde_json::from_slice(&response.into_body().collect().await?.to_bytes())?;
+    let response = app
+        .clone()
+        .oneshot(send(Some(TOKEN), &metadata, audio.clone())?)
+        .await?;
+    let replay: RecordingReceipt =
+        serde_json::from_slice(&response.into_body().collect().await?.to_bytes())?;
+    assert_eq!(receipt, replay);
+    let mut changed = metadata.clone();
+    changed.sha256 = "0".repeat(64);
+    assert_eq!(
+        app.clone()
+            .oneshot(send(Some(TOKEN), &changed, audio.clone())?)
+            .await?
+            .status(),
+        StatusCode::BAD_REQUEST
+    );
+    let mut conflicting = metadata.clone();
+    conflicting.source_device = "b".repeat(32);
+    assert_eq!(
+        app.clone()
+            .oneshot(send(Some(TOKEN), &conflicting, audio.clone())?)
+            .await?
+            .status(),
+        StatusCode::CONFLICT
+    );
+    let request = Request::builder()
+        .uri(format!("{url}/audio"))
+        .header("authorization", format!("Bearer {TOKEN}"))
+        .body(Body::empty())?;
+    assert_eq!(
+        app.clone()
+            .oneshot(request)
+            .await?
+            .into_body()
+            .collect()
+            .await?
+            .to_bytes()
+            .as_ref(),
+        audio.as_slice()
+    );
+    archive
+        .finish_transcript(
+            metadata.id,
+            "A searchable local recording transcript".into(),
+            "fixture-local".into(),
+        )
+        .await?;
+    let request = Request::builder()
+        .uri(format!("{url}/transcript"))
+        .header("authorization", format!("Bearer {TOKEN}"))
+        .body(Body::empty())?;
+    let response = app.oneshot(request).await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    let json: Value = serde_json::from_slice(&response.into_body().collect().await?.to_bytes())?;
+    assert_eq!(json["text"], "A searchable local recording transcript");
+    Ok(())
+}
+
+#[tokio::test]
+async fn recording_worker_decodes_ogg_and_chunks_local_whisper_requests() -> TestResult {
+    let directory = tempfile::tempdir()?;
+    let audio = directory.path().join("silence.ogg");
+    tokio::fs::write(&audio, recording_fixture::fixture_frames(1501)).await?;
+    let gateway = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/audio/transcriptions"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"text":"local fixture transcript"})),
+        )
+        .expect(2)
+        .mount(&gateway)
+        .await;
+    let text = super::recording_worker::transcribe(&gateway.uri(), audio, 30_020).await?;
+    assert_eq!(text, "local fixture transcript local fixture transcript");
+    let requests = gateway
+        .received_requests()
+        .await
+        .ok_or("missing gateway requests")?;
+    assert_eq!(requests.len(), 2);
+    for request in requests {
+        assert!(request.body.len() < 1_100_000);
+        assert!(request.body.windows(4).any(|part| part == b"RIFF"));
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn failed_recording_transcription_retains_original_and_defers_retry() -> TestResult {
+    let directory = tempfile::tempdir()?;
+    let store = SledRepository::open(directory.path().join("db")).await?;
+    let archive =
+        agentix_assistant_sled::RecordingArchive::new(store, directory.path().join("audio"));
+    let audio = recording_fixture::fixture();
+    let metadata = recording_fixture::metadata(&audio);
+    let recording = archive
+        .put(metadata.clone(), audio.clone())
+        .await?
+        .recording;
+    let gateway = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/audio/transcriptions"))
+        .respond_with(ResponseTemplate::new(503))
+        .expect(1)
+        .mount(&gateway)
+        .await;
+    assert!(
+        super::recording_worker::process(&archive, &gateway.uri(), recording)
+            .await
+            .is_err()
+    );
+    let failed = archive.get(metadata.id).await?.recording;
+    assert_eq!(failed.transcription_attempts, 1);
+    assert!(failed.transcribed_at.is_none());
+    assert_eq!(
+        failed.transcription_error.as_deref(),
+        Some("local_transcription_unavailable")
+    );
+    assert!(failed.retry_at > chrono::Utc::now() + chrono::Duration::seconds(299));
+    assert!(archive.pending(5).await?.is_empty());
+    assert_eq!(archive.audio(metadata.id).await?, audio);
+    Ok(())
+}

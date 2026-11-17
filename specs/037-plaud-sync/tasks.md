@@ -1,0 +1,19 @@
+# Tasks
+
+- [x] T001 Inspect existing024 foundation, allocate037 from all known refs/specs and verify host sibling worktree.
+- [x] T002 Specify connection/import/recovery/binding requirements, research protocol and document plan/model/contracts.
+- [x] T003 [US1] Implement restricted core protocol and strict authentication/list/head/tail/data parsing.
+- [x] T004 [US2] Implement resumable private partial store and atomic Ogg Opus import.
+- [x] T005 [US2] Implement transport-independent sync orchestration with progress, cancellation boundaries, deduplication and checksum acknowledgement.
+- [x] T006 [US1] Implement serialized Android GATT transport with deadlines, bounded callbacks and deterministic connection cleanup.
+- [x] T007 [US1/US3] Add Devices connect/sync/private-token controls and actionable binding/protocol/error states; no automatic binding change.
+- [x] T008 [US2] Integrate imported recordings with Inbox/play/share/archive while preserving WAV recording/recovery.
+- [x] T009 Add JVM fixture/integration coverage for strict parsing, resume, idempotency, checksum failure, publication recovery and Ogg page integrity.
+- [x] T010 Run canonical Nix APK build, JVM tests, lint and whitespace checks; document results and prepare same-key update APK if signing material is accessible.
+- [ ] T011 Physical Pixel/NB100 acceptance: binding/protocol, short note playback, repeat sync, disconnect/retry and cancellation; record actual firmware evidence.
+- [x] T012 [US4] Extend artifacts with approved server upload/storage/transcription/search contracts and failure boundaries.
+- [x] T013 [US4] Implement typed immutable metadata and durable file/Sled recording archive with replay, source deduplication and corruption validation.
+- [x] T014 [US4] Implement authenticated HTTP storage/read/status routes and bounded local transcription worker; atomic transcript/search jobs.
+- [x] T015 [US4] Implement phone upload opt-in, durable pinned retries, per-file status and explicit server sync.
+- [x] T016 [US4] Add real storage/API/LanceDB tests and run relevant Rust/Nix/Android verification; prepare updated signed APK.
+- [ ] T017 [US4] Real deployment/connectivity and phone upload acceptance; verify stored original, restart/retry, transcription and search on the owner's server.

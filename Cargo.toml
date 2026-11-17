@@ -32,6 +32,7 @@ version = "0.1.0"
 
 [workspace.dependencies]
 ash = "=0.38.0"
+sha2 = "0.10"
 
 [workspace.lints.clippy]
 unwrap_used = "deny"
