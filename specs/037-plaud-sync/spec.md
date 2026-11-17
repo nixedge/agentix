@@ -12,6 +12,8 @@ The phone is with the owner on another laptop. The debug app must offer a Blueto
 
 Acceptance: inspecting a discovered device requires no binding token; reads use serialized GATT callbacks and finite deadlines; absent firmware never becomes an inferred version; disconnect/cancel preserves a partial report; reports can be copied for follow-up.
 
+Owner's first real report (2026-11-17T21:06:29Z, Android API37) exposes1800/1801/1910/180F but no180A. Owner approved **advertisement diagnostics** after this standard-service check. Add passive manufacturer-advertisement firmware decoding and a copyable report directly on each scan result; no GATT connection or pairing is needed. Distinguish advertised firmware from advertised protocol and authenticated protocol. Bound payloads, reject malformed/unknown layouts, and omit serial/MAC/name from copied reports. Retain only the non-identifying project/version prefix as hexadecimal evidence.
+
 ### US1 — Connect the owner's recorder (P1)
 The owner scans, selects a recorder, and explicitly connects with a persistent private binding token. Device-reported protocol evidence determines compatibility, not an advertisement name.
 

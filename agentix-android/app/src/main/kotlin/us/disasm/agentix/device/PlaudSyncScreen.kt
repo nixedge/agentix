@@ -58,6 +58,14 @@ fun PlaudSyncActions(device: RecorderAdvertisement, controller: PlaudSyncControl
     var editing by remember(device.address) { mutableStateOf(!controller.hasToken(device.address)) }
     var message by remember(device.address) { mutableStateOf<String?>(null) }
     var confirmSwitch by remember(device.address) { mutableStateOf(false) }
+    val context = LocalContext.current
+    androidx.compose.foundation.text.selection.SelectionContainer {
+        Text(device.advertisementReport, style = MaterialTheme.typography.bodySmall)
+    }
+    TextButton(onClick = {
+        context.getSystemService(android.content.ClipboardManager::class.java)
+            .setPrimaryClip(android.content.ClipData.newPlainText("Plaud advertisement diagnostics", device.advertisementReport))
+    }) { Text("Copy advertisement report") }
     Button(enabled = !controller.busy, onClick = { scanner.stop(); controller.inspect(device.address) }) { Text("Read device information") }
     Text("Reads firmware and model over Bluetooth. No binding token is needed. Missing values are reported as unavailable.", style = MaterialTheme.typography.bodySmall)
     if (editing) {

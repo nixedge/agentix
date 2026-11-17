@@ -1,19 +1,21 @@
 # Plaud sync handoff
 
 Updated 2026-11-17. Worktree: `/home/sam/home/agentix/037-plaud-sync`.
-Branch: `037-plaud-sync`. Implementation commit: `6f0357d` (`feat: sync Plaud recordings through Android to server`). Nothing has been pushed, merged, deployed or installed on the phone. The owner handles merging into master.
+Branch: `037-plaud-sync`. Current implementation commit: `e0bed3a` (`feat: sync Plaud recordings through Android to server`), followed by handoff `b73eb24` and GATT firmware diagnostics `7acdd8a` (history was rewritten after the earlier hashes were recorded). The owner installed/tested the debug app on their remote phone. Production server deployment and real recording sync remain unverified. The owner handles merging into master.
 
 ## Owner's remote firmware checkpoint
+
+Owner returned the v1 GATT report collected2026-11-17T21:06:29Z on Android API37. Services1800/1801/1910/180F are present;180A is absent, so the standard firmware read cannot work on this recorder. Owner approved passive advertisement diagnostics. The new **Copy advertisement report** action on the scan result collects advertised firmware and separate protocol, manufacturer IDs and a safe header prefix; serial, MAC, name and remaining payload are omitted. No GATT connection or vendor commands are involved. Request this v2 report next; the old GATT report can still show unavailable while advertisement decoding succeeds. Unknown/truncated layouts remain explicit. Automated tests use independent SDK-derived synthetic layouts; real advertisement values remain pending.
 
 The phone and recorder are on the owner's laptop in another state; do not wait for local ADB or assume physical access. The debug app now adds **Devices → Scan → Read device information**, then **Copy device report**. It reads standard Bluetooth firmware/hardware/software/model/manufacturer values without any binding token, vendor handshake or reset. Missing/read-denied values are explicit, and the discovered UUID/property inventory survives later read timeouts. The owner should return the copied report before any unsupported-layout changes. Standard Device Information may be absent on this firmware; do not guess a vendor command or label protocol10 as firmware.
 
 Owner-laptop build/sign/install instructions are in the [firmware quickstart](specs/037-plaud-sync/quickstart.md#firmware-check-on-the-owners-laptop). Existing signing identity must match the installed app. A prepared signed firmware APK can be transferred instead of copying the signing secrets. Firmware-reading hardware acceptance remains pending even after the debug build passes.
 
-Latest firmware-inspection debug APK: `/home/sam/home/agentix/.android-state/apks/agentix-android-037-firmware.apk`.
-SHA256: `7800f576c930d86f1ccb79d0e99beafbcac2d7d885a38e50e223f05e47ace4e8`.
-It supersedes the earlier server-sync APK below and includes all of that functionality. Canonical Nix build passed (73 JVM tests, lint zero errors, independent FFmpeg decode), output `/nix/store/6zikisa342hrn2yd1kaa2rng5ca7gxk5-agentix-android-0.1.0`. Existing owner-key signature and 16 KiB alignment verified. Logs: `/tmp/agentix-037-firmware-final.log` and `/tmp/agentix-037-firmware-sign.log`.
+Latest advertisement-inspection debug APK: `/home/sam/home/agentix/.android-state/apks/agentix-android-037-advertisement.apk`.
+SHA256: `92457baeae9725d80f8307e029d09ca1a4e6913e4a1b3fd1c2490ba92acf6c97`.
+It supersedes the firmware-v1 and earlier server-sync APKs and includes all of their functionality. Canonical Nix build passed (78 JVM tests, lint zero errors, independent FFmpeg decode), output `/nix/store/7pvailql3hn3aakd5zpp0y46vxbqvad9-agentix-android-0.1.0`. Existing owner-key signature and 16 KiB alignment verified. Logs: `/tmp/agentix-037-advertisement-final.log` and `/tmp/agentix-037-advertisement-sign.log`.
 
-An incremental Git source bundle is prepared outside the checkout at `/home/sam/home/agentix/.android-state/handoffs/agentix-037-firmware.bundle`, containing this feature branch since base `5e66f35`. Transfer it to the laptop, run `git bundle verify /path/to/agentix-037-firmware.bundle` in the existing repository (which must contain that base), then fetch its `refs/heads/037-plaud-sync` into the local feature branch. Use the normal sibling-worktree layout. This enables a local build without pushing the branch; the APK can instead be installed directly after transfer.
+An incremental Git source bundle is prepared outside the checkout at `/home/sam/home/agentix/.android-state/handoffs/agentix-037-advertisement.bundle`, containing this feature branch since base `5e66f35`. Transfer it to the laptop, run `git bundle verify /path/to/agentix-037-advertisement.bundle` in the existing repository (which must contain that base), then fetch its `refs/heads/037-plaud-sync` into the local feature branch. Use the normal sibling-worktree layout. If the laptop still has the previous pre-rewrite history, preserve it and fetch into a new branch/worktree rather than forcing over it. This enables a local build without pushing the branch; the APK can instead be installed directly after transfer.
 
 ## Implemented
 

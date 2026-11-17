@@ -1,5 +1,13 @@
 # Verification — 2026-11-17
 
+## Advertisement diagnostics v2 follow-up
+
+Owner's real GATT report (collected21:06:29Z, API37) establishes service discovery with1910 command/notify and180F battery but no180A Device Information service. Firmware/protocol values remain unknown. Owner approved the next passive advertisement approach explicitly.
+
+Added bounded manufacturer firmware parsing, separate unauthenticated protocol display, manufacturer ID inventory, capture timestamp/RSSI and copyable safe prefix. No GATT connection/commands/token required; no serial, address, device name or complete manufacturer data copied. Eight advertisement tests now cover independent SDK-derived fixtures, multi-byte firmware values, distinct protocol branches, truncation/malformed layouts, manufacturer bounds and redaction. There is no real owner-advertisement fixture yet.
+
+`nix build -L .#agentix-android --out-link result-037-advertisement-final` passed:78 JVM tests total, Android lint zero errors (22 warnings,8 hints) and independent FFmpeg decode. Output `/nix/store/7pvailql3hn3aakd5zpp0y46vxbqvad9-agentix-android-0.1.0`; log `/tmp/agentix-037-advertisement-final.log`. Same-owner-key signed/verified16KiB-aligned update `/home/sam/home/agentix/.android-state/apks/agentix-android-037-advertisement.apk`, SHA256 `92457baeae9725d80f8307e029d09ca1a4e6913e4a1b3fd1c2490ba92acf6c97`; signing log `/tmp/agentix-037-advertisement-sign.log`. No additional Rust checks for this Android/documentation-only follow-up. Owner should install this newer build and return **Copy advertisement report**; successful real firmware decoding remains pending.
+
 ## Remote firmware inspection follow-up
 
 Owner clarified that the phone/Plaud are on their laptop in another state. Added token-free **Read device information** and **Copy device report**: serialized standard Bluetooth firmware/hardware/software/model/manufacturer reads, explicit missing/failed values, and bounded GATT UUID/property inventory retained on timeout/cancellation. No vendor commands, subscriptions or binding operations occur in this mode. Actual recorder firmware remains unknown until the owner runs it and shares the report.

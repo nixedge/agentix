@@ -4,6 +4,8 @@
 
 The phone and Plaud are with the owner elsewhere. Build/install on that laptop; no ADB connection to this development host is expected.
 
+**Advertisement diagnostics v2:** the owner's first physical report confirmed the standard firmware service is absent. After installing the newer advertisement build, use **Devices → Scan → Copy advertisement report** on the recorder card. The report reads firmware from manufacturer advertisements during scanning, shows protocol separately, and copies only a bounded project/version prefix without serial/MAC/name. It does not connect or send commands. Wake/disconnect the official app and scan again for a fresh timestamp. Return this report even if parsing says unavailable. The existing **Read device information** action still checks GATT separately and may continue reporting firmware unavailable there.
+
 The updated debug app has **Devices → Scan → Read device information** for each discovered recorder. Disconnect the official app's Bluetooth connection, wake the recorder, then select this action before entering a token or switching binding. It reads firmware, hardware, software, model and manufacturer strings over Bluetooth, requires no Plaud binding token, and sends no vendor commands. Use **Copy device report** and return the text for remote diagnosis. Service/characteristic UUIDs are captured even if a later read times out. Values absent or denied by the recorder are explicit; protocol number and advertisement project code are not firmware versions.
 
 For a local build on a Linux laptop with Nix, from this branch:
@@ -14,11 +16,11 @@ nix build .#agentix-android --out-link result-plaud-firmware
 android_state="$PWD/../.android-state"
 nix run .#agentix-android-sign -- \
   result-plaud-firmware/share/agentix-android/agentix-android-debug-unsigned.apk \
-  "$android_state/apks/agentix-plaud-firmware.apk" \
+  "$android_state/apks/agentix-plaud-advertisement.apk" \
   "$android_state/signing/debug.keystore" \
   agentix-debug \
   "$android_state/signing/keystore-password"
-nix develop .#android --command adb install -r "$android_state/apks/agentix-plaud-firmware.apk"
+nix develop .#android --command adb install -r "$android_state/apks/agentix-plaud-advertisement.apk"
 ```
 
 Create the output directory first and use a fresh APK filename. The signing key must match the installed app; no secrets belong in the checkout or Nix store. Alternatively, transfer the prepared signed firmware-inspection APK from this host and install it directly with `adb install -r`; no signing key transfer is needed for that route. The canonical package supports Linux; a macOS laptop needs a Linux Nix builder for the build and local Android platform-tools for USB installation. See [Android build/install notes](../../agentix-android/README.md).

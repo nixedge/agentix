@@ -24,6 +24,7 @@ data class RecorderAdvertisement(
     val name: String?,
     val rssi: Int,
     val projectCode: Int?,
+    val advertisementReport: String,
 )
 
 class PlaudScanner(private val context: Context) {
@@ -72,13 +73,19 @@ class PlaudScanner(private val context: Context) {
 
     private fun accept(result: ScanResult) {
         val record = result.scanRecord ?: return
-        val payload = record.getManufacturerSpecificData(PlaudAdvertisement.MANUFACTURER_ID)
+        val manufacturerId = if (record.getManufacturerSpecificData(PlaudAdvertisement.MANUFACTURER_ID) != null) {
+            PlaudAdvertisement.MANUFACTURER_ID
+        } else PlaudAdvertisement.ALTERNATE_MANUFACTURER_ID
+        val payload = record.getManufacturerSpecificData(manufacturerId)
+        val manufacturers = record.manufacturerSpecificData
+        val manufacturerIds = (0 until minOf(manufacturers.size(), 8)).joinToString { "0x%04x".format(manufacturers.keyAt(it)) }.ifBlank { "none" }
         if (!PlaudAdvertisement.matches(record.deviceName, payload)) return
         val device = RecorderAdvertisement(
             result.device.address,
             record.deviceName,
             result.rssi,
             PlaudAdvertisement.projectCode(payload),
+            "Plaud advertisement diagnostics v2\nCollected ${java.time.Instant.now()}\nAndroid API ${Build.VERSION.SDK_INT}\nRSSI: ${result.rssi} dBm\nObserved manufacturer IDs: $manufacturerIds\n${PlaudAdvertisement.diagnostic(payload, manufacturerId)}\nPassive scan result; no GATT connection or Plaud commands.",
         )
         handler.post {
             if (scanning) {

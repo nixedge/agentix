@@ -19,3 +19,5 @@
 - [ ] T017 [US4] Real deployment/connectivity and phone upload acceptance; verify stored original, restart/retry, transcription and search on the owner's server.
 - [x] T018 [US5] Add token-free Bluetooth firmware/model inspection and copyable bounded diagnostics; no vendor commands or binding changes.
 - [x] T019 [US5] Build/check the debug APK and document owner-laptop signing/install/report collection; update handoff and commit.
+- [x] T020 [US5] Decode bounded manufacturer firmware/version prefixes, retain safe evidence and add token-free scan-report copy controls; cover malformed/truncated/redacted layouts with core tests.
+- [x] T021 [US5] Build/check/sign advertisement debug APK, update handoff with real GATT evidence and laptop collection steps, then commit.
