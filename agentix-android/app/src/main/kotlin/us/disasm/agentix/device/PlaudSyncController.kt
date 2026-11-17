@@ -97,9 +97,10 @@ class PlaudSyncController(private val context: Context, private val scope: Corou
         return preferences.edit().putString(address, token).commit()
     }
 
-    fun sync(address: String) {
+    fun sync(device: RecorderAdvertisement) {
         if (busy) return
-        val token = preferences.getString(address, null)
+        val address = device.address
+        val token = preferences.getString(device.identity, null)
         if (token == null) {
             progress = PlaudProgress("Add your existing Plaud binding token before syncing.")
             failed = true
@@ -118,7 +119,7 @@ class PlaudSyncController(private val context: Context, private val scope: Corou
                         connection.open(address)
                         var lastReport = 0L
                         var lastMessage = ""
-                        PlaudSync(connection, PlaudLibrary(context.filesDir)).run(address, token) { update ->
+                        PlaudSync(connection, PlaudLibrary(context.filesDir)).run(device.identity, token) { update ->
                             val now = System.nanoTime()
                             if (update.message != lastMessage || now - lastReport >= 200_000_000L) {
                                 lastReport = now
@@ -160,10 +161,11 @@ class PlaudSyncController(private val context: Context, private val scope: Corou
         }
     }
 
-    fun switchBindingAfterConfirmation(address: String) {
+    fun switchBindingAfterConfirmation(device: RecorderAdvertisement) {
         if (busy) return
-        val token = preferences.getString(address, null) ?: UUID.randomUUID().toString().replace("-", "")
-        if (!saveToken(address, token)) {
+        val address = device.address
+        val token = preferences.getString(device.identity, null) ?: UUID.randomUUID().toString().replace("-", "")
+        if (!saveToken(device.identity, token)) {
             failed = true
             progress = PlaudProgress("Could not persist the Agentix binding token. Recorder unchanged.")
             return

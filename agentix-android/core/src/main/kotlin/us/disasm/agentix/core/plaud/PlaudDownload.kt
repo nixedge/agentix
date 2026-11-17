@@ -10,10 +10,14 @@ import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 
 class PlaudLibrary(private val filesDir: File) {
-    fun open(address: String, recording: RemoteRecording): PlaudDownload {
-        require(Regex("[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}").matches(address))
-        val key = MessageDigest.getInstance("SHA-256").digest(address.uppercase(java.util.Locale.ROOT).toByteArray(Charsets.US_ASCII))
-            .take(16).joinToString("") { "%02x".format(it.toInt() and 255) }
+    fun open(identity: String, recording: RemoteRecording): PlaudDownload {
+        val key = if (Regex("serial:[0-9a-f]{32}").matches(identity)) {
+            identity.removePrefix("serial:")
+        } else {
+            require(Regex("[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}").matches(identity))
+            MessageDigest.getInstance("SHA-256").digest(identity.uppercase(java.util.Locale.ROOT).toByteArray(Charsets.US_ASCII))
+                .take(16).joinToString("") { "%02x".format(it.toInt() and 255) }
+        }
         val partials = File(filesDir, "plaud-partials")
         val recordings = File(filesDir, "recordings")
         listOf(partials, recordings).forEach {

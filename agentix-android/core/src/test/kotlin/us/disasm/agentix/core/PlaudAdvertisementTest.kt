@@ -76,6 +76,29 @@ class PlaudAdvertisementTest {
     }
 
     @Test
+    fun serialIdentityIgnoresFirmwareAndFlagsButSeparatesRecorders() {
+        val identity = PlaudAdvertisement.identity(advertisement)
+        assertTrue(checkNotNull(identity).matches(Regex("serial:[0-9a-f]{32}")))
+        val updated = advertisement.copyOf().also { it[5] = 96; it[18] = 20; it[21] = 0 }
+        assertEquals(identity, PlaudAdvertisement.identity(updated, 0x0046))
+        val another = advertisement.copyOf().also { it[9] = 1 }
+        assertFalse(identity == PlaudAdvertisement.identity(another))
+        assertFalse(checkNotNull(PlaudAdvertisement.identity(another)).contains("8880000001"))
+    }
+
+    @Test
+    fun invalidAdvertisementsCannotProvideStableIdentity() {
+        assertNull(PlaudAdvertisement.identity(null))
+        for (size in 0..13) assertNull(PlaudAdvertisement.identity(advertisement.copyOf(size)))
+        for (sentinel in listOf(0.toByte(), (-1).toByte())) {
+            val raw = advertisement.copyOf().also { for (at in 9..13) it[at] = sentinel }
+            assertNull(PlaudAdvertisement.identity(raw))
+        }
+        assertNull(PlaudAdvertisement.identity(advertisement.copyOf().also { it[8] = 127 }))
+        assertNull(PlaudAdvertisement.identity(advertisement, 0x1234))
+    }
+
+    @Test
     fun readsUnsignedLittleEndianProjectCodeFromPayload() {
         assertEquals(888, PlaudAdvertisement.projectCode(byteArrayOf(0, 0x78, 0x03)))
         assertEquals(65535, PlaudAdvertisement.projectCode(byteArrayOf(0, -1, -1)))

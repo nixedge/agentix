@@ -54,10 +54,10 @@ fun PlaudSyncStatus(controller: PlaudSyncController) {
 
 @Composable
 fun PlaudSyncActions(device: RecorderAdvertisement, controller: PlaudSyncController, scanner: PlaudScanner) {
-    var token by remember(device.address) { mutableStateOf("") }
-    var editing by remember(device.address) { mutableStateOf(!controller.hasToken(device.address)) }
-    var message by remember(device.address) { mutableStateOf<String?>(null) }
-    var confirmSwitch by remember(device.address) { mutableStateOf(false) }
+    var token by remember(device.identity) { mutableStateOf("") }
+    var editing by remember(device.identity) { mutableStateOf(!controller.hasToken(device.identity)) }
+    var message by remember(device.identity) { mutableStateOf<String?>(null) }
+    var confirmSwitch by remember(device.identity) { mutableStateOf(false) }
     val context = LocalContext.current
     androidx.compose.foundation.text.selection.SelectionContainer {
         Text(device.advertisementReport, style = MaterialTheme.typography.bodySmall)
@@ -66,6 +66,7 @@ fun PlaudSyncActions(device: RecorderAdvertisement, controller: PlaudSyncControl
         context.getSystemService(android.content.ClipboardManager::class.java)
             .setPrimaryClip(android.content.ClipData.newPlainText("Plaud advertisement diagnostics", device.advertisementReport))
     }) { Text("Copy advertisement report") }
+    if (!device.identity.startsWith("serial:")) Text("Stable recorder identity is unavailable. Saved setup and partial downloads are tied to this address and may not survive address changes.")
     Button(enabled = !controller.busy, onClick = { scanner.stop(); controller.inspect(device.address) }) { Text("Read device information") }
     Text("Reads firmware and model over Bluetooth. No binding token is needed. Missing values are reported as unavailable.", style = MaterialTheme.typography.bodySmall)
     if (editing) {
@@ -81,14 +82,14 @@ fun PlaudSyncActions(device: RecorderAdvertisement, controller: PlaudSyncControl
             modifier = Modifier.fillMaxWidth(),
         )
         Button(enabled = !controller.busy && PlaudProtocol.validToken(token), onClick = {
-            if (controller.saveToken(device.address, token)) {
+            if (controller.saveToken(device.identity, token)) {
                 token = ""
                 editing = false
                 message = "Binding token saved privately. Ready to sync."
             } else message = "Could not save the binding token."
         }) { Text("Save binding token") }
     } else {
-        Button(enabled = !controller.busy, onClick = { scanner.stop(); controller.sync(device.address) }) { Text("Sync recordings") }
+        Button(enabled = !controller.busy, onClick = { scanner.stop(); controller.sync(device) }) { Text("Sync recordings") }
         TextButton(enabled = !controller.busy, onClick = { editing = true }) { Text("Change binding token") }
     }
     message?.let { Text(it) }
@@ -101,7 +102,7 @@ fun PlaudSyncActions(device: RecorderAdvertisement, controller: PlaudSyncControl
             confirmSwitch = false
             token = ""
             scanner.stop()
-            controller.switchBindingAfterConfirmation(device.address)
+            controller.switchBindingAfterConfirmation(device)
             editing = false
         }) { Text("Switch to Agentix") } },
         dismissButton = { TextButton(onClick = { confirmSwitch = false }) { Text("Cancel") } },

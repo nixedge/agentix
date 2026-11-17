@@ -2,6 +2,8 @@
 
 ## Firmware check on the owner's laptop
 
+**Identity diagnostics v3:** owner reports continually changing addresses. Install the newer identity build, scan, copy **advertisement report**, then rescan and compare **Recorder identity: serial:…** across address changes. If it stays constant, the app keeps one card and uses that key for token lookup/new partials/imports while connecting to the latest MAC. If identity is unavailable or changes too, return both reports before assuming these results are the same recorder. No grouping by name/model/firmware. Prior MAC-keyed downloads and token preferences remain untouched; this version does not automatically migrate them. Re-enter an existing binding token for the stable identity when needed rather than repeatedly switching binding because an address changed.
+
 The phone and Plaud are with the owner elsewhere. Build/install on that laptop; no ADB connection to this development host is expected.
 
 **Advertisement diagnostics v2:** the owner's first physical report confirmed the standard firmware service is absent. After installing the newer advertisement build, use **Devices → Scan → Copy advertisement report** on the recorder card. The report reads firmware from manufacturer advertisements during scanning, shows protocol separately, and copies only a bounded project/version prefix without serial/MAC/name. It does not connect or send commands. Wake/disconnect the official app and scan again for a fresh timestamp. Return this report even if parsing says unavailable. The existing **Read device information** action still checks GATT separately and may continue reporting firmware unavailable there.

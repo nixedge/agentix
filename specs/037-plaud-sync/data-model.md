@@ -2,7 +2,9 @@
 
 `RemoteRecording(sessionId:u32,size:u32,scene:u16)` requires positive80-byte-aligned size bounded to256MiB and a nonzero session.
 
-`RecorderKey`: SHA256 of normalized BLE address, truncated to128bits for safe deterministic filenames. Token is stored separately in backup-excluded private preferences and is never part of filenames.
+`RecorderIdentity`: `serial:<32hex>` from a domain-separated SHA256 of validated advertised project/serial, truncated to128bits. Firmware, MAC, RSSI and binding flags are excluded. This is an advertised identity, not authenticated ownership. Scanner/Compose/token preferences use it; GATT uses the latest MAC. Missing or unsupported serial explicitly falls back to address-only identity.
+
+`RecorderKey`: the32hex serial fingerprint for new imports with stable identity. Legacy address-only identity retains SHA256 of normalized MAC truncated to128bits. Old preferences/files are not guessed into a new identity, renamed, merged or deleted. Existing completed upload IDs remain immutable. Token is stored separately in backup-excluded private preferences and is never part of filenames.
 
 `Download`: `plaud-partials/<key>-<session>-<size>.part`; complete89-byte wire records only. Each has matching session, strictly contiguous compressed-byte offset, supported length and Opus frame duration. Partial trailing record from process interruption is truncated before resume. Full records are rescanned on reopen, including checksums. A protocol/checksum error does not publish an import.
 

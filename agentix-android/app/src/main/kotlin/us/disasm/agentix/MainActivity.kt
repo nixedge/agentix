@@ -223,6 +223,7 @@ private fun DevicesScreen(scanner: PlaudScanner) {
     Text(scanner.status)
     if (scanner.devices.isEmpty()) Text(stringResource(R.string.scan_none))
     scanner.devices.forEach { device ->
+        androidx.compose.runtime.key(device.identity) {
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(device.name ?: stringResource(R.string.device_unknown), style = MaterialTheme.typography.titleMedium)
@@ -231,6 +232,7 @@ private fun DevicesScreen(scanner: PlaudScanner) {
                 Text(stringResource(R.string.device_unverified))
                 PlaudSyncActions(device, sync, scanner)
             }
+        }
         }
     }
 }

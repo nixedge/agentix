@@ -7,6 +7,9 @@
 
 ## User Scenarios & Testing
 
+### US6 — Keep recorder identity across changing addresses (P1)
+Owner reports continuously changing MAC addresses. Use a validated manufacturer serial fingerprint for scan deduplication, token lookup and future download/source identity; use current MAC only for transport. Include the fingerprint in diagnostics to verify stability remotely. Invalid/missing serial must be explicit, never group by model/name/firmware. Preserve existing MAC-based files/preferences; do not guess a migration or merge originals across devices. A stable fingerprint is an unauthenticated advertised identity, not proof of ownership.
+
 ### US5 — Read recorder firmware remotely (P1)
 The phone is with the owner on another laptop. The debug app must offer a Bluetooth-only device-information read before binding or syncing, showing firmware, hardware, software and model values actually reported by the recorder. Missing/unreadable values must be explicit. A copyable diagnostic report includes discovered service/characteristic UUIDs and read status, without binding tokens, audio or recorder address. Inspection must send no vendor commands, change no binding and download no recordings. Physical verification is performed by the owner; provide reproducible laptop build/sign/install instructions.
 

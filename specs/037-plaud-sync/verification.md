@@ -1,5 +1,13 @@
 # Verification — 2026-11-17
 
+## Rotating-address identity v3 follow-up
+
+Owner reports continuously changing scan MACs; the reason is unverified. Inspection confirmed MAC was used for card deduplication, token keys and download identity. These now use validated advertised project/serial fingerprints when available, keeping the latest MAC only for connection. Compose card state is keyed by identity. Missing identity explicitly remains address-only. No automatic merging/migration/deletion of old MAC-keyed files or preferences.
+
+`nix build -L .#agentix-android --out-link result-037-identity` passed:81 JVM tests, lint zero errors (22 warnings,8 hints), independent FFmpeg decode. New tests verify fingerprint stability across firmware/flag changes, different-serial isolation, malformed/sentinel rejection, stable-key partial resume/import deduplication, separation from other identities and legacy files, and invalid-key rejection. Physical address rotation, token continuity and fingerprint stability still require the owner's report; unit tests do not prove advertised serial stability.
+
+Output `/nix/store/s317a8024bcy5r0y8as0ywjh3gir94hw-agentix-android-0.1.0`; log `/tmp/agentix-037-identity.log`. Same-key signed/verified16KiB-aligned APK `/home/sam/home/agentix/.android-state/apks/agentix-android-037-identity.apk`, SHA256 `0e7b945e4bd5295e7624a45f6989e358591e8a518660bf1d700955acf7bd22f8`; signing log `/tmp/agentix-037-identity-sign.log`. Collect two v3 advertisement reports after installing on the owner's laptop/phone. Backend remains unchanged.
+
 ## Advertisement diagnostics v2 follow-up
 
 Owner's real GATT report (collected21:06:29Z, API37) establishes service discovery with1910 command/notify and180F battery but no180A Device Information service. Firmware/protocol values remain unknown. Owner approved the next passive advertisement approach explicitly.

@@ -21,6 +21,7 @@ import us.disasm.agentix.core.PlaudAdvertisement
 
 data class RecorderAdvertisement(
     val address: String,
+    val identity: String,
     val name: String?,
     val rssi: Int,
     val projectCode: Int?,
@@ -80,16 +81,18 @@ class PlaudScanner(private val context: Context) {
         val manufacturers = record.manufacturerSpecificData
         val manufacturerIds = (0 until minOf(manufacturers.size(), 8)).joinToString { "0x%04x".format(manufacturers.keyAt(it)) }.ifBlank { "none" }
         if (!PlaudAdvertisement.matches(record.deviceName, payload)) return
+        val serialIdentity = PlaudAdvertisement.identity(payload, manufacturerId)
         val device = RecorderAdvertisement(
             result.device.address,
+            serialIdentity ?: result.device.address,
             record.deviceName,
             result.rssi,
             PlaudAdvertisement.projectCode(payload),
-            "Plaud advertisement diagnostics v2\nCollected ${java.time.Instant.now()}\nAndroid API ${Build.VERSION.SDK_INT}\nRSSI: ${result.rssi} dBm\nObserved manufacturer IDs: $manufacturerIds\n${PlaudAdvertisement.diagnostic(payload, manufacturerId)}\nPassive scan result; no GATT connection or Plaud commands.",
+            "Plaud advertisement diagnostics v3\nCollected ${java.time.Instant.now()}\nAndroid API ${Build.VERSION.SDK_INT}\nRSSI: ${result.rssi} dBm\nRecorder identity: ${serialIdentity ?: "unavailable; address-only tracking"} (advertised, not authenticated)\nObserved manufacturer IDs: $manufacturerIds\n${PlaudAdvertisement.diagnostic(payload, manufacturerId)}\nPassive scan result; no GATT connection or Plaud commands.",
         )
         handler.post {
             if (scanning) {
-                devices = (devices.filterNot { it.address == device.address } + device)
+                devices = (devices.filterNot { it.identity == device.identity || it.address == device.address } + device)
                     .sortedByDescending { it.rssi }
             }
         }

@@ -10,7 +10,7 @@ data class PlaudProgress(val message: String, val imported: Int = 0, val bytes: 
 data class PlaudSyncResult(val protocol: Int, val imported: Int, val existing: Int)
 
 class PlaudSync(private val transport: PlaudTransport, private val library: PlaudLibrary) {
-    suspend fun run(address: String, token: String, progress: (PlaudProgress) -> Unit): PlaudSyncResult {
+    suspend fun run(identity: String, token: String, progress: (PlaudProgress) -> Unit): PlaudSyncResult {
         progress(PlaudProgress("Authenticating Plaud…"))
         transport.send(PlaudProtocol.handshake(token))
         val version = PlaudProtocol.authenticate(response(1))
@@ -20,7 +20,7 @@ class PlaudSync(private val transport: PlaudTransport, private val library: Plau
         var imported = 0
         var existing = 0
         recordings.forEachIndexed { index, recording ->
-            library.open(address, recording).use { download ->
+            library.open(identity, recording).use { download ->
                 if (download.imported) {
                     existing++
                     return@forEachIndexed

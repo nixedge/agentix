@@ -18,6 +18,22 @@ class PlaudSyncTest {
     private val token = "0123456789abcdef0123456789abcdef"
     private val recording = RemoteRecording(1_700_000_000, 160, 1)
 
+    @Test fun stableIdentityResumesAndDeduplicatesWithoutMergingLegacyOrOtherRecorders() {
+        val library = PlaudLibrary(temporary.root)
+        val identity = "serial:" + "a".repeat(32)
+        library.open(identity, recording).use { it.accept(record(0)) }
+        library.open(identity, recording).use {
+            assertEquals(80L, it.position)
+            it.accept(record(80))
+            it.checkComplete(0xffff)
+            it.publish()
+        }
+        library.open(identity, recording).use { assertTrue(it.imported) }
+        library.open("serial:" + "b".repeat(32), recording).use { assertFalse(it.imported); assertEquals(0L, it.position) }
+        library.open(address, recording).use { assertFalse(it.imported); assertEquals(0L, it.position) }
+        assertThrows(IllegalArgumentException::class.java) { library.open("serial:../bad", recording) }
+    }
+
     @Test fun commandBytesUseDocumentedWidthsAndExcludeDeletion() {
         val handshake = PlaudProtocol.handshake(token)
         assertEquals(38, handshake.size)
