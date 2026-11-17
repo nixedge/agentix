@@ -28,6 +28,8 @@ Before and after design: pass. Existing native Android exception established by0
 
 ## Design decisions
 
+Owner-requested remote diagnostics: add a read-only inspection mode to the existing GATT transport, ending after service discovery and standard Device Information (0x180A) reads. Read firmware (0x2A26), hardware (0x2A27), software (0x2A28), model (0x2A24) and manufacturer (0x2A29) sequentially. Match read callback UUIDs, bound values and deadlines, abort on timeout rather than issuing another overlapping read. No subscription, handshake or binding command in inspection mode. Preserve the bounded report on failure and expose Copy device report in Devices. Include app/Android build context and GATT UUID/property inventory; omit addresses/tokens/audio. Extend the existing spec rather than allocate another feature.
+
 Download raw voice records with their session/offset headers retained in partials for checksum and resume validation. Enforce exact size, contiguous offsets, supported frame geometry and matching session. Build Ogg Opus to a temporary file, fsync and atomically rename to a deterministic device/session/size filename. Only published files enter Inbox. On retry, validate existing partial records before computing resume position. Existing completed files avoid transfer; stale temporary output can be rebuilt from the retained partial. Restrict send command constructors to the required read/download operations and checksum acknowledgement. No device deletion or binding-clear command is included in ordinary sync.
 
 Existing binding: allow private token entry; authentication mismatch is actionable and never triggers a reset. A binding migration requires a separate concrete owner decision and hardware checkpoint; do not silently introduce CMD5.

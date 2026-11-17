@@ -24,13 +24,19 @@ import us.disasm.agentix.core.plaud.PlaudTransport
 @SuppressLint("MissingPermission")
 @Suppress("DEPRECATION")
 class PlaudGatt(private val context: Context) : PlaudTransport {
-    private data class Signal(val operation: String, val status: Int, val value: Int = 0)
+    private data class Signal(val operation: String, val status: Int, val value: Int = 0, val bytes: ByteArray = byteArrayOf())
     private val signals = Channel<Signal>(8)
     private val notifications = Channel<ByteArray>(512)
     private val handler = Handler(Looper.getMainLooper())
     private var active: BluetoothGatt? = null
     private var writeCharacteristic: BluetoothGattCharacteristic? = null
     private var closed = false
+    private val report = StringBuilder()
+    val deviceReport: String get() = report.toString()
+
+    private fun readResult(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, value: ByteArray, status: Int) {
+        signal(gatt, Signal("read:${characteristic.uuid}", status, bytes = value.take(512).toByteArray()))
+    }
 
     private fun fail(message: String) {
         val failure = PlaudException(message)
@@ -66,6 +72,11 @@ class PlaudGatt(private val context: Context) : PlaudTransport {
         override fun onCharacteristicWrite(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) {
             if (characteristic.uuid == uuid(0x2bb1)) signal(gatt, Signal("written", status))
         }
+        override fun onCharacteristicRead(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, value: ByteArray, status: Int) =
+            readResult(gatt, characteristic, value, status)
+        override fun onCharacteristicRead(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) {
+            if (Build.VERSION.SDK_INT < 33) readResult(gatt, characteristic, characteristic.value ?: byteArrayOf(), status)
+        }
         override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, value: ByteArray) =
             notification(gatt, characteristic, value)
         override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
@@ -73,7 +84,7 @@ class PlaudGatt(private val context: Context) : PlaudTransport {
         }
     }
 
-    suspend fun open(address: String): Unit = withContext(Dispatchers.Main.immediate) {
+    suspend fun open(address: String, inspectOnly: Boolean = false): Unit = withContext(Dispatchers.Main.immediate) {
         check(active == null && !closed)
         val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter
             ?: throw PlaudException("Bluetooth is unavailable")
@@ -85,6 +96,10 @@ class PlaudGatt(private val context: Context) : PlaudTransport {
         val gatt = checkNotNull(active)
         if (!gatt.discoverServices()) throw PlaudException("Could not request recorder services")
         await("services")
+        if (inspectOnly) {
+            inspectInformation(gatt)
+            return@withContext
+        }
         val service = gatt.getService(uuid(0x1910)) ?: throw PlaudException("Device does not expose the supported Plaud service")
         val notify = service.getCharacteristic(uuid(0x2bb0)) ?: throw PlaudException("Recorder notification characteristic missing")
         val write = service.getCharacteristic(uuid(0x2bb1)) ?: throw PlaudException("Recorder command characteristic missing")
@@ -104,6 +119,38 @@ class PlaudGatt(private val context: Context) : PlaudTransport {
         if (!accepted) throw PlaudException("Could not subscribe to recorder notifications")
         await("subscribed")
         Unit
+    }
+
+    private suspend fun inspectInformation(gatt: BluetoothGatt) {
+        report.appendLine("Bluetooth service discovery: complete")
+        report.appendLine("GATT services and characteristic properties:")
+        gatt.services.take(32).forEach { discovered ->
+            report.appendLine("Service ${discovered.uuid}")
+            discovered.characteristics.take(32).forEach { characteristic ->
+                report.appendLine("  ${characteristic.uuid} properties=0x${characteristic.properties.toString(16)}")
+            }
+        }
+        val service = gatt.getService(uuid(0x180a))
+        for ((label, id) in listOf("Firmware" to 0x2a26, "Hardware" to 0x2a27, "Software" to 0x2a28, "Model" to 0x2a24, "Manufacturer" to 0x2a29)) {
+            val characteristic = service?.getCharacteristic(uuid(id))
+            if (characteristic == null) {
+                report.appendLine("$label: not exposed by recorder")
+            } else if (characteristic.properties and BluetoothGattCharacteristic.PROPERTY_READ == 0) {
+                report.appendLine("$label: characteristic is not readable")
+            } else if (!gatt.readCharacteristic(characteristic)) {
+                report.appendLine("$label: Android rejected read request")
+            } else {
+                report.appendLine("$label: reading…")
+                val operation = "read:${characteristic.uuid}"
+                val result = withTimeout(10_000) { signals.receive() }
+                if (result.operation != operation) throw PlaudException("Unexpected Bluetooth callback during $label read")
+                val value = if (result.status == BluetoothGatt.GATT_SUCCESS) {
+                    result.bytes.toString(Charsets.UTF_8).trimEnd('\u0000').map { if (it.isISOControl()) ' ' else it }.joinToString("").take(256).ifBlank { "empty value" }
+                } else "read failed (Bluetooth status ${result.status})"
+                report.appendLine("$label: $value")
+            }
+        }
+        report.appendLine("Inspection complete. No Plaud commands sent. Protocol version was not probed.")
     }
 
     override suspend fun send(packet: ByteArray) = withContext(Dispatchers.Main.immediate) {

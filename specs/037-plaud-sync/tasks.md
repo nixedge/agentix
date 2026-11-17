@@ -17,3 +17,5 @@
 - [x] T015 [US4] Implement phone upload opt-in, durable pinned retries, per-file status and explicit server sync.
 - [x] T016 [US4] Add real storage/API/LanceDB tests and run relevant Rust/Nix/Android verification; prepare updated signed APK.
 - [ ] T017 [US4] Real deployment/connectivity and phone upload acceptance; verify stored original, restart/retry, transcription and search on the owner's server.
+- [x] T018 [US5] Add token-free Bluetooth firmware/model inspection and copyable bounded diagnostics; no vendor commands or binding changes.
+- [x] T019 [US5] Build/check the debug APK and document owner-laptop signing/install/report collection; update handoff and commit.

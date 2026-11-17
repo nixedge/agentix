@@ -1,5 +1,13 @@
 # Verification — 2026-11-17
 
+## Remote firmware inspection follow-up
+
+Owner clarified that the phone/Plaud are on their laptop in another state. Added token-free **Read device information** and **Copy device report**: serialized standard Bluetooth firmware/hardware/software/model/manufacturer reads, explicit missing/failed values, and bounded GATT UUID/property inventory retained on timeout/cancellation. No vendor commands, subscriptions or binding operations occur in this mode. Actual recorder firmware remains unknown until the owner runs it and shares the report.
+
+Final follow-up `nix build -L .#agentix-android --out-link result-037-firmware-final` passed. All73 existing JVM tests passed; lint zero errors (21 warnings,8 hints); independent FFmpeg Ogg decoding passed. Output `/nix/store/6zikisa342hrn2yd1kaa2rng5ca7gxk5-agentix-android-0.1.0`. Log `/tmp/agentix-037-firmware-final.log`.
+
+Signed/verified same-owner-key debug APK: `/home/sam/home/agentix/.android-state/apks/agentix-android-037-firmware.apk`, SHA256 `7800f576c930d86f1ccb79d0e99beafbcac2d7d885a38e50e223f05e47ace4e8`. Signature and16KiB alignment passed. This supersedes the earlier APK below. Owner-laptop instructions are in quickstart and root handoff. No installation or physical read was performed here. No additional Rust checks were needed for this Android/documentation-only follow-up.
+
 ## Implemented behavior
 
 Explicit NB100→phone sync with conservative protocol10 parsing, retained BLE partials, duplicate prevention, playable Ogg Opus and existing Inbox/play/share/archive. Existing token setup or a separately confirmed binding switch; ordinary sync never unbinds or deletes recordings.

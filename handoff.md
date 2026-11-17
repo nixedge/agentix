@@ -3,6 +3,18 @@
 Updated 2026-11-17. Worktree: `/home/sam/home/agentix/037-plaud-sync`.
 Branch: `037-plaud-sync`. Implementation commit: `6f0357d` (`feat: sync Plaud recordings through Android to server`). Nothing has been pushed, merged, deployed or installed on the phone. The owner handles merging into master.
 
+## Owner's remote firmware checkpoint
+
+The phone and recorder are on the owner's laptop in another state; do not wait for local ADB or assume physical access. The debug app now adds **Devices → Scan → Read device information**, then **Copy device report**. It reads standard Bluetooth firmware/hardware/software/model/manufacturer values without any binding token, vendor handshake or reset. Missing/read-denied values are explicit, and the discovered UUID/property inventory survives later read timeouts. The owner should return the copied report before any unsupported-layout changes. Standard Device Information may be absent on this firmware; do not guess a vendor command or label protocol10 as firmware.
+
+Owner-laptop build/sign/install instructions are in the [firmware quickstart](specs/037-plaud-sync/quickstart.md#firmware-check-on-the-owners-laptop). Existing signing identity must match the installed app. A prepared signed firmware APK can be transferred instead of copying the signing secrets. Firmware-reading hardware acceptance remains pending even after the debug build passes.
+
+Latest firmware-inspection debug APK: `/home/sam/home/agentix/.android-state/apks/agentix-android-037-firmware.apk`.
+SHA256: `7800f576c930d86f1ccb79d0e99beafbcac2d7d885a38e50e223f05e47ace4e8`.
+It supersedes the earlier server-sync APK below and includes all of that functionality. Canonical Nix build passed (73 JVM tests, lint zero errors, independent FFmpeg decode), output `/nix/store/6zikisa342hrn2yd1kaa2rng5ca7gxk5-agentix-android-0.1.0`. Existing owner-key signature and 16 KiB alignment verified. Logs: `/tmp/agentix-037-firmware-final.log` and `/tmp/agentix-037-firmware-sign.log`.
+
+An incremental Git source bundle is prepared outside the checkout at `/home/sam/home/agentix/.android-state/handoffs/agentix-037-firmware.bundle`, containing this feature branch since base `5e66f35`. Transfer it to the laptop, run `git bundle verify /path/to/agentix-037-firmware.bundle` in the existing repository (which must contain that base), then fetch its `refs/heads/037-plaud-sync` into the local feature branch. Use the normal sibling-worktree layout. This enables a local build without pushing the branch; the APK can instead be installed directly after transfer.
+
 ## Implemented
 
 - Explicit NB100 → Android BLE download, retained partials/resume, duplicate prevention, Ogg Opus output and Inbox playback/share/archive.

@@ -1,5 +1,11 @@
 # Research — 2026-11-17
 
+## Remote Bluetooth firmware inspection
+
+Read actual standard Device Information values without a vendor handshake: service0x180A; firmware0x2A26, hardware0x2A27, software0x2A28, model0x2A24 and manufacturer0x2A29. A recorder may omit or restrict these characteristics; neither its advertisement name nor protocol10 establishes firmware. Preserve discovered UUID/property inventory even if a read times out, so a later vendor-specific implementation can use observed evidence. No firmware update/reset/read-unknown-vendor-command is part of inspection.
+
+Primary references: [Bluetooth SIG assigned numbers](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Assigned_Numbers/out/en/index-en.html), [Device Information Service](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/DIS_v1.2/out/en/index-en.html), [Android GATT read callbacks](https://developer.android.com/reference/android/bluetooth/BluetoothGattCallback). API33+ uses callback value bytes; older Android uses the deprecated characteristic value callback. Reads stay serialized and abort on a missing callback rather than issuing an overlapping request.
+
 Sources indexed through agentic-nix and checked against upstream:
 
 - `Kurikara-dev/plaud-note-nb100-re` revision `9d840b3d5af9`: docs02–07. https://github.com/Kurikara-dev/plaud-note-nb100-re

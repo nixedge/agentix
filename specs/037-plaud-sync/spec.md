@@ -7,6 +7,11 @@
 
 ## User Scenarios & Testing
 
+### US5 — Read recorder firmware remotely (P1)
+The phone is with the owner on another laptop. The debug app must offer a Bluetooth-only device-information read before binding or syncing, showing firmware, hardware, software and model values actually reported by the recorder. Missing/unreadable values must be explicit. A copyable diagnostic report includes discovered service/characteristic UUIDs and read status, without binding tokens, audio or recorder address. Inspection must send no vendor commands, change no binding and download no recordings. Physical verification is performed by the owner; provide reproducible laptop build/sign/install instructions.
+
+Acceptance: inspecting a discovered device requires no binding token; reads use serialized GATT callbacks and finite deadlines; absent firmware never becomes an inferred version; disconnect/cancel preserves a partial report; reports can be copied for follow-up.
+
 ### US1 — Connect the owner's recorder (P1)
 The owner scans, selects a recorder, and explicitly connects with a persistent private binding token. Device-reported protocol evidence determines compatibility, not an advertisement name.
 

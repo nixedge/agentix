@@ -35,6 +35,60 @@ class PlaudSyncController(private val context: Context, private val scope: Corou
         private set
     var failed by mutableStateOf(false)
         private set
+    var deviceReport by mutableStateOf("")
+        private set
+
+    fun inspect(address: String) {
+        if (busy) return
+        val current = ++generation
+        busy = true
+        failed = false
+        val version = context.packageManager.getPackageInfo(context.packageName, 0).versionName
+        val header = "Agentix $version · Plaud firmware inspection v1\nAndroid API ${android.os.Build.VERSION.SDK_INT}\nCollected ${java.time.Instant.now()}\nRead-only GATT inspection; no Plaud commands or binding changes.\n"
+        deviceReport = header + "Connecting…"
+        progress = PlaudProgress("Reading recorder firmware over Bluetooth…")
+        val connection = PlaudGatt(context)
+        transport = connection
+        job = scope.launch {
+            var outcome = "Inspection stopped before completion."
+            try {
+                withTimeout(90_000) { connection.open(address, inspectOnly = true) }
+                outcome = "Device information read complete."
+                progress = PlaudProgress("Device information read complete. Copy the device report below.")
+            } catch (_: TimeoutCancellationException) {
+                failed = true
+                outcome = "Bluetooth read timed out. Wake recorder, disconnect official app and retry."
+                progress = PlaudProgress(outcome)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: SecurityException) {
+                failed = true
+                outcome = "Nearby devices permission is required."
+                progress = PlaudProgress(outcome)
+            } catch (error: IOException) {
+                failed = true
+                outcome = error.message ?: "Bluetooth information read failed."
+                progress = PlaudProgress(outcome)
+            } catch (_: IllegalArgumentException) {
+                failed = true
+                outcome = "Invalid recorder address."
+                progress = PlaudProgress(outcome)
+            } catch (_: IllegalStateException) {
+                failed = true
+                outcome = "Bluetooth connection unavailable."
+                progress = PlaudProgress(outcome)
+            } finally {
+                deviceReport = header + connection.deviceReport + outcome
+                connection.close()
+                if (generation == current) {
+                    generation++
+                    busy = false
+                    transport = null
+                    job = null
+                }
+            }
+        }
+    }
 
     fun hasToken(address: String): Boolean = preferences.contains(address)
 

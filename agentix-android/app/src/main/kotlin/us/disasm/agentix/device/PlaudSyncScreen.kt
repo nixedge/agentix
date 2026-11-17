@@ -35,6 +35,15 @@ fun PlaudSyncStatus(controller: PlaudSyncController) {
         onDispose { lifecycle?.removeObserver(observer); controller.cancel() }
     }
     val progress = controller.progress
+    if (controller.deviceReport.isNotEmpty()) {
+        androidx.compose.foundation.text.selection.SelectionContainer {
+            Text(controller.deviceReport, style = MaterialTheme.typography.bodySmall)
+        }
+        TextButton(enabled = !controller.busy, onClick = {
+            context.getSystemService(android.content.ClipboardManager::class.java)
+                .setPrimaryClip(android.content.ClipData.newPlainText("Plaud device information", controller.deviceReport))
+        }) { Text("Copy device report") }
+    }
     Text(progress.message, color = if (controller.failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
     if (progress.totalBytes > 0 && controller.busy) {
         LinearProgressIndicator(progress = { (progress.bytes.toFloat() / progress.totalBytes).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
@@ -49,6 +58,8 @@ fun PlaudSyncActions(device: RecorderAdvertisement, controller: PlaudSyncControl
     var editing by remember(device.address) { mutableStateOf(!controller.hasToken(device.address)) }
     var message by remember(device.address) { mutableStateOf<String?>(null) }
     var confirmSwitch by remember(device.address) { mutableStateOf(false) }
+    Button(enabled = !controller.busy, onClick = { scanner.stop(); controller.inspect(device.address) }) { Text("Read device information") }
+    Text("Reads firmware and model over Bluetooth. No binding token is needed. Missing values are reported as unavailable.", style = MaterialTheme.typography.bodySmall)
     if (editing) {
         Text("This recorder was paired with the Plaud app. Enter its existing 32-character binding token to preserve that binding. This is not your server token or Plaud password.")
         OutlinedTextField(
