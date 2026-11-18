@@ -27,6 +27,10 @@ pub fn extract_symbols(source: &str, language: &str) -> Vec<Symbol> {
         "cpp" => extract_cpp_symbols(bytes, &lines),
         "java" => extract_java_symbols(bytes, &lines),
         "kotlin" => extract_kotlin_symbols(bytes, &lines),
+        "agda" => extract_agda_symbols(bytes, &lines),
+        "lean" => extract_lean_symbols(bytes, &lines),
+        "go" => extract_go_symbols(bytes, &lines),
+        "elm" => extract_elm_symbols(bytes, &lines),
         _ => vec![],
     };
 
@@ -37,6 +41,331 @@ pub fn extract_symbols(source: &str, language: &str) -> Vec<Symbol> {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+fn source_symbol(node: tree_sitter::Node<'_>, name: String, kind: &str, lines: &[&str]) -> Symbol {
+    let start = node.start_position().row;
+    let position = node.end_position();
+    let end = position
+        .row
+        .saturating_sub(usize::from(position.column == 0))
+        .max(start)
+        .min(lines.len().saturating_sub(1));
+    Symbol {
+        name,
+        kind: kind.into(),
+        content: lines_slice(lines, start, end),
+        start_line: start + 1,
+        end_line: end + 1,
+    }
+}
+
+fn named_child_of_kind<'a>(
+    node: tree_sitter::Node<'a>,
+    kind: &str,
+) -> Option<tree_sitter::Node<'a>> {
+    let mut cursor = node.walk();
+    let found = node
+        .named_children(&mut cursor)
+        .find(|child| child.kind() == kind);
+    found
+}
+
+fn agda_name(node: tree_sitter::Node<'_>, source: &[u8]) -> Option<String> {
+    if matches!(
+        node.kind(),
+        "id" | "qid" | "function_name" | "data_name" | "record_name"
+    ) {
+        return node.utf8_text(source).ok().map(str::to_owned);
+    }
+    let mut cursor = node.walk();
+    for child in node.named_children(&mut cursor) {
+        if let Some(name) = agda_name(child, source) {
+            return Some(name);
+        }
+    }
+    None
+}
+
+fn extract_agda_symbols(source: &[u8], lines: &[&str]) -> Vec<Symbol> {
+    let Some(mut parser) = make_parser(tree_sitter_agda::LANGUAGE.into()) else {
+        return vec![];
+    };
+    let Some(tree) = parser.parse(source, None) else {
+        return vec![];
+    };
+    let mut syms = vec![];
+    visit_agda_declarations(tree.root_node(), source, lines, &mut syms);
+    syms
+}
+
+fn visit_agda_declarations(
+    node: tree_sitter::Node<'_>,
+    source: &[u8],
+    lines: &[&str],
+    syms: &mut Vec<Symbol>,
+) {
+    let mut cursor = node.walk();
+    let mut previous_function: Option<usize> = None;
+    let scope_start = syms.len();
+    for child in node.named_children(&mut cursor) {
+        // The grammar can recover an indented constructor/field as a sibling.
+        // Keep that source inside its data/record chunk using original indentation.
+        let has_local_symbol = syms.len() > scope_start;
+        if let Some(previous) = syms
+            .last_mut()
+            .filter(|s| has_local_symbol && matches!(s.kind.as_str(), "type" | "struct"))
+        {
+            let indentation = lines[previous.start_line - 1].len()
+                - lines[previous.start_line - 1].trim_start().len();
+            if matches!(child.kind(), "function" | "fields")
+                && child.start_position().column > indentation
+            {
+                let position = child.end_position();
+                previous.end_line = position.row + usize::from(position.column != 0);
+                previous.content =
+                    lines_slice(lines, previous.start_line - 1, previous.end_line - 1);
+                previous_function = None;
+                continue;
+            }
+        }
+        let (kind, name_node) = match child.kind() {
+            "function" => ("function", named_child_of_kind(child, "lhs")),
+            "data" | "data_signature" => ("type", named_child_of_kind(child, "data_name")),
+            "record" | "record_signature" => ("struct", named_child_of_kind(child, "record_name")),
+            "module" | "mutual" | "abstract" | "private" | "instance" | "macro" | "postulate"
+            | "ERROR" => {
+                previous_function = None;
+                visit_agda_declarations(child, source, lines, syms);
+                continue;
+            }
+            _ => {
+                previous_function = None;
+                continue;
+            }
+        };
+        let Some(name) = name_node.and_then(|n| agda_name(n, source)) else {
+            continue;
+        };
+        let mut symbol = source_symbol(child, name, kind, lines);
+        // Agda signatures and equations are separate AST nodes; keep consecutive
+        // equations together so a function's type and implementation stay searchable.
+        if kind == "function" {
+            if let Some(index) = previous_function {
+                if syms[index].name.contains('_') {
+                    if let Some(lhs) = name_node.and_then(|n| n.utf8_text(source).ok()) {
+                        let parts: Vec<_> = syms[index]
+                            .name
+                            .split('_')
+                            .filter(|s| !s.is_empty())
+                            .collect();
+                        if !parts.is_empty()
+                            && parts
+                                .iter()
+                                .all(|part| lhs.split_whitespace().any(|token| token == *part))
+                        {
+                            symbol.name.clone_from(&syms[index].name);
+                        }
+                    }
+                }
+                if syms[index].name == symbol.name {
+                    let previous = &mut syms[index];
+                    previous.end_line = symbol.end_line;
+                    previous.content =
+                        lines_slice(lines, previous.start_line - 1, symbol.end_line - 1);
+                    continue;
+                }
+            }
+            previous_function = Some(syms.len());
+        } else {
+            previous_function = None;
+        }
+        syms.push(symbol);
+    }
+}
+
+fn extract_lean_symbols(source: &[u8], lines: &[&str]) -> Vec<Symbol> {
+    let Some(mut parser) = make_parser(tree_sitter_lean4::language()) else {
+        return vec![];
+    };
+    let Some(tree) = parser.parse(source, None) else {
+        return vec![];
+    };
+    let mut syms = vec![];
+    visit_lean_declarations(tree.root_node(), source, lines, &mut syms);
+    syms
+}
+
+fn visit_lean_declarations(
+    node: tree_sitter::Node<'_>,
+    source: &[u8],
+    lines: &[&str],
+    syms: &mut Vec<Symbol>,
+) {
+    let kind = match node.kind() {
+        "definition" => match node
+            .child_by_field_name("kind")
+            .and_then(|n| n.utf8_text(source).ok())
+        {
+            Some("theorem" | "lemma") => "theorem",
+            Some("abbrev") => "type",
+            None => "instance",
+            _ => "function",
+        },
+        "structure" => {
+            if node.utf8_text(source).is_ok_and(|s| s.starts_with("class")) {
+                "class"
+            } else {
+                "struct"
+            }
+        }
+        "inductive" | "class_inductive" => "type",
+        "axiom" => "axiom",
+        "constant" | "opaque" => "const",
+        "module" | "declaration" | "ERROR" => {
+            let mut cursor = node.walk();
+            for child in node.named_children(&mut cursor) {
+                visit_lean_declarations(child, source, lines, syms);
+            }
+            return;
+        }
+        _ => return,
+    };
+    if let Some(name) = node_name(&node, source) {
+        let extent = node
+            .parent()
+            .filter(|p| p.kind() == "declaration")
+            .unwrap_or(node);
+        syms.push(source_symbol(extent, name, kind, lines));
+    }
+}
+
+fn descendant_of_kind<'a>(
+    node: tree_sitter::Node<'a>,
+    kind: &str,
+) -> Option<tree_sitter::Node<'a>> {
+    if node.kind() == kind {
+        return Some(node);
+    }
+    let mut cursor = node.walk();
+    for child in node.named_children(&mut cursor) {
+        if let Some(found) = descendant_of_kind(child, kind) {
+            return Some(found);
+        }
+    }
+    None
+}
+
+fn extract_go_symbols(source: &[u8], lines: &[&str]) -> Vec<Symbol> {
+    let Some(mut parser) = make_parser(tree_sitter_go::LANGUAGE.into()) else {
+        return vec![];
+    };
+    let Some(tree) = parser.parse(source, None) else {
+        return vec![];
+    };
+    let mut syms = vec![];
+    visit_go_declarations(tree.root_node(), source, lines, &mut syms);
+    syms
+}
+
+fn visit_go_declarations(
+    node: tree_sitter::Node<'_>,
+    source: &[u8],
+    lines: &[&str],
+    syms: &mut Vec<Symbol>,
+) {
+    let kind = match node.kind() {
+        "function_declaration" => "function",
+        "method_declaration" => "method",
+        "type_alias" => "type",
+        "type_spec" => match node.child_by_field_name("type").map(|n| n.kind()) {
+            Some("struct_type") => "struct",
+            Some("interface_type") => "interface",
+            _ => "type",
+        },
+        "const_spec" => "const",
+        "var_spec" => "variable",
+        "source_file" | "type_declaration" | "const_declaration" | "var_declaration"
+        | "var_spec_list" => {
+            let mut cursor = node.walk();
+            for child in node.named_children(&mut cursor) {
+                visit_go_declarations(child, source, lines, syms);
+            }
+            return;
+        }
+        _ => return,
+    };
+    let mut cursor = node.walk();
+    for name_node in node.children_by_field_name("name", &mut cursor) {
+        let Ok(name) = name_node.utf8_text(source) else {
+            continue;
+        };
+        let mut name = name.to_owned();
+        if kind == "method" {
+            if let Some(receiver) = node
+                .child_by_field_name("receiver")
+                .and_then(|n| descendant_of_kind(n, "type_identifier"))
+                .and_then(|n| n.utf8_text(source).ok())
+            {
+                name = format!("{receiver}.{name}");
+            }
+        }
+        let extent = node
+            .parent()
+            .filter(|p| {
+                matches!(
+                    p.kind(),
+                    "type_declaration" | "const_declaration" | "var_declaration"
+                )
+            })
+            .unwrap_or(node);
+        let mut symbol = source_symbol(extent, name, kind, lines);
+        let doc_start = c_comment_start(lines, symbol.start_line - 1);
+        symbol.content = lines_slice(lines, doc_start, symbol.end_line - 1);
+        symbol.start_line = doc_start + 1;
+        syms.push(symbol);
+    }
+}
+
+fn extract_elm_symbols(source: &[u8], lines: &[&str]) -> Vec<Symbol> {
+    let Some(mut parser) = make_parser(tree_sitter_elm::LANGUAGE.into()) else {
+        return vec![];
+    };
+    let Some(tree) = parser.parse(source, None) else {
+        return vec![];
+    };
+    let mut syms: Vec<Symbol> = vec![];
+    let mut cursor = tree.root_node().walk();
+    for node in tree.root_node().named_children(&mut cursor) {
+        let (kind, name) = match node.kind() {
+            "type_annotation" | "port_annotation" => ("function", node_name(&node, source)),
+            "value_declaration" => (
+                "function",
+                node.child_by_field_name("functionDeclarationLeft")
+                    .and_then(|n| named_child_of_kind(n, "lower_case_identifier"))
+                    .and_then(|n| n.utf8_text(source).ok())
+                    .map(str::to_owned),
+            ),
+            "type_declaration" | "type_alias_declaration" => ("type", node_name(&node, source)),
+            _ => continue,
+        };
+        let Some(name) = name else {
+            continue;
+        };
+        let symbol = source_symbol(node, name, kind, lines);
+        if node.kind() == "value_declaration" {
+            if let Some(previous) = syms
+                .last_mut()
+                .filter(|s| s.kind == "function" && s.name == symbol.name)
+            {
+                previous.end_line = symbol.end_line;
+                previous.content = lines_slice(lines, previous.start_line - 1, symbol.end_line - 1);
+                continue;
+            }
+        }
+        syms.push(symbol);
+    }
+    syms
+}
 
 fn make_parser(lang: tree_sitter::Language) -> Option<tree_sitter::Parser> {
     let mut parser = tree_sitter::Parser::new();
@@ -1531,7 +1860,17 @@ mod tests {
 
     #[test]
     fn empty_source_returns_empty_for_all_languages() {
-        for lang in &["haskell", "rust", "python", "typescript", "nix"] {
+        for lang in &[
+            "haskell",
+            "rust",
+            "python",
+            "typescript",
+            "nix",
+            "agda",
+            "lean",
+            "go",
+            "elm",
+        ] {
             assert!(
                 sym(lang, "").is_empty(),
                 "language {lang} should return empty for empty source"

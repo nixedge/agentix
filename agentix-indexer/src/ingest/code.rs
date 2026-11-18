@@ -14,6 +14,10 @@ const MAX_CHUNK_BYTES: usize = 8_000;
 const MAX_CHUNKS_PER_FILE: usize = 256;
 
 const CODE_EXTENSIONS: &[&str] = &[
+    "agda",
+    "lagda",
+    "lean",
+    "elm",
     "hs",
     "lhs",
     "hsc",
@@ -50,6 +54,8 @@ const CODE_EXTENSIONS: &[&str] = &[
 ];
 
 const SKIP_DIRS: &[&str] = &[
+    ".lake",
+    "elm-stuff",
     "target",
     "dist",
     "build",
@@ -147,6 +153,12 @@ pub async fn ingest_code(
         let chunks =
             if file.extension().is_some_and(|e| e == "lhs") || filename.ends_with(".lhs-boot") {
                 make_lhs_chunks(&source)
+            } else if file
+                .extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(|e| e.eq_ignore_ascii_case("lagda"))
+            {
+                make_lagda_chunks(&source)
             } else {
                 make_chunks(&source, &language)
             };
@@ -250,6 +262,9 @@ fn detect_language(path: &Path) -> String {
         .unwrap_or("")
         .to_lowercase();
     match ext.as_str() {
+        "agda" | "lagda" => "agda",
+        "lean" => "lean",
+        "elm" => "elm",
         "hs" | "lhs" | "hsc" | "chs" => "haskell",
         "rs" => "rust",
         "py" => "python",
@@ -281,6 +296,10 @@ fn detect_language(path: &Path) -> String {
 // ── Chunking ──────────────────────────────────────────────────────────────────
 
 const SYMBOL_LANGUAGES: &[&str] = &[
+    "go",
+    "elm",
+    "agda",
+    "lean",
     "typescript",
     "javascript",
     "python",
@@ -375,6 +394,35 @@ fn chunk_lines(source: &str) -> Vec<Chunk> {
             break;
         }
         i += step;
+    }
+    chunks
+}
+
+fn make_lagda_chunks(source: &str) -> Vec<Chunk> {
+    let lines: Vec<_> = source.lines().collect();
+    let mut in_code = false;
+    let masked = lines
+        .iter()
+        .map(|line| match line.trim() {
+            "\\begin{code}" => {
+                in_code = true;
+                ""
+            }
+            "\\end{code}" => {
+                in_code = false;
+                ""
+            }
+            _ if in_code => *line,
+            _ => "",
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut chunks = make_chunks(&masked, "agda");
+    if chunks.is_empty() {
+        return chunk_lines(source);
+    }
+    for chunk in &mut chunks {
+        chunk.content = lines[(chunk.start_line - 1) as usize..chunk.end_line as usize].join("\n");
     }
     chunks
 }
@@ -474,6 +522,77 @@ mod tests {
     }
 
     // ── make_chunks ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn formal_source_discovery_respects_ignores_and_excludes_lake() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let repo = tmp.path();
+        std::fs::create_dir(repo.join(".git"))?;
+        std::fs::write(repo.join(".gitignore"), "ignored/\n")?;
+        let expected = [
+            ("Proof.agda", "agda"),
+            ("Literate.lagda", "agda"),
+            ("Upper.AGDA", "agda"),
+            ("Upper.LAGDA", "agda"),
+            ("Main.lean", "lean"),
+            ("Upper.LEAN", "lean"),
+            ("main.go", "go"),
+            ("Upper.GO", "go"),
+            ("Main.elm", "elm"),
+            ("Upper.ELM", "elm"),
+        ];
+        for file in expected.iter().map(|(file, _)| *file).chain([
+            ".lake/packages/Dependency.lean",
+            "nested/.lake/build/Generated.lean",
+            "ignored/Private.agda",
+            "ignored/Private.lean",
+            "Proof.agdai",
+            "Main.olean",
+            "elm-stuff/generated/Cache.elm",
+        ]) {
+            let path = repo.join(file);
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::write(path, "fixture")?;
+        }
+        let mut files = collect_files(repo, &[]);
+        files.sort();
+        let mut wanted: Vec<_> = expected.iter().map(|(file, _)| repo.join(file)).collect();
+        wanted.sort();
+        assert_eq!(files, wanted);
+        for (file, language) in expected {
+            assert_eq!(detect_language(Path::new(file)), language);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn formal_source_windows_preserve_unicode_and_original_lines() {
+        let source = (0..300)
+            .map(|i| format!("-- λ ∀ → proof{i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        for language in ["agda", "lean", "go", "elm"] {
+            assert!(make_chunks("", language).is_empty());
+            let chunks = make_chunks(&source, language);
+            assert!(chunks.len() > 1);
+            assert_eq!(chunks[0].start_line, 1);
+            assert_eq!(chunks.last().map(|c| c.end_line), Some(300));
+            for chunk in &chunks {
+                assert!(chunk.symbol_kind.is_none());
+                assert!(chunk.content.len() <= MAX_CHUNK_BYTES);
+                let expected = source
+                    .lines()
+                    .skip((chunk.start_line - 1) as usize)
+                    .take((chunk.end_line - chunk.start_line + 1) as usize)
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                assert_eq!(chunk.content, expected);
+            }
+            assert!(chunks.windows(2).all(|w| w[1].start_line <= w[0].end_line));
+        }
+    }
 
     #[test]
     fn android_file_discovery_respects_ignores_and_excludes_generated_output() -> Result<()> {

@@ -389,3 +389,263 @@ async fn exercise(remote: bool) -> Result<()> {
     assert_eq!(reader.count("documents", "true").await?, 0);
     Ok(())
 }
+
+#[tokio::test]
+async fn formal_sources_are_searchable_locally() -> Result<()> {
+    exercise_formal_sources(false).await
+}
+
+#[tokio::test]
+async fn formal_sources_are_searchable_remotely() -> Result<()> {
+    exercise_formal_sources(true).await
+}
+
+async fn exercise_formal_sources(remote: bool) -> Result<()> {
+    let tmp = tempfile::tempdir()?;
+    let repo = tmp.path().join("formal");
+    std::fs::create_dir_all(repo.join(".git"))?;
+    std::fs::write(repo.join(".gitignore"), "ignored/\n")?;
+    let fixtures = [
+        ("Proof.agda", "agda", "agdaproofmarker", "module Proof where\nagdaproofmarker : {A : Set} → A → A\nagdaproofmarker x = x\n"),
+        ("Literate.lagda", "agda", "literatemarker", "A literate explanation.\n\\begin{code}\nmodule Literate where\nliteratemarker : {A : Set} → A → A\nliteratemarker x = x\n\\end{code}\n"),
+        ("Main.LEAN", "lean", "leanproofmarker", "theorem leanproofmarker : ∀ (p : Prop), p → p := by\n  intro p h\n  exact h\n"),
+        ("main.go", "go", "gofunctionmarker", "package main\nfunc gofunctionmarker() int { return 1 }\n"),
+        ("Main.ELM", "elm", "elmfunctionmarker", "module Main exposing (elmfunctionmarker)\n\nelmfunctionmarker : Int\nelmfunctionmarker = 1\n"),
+    ];
+    for (file, _, _, source) in fixtures {
+        std::fs::write(repo.join(file), source)?;
+    }
+    for file in [
+        ".lake/packages/Dependency.lean",
+        "nested/.lake/build/Generated.lean",
+        "ignored/Secret.agda",
+        "ignored/Secret.lean",
+        "ignored/Secret.go",
+        "ignored/Secret.elm",
+        "elm-stuff/generated/Cache.elm",
+    ] {
+        let path = repo.join(file);
+        std::fs::create_dir_all(path.parent().context("fixture parent")?)?;
+        std::fs::write(path, "cacheignoredmarker")?;
+    }
+    let index = tmp.path().join("index");
+    let local = Store::open(&index, "fixture", 4).await?;
+    let storage = if remote {
+        Some(http::StorageServer::start(local, Some(http::TOKEN.into()))?)
+    } else {
+        None
+    };
+    let remote = storage.as_ref().map(|s| s.url.as_str());
+    let server = Embeddings::start()?;
+    let path = repo.to_str().context("UTF8 formal fixture path")?;
+    run(
+        &index,
+        &server,
+        remote,
+        &["code", path, "--project", "formal"],
+    )?;
+    let reader = Store::open(&index, "fixture", 4).await?;
+    assert_eq!(reader.count("code_chunks", "true").await?, 5);
+    let project = project_filter(&["formal".into()]);
+    for (file, language, marker, source) in fixtures {
+        let filter = format!("({project}) AND language = '{language}'");
+        let hits = reader.keyword("code_chunks", marker, &filter, 10).await?;
+        assert_eq!(hits.len(), 1, "missing formal source {file}");
+        let row = &hits[0].0;
+        assert_eq!(row["file_path"], file);
+        let start = row["start_line"].as_u64().context("formal start")? as usize;
+        let end = row["end_line"].as_u64().context("formal end")? as usize;
+        ensure!(start > 0 && end >= start && end <= source.lines().count());
+        let expected = source
+            .lines()
+            .skip(start - 1)
+            .take(end - start + 1)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(row["content"], expected);
+        let kind = if language == "lean" {
+            "theorem"
+        } else {
+            "function"
+        };
+        assert_eq!(row["symbol_kind"], kind);
+        assert_eq!(
+            reader
+                .keyword(
+                    "code_chunks",
+                    marker,
+                    &format!("({filter}) AND symbol_kind = '{kind}'"),
+                    10
+                )
+                .await?
+                .len(),
+            1
+        );
+        let other_language = if language == "agda" { "lean" } else { "agda" };
+        assert!(reader
+            .keyword(
+                "code_chunks",
+                marker,
+                &format!("language = '{other_language}'"),
+                10
+            )
+            .await?
+            .is_empty());
+        assert!(reader
+            .keyword(
+                "code_chunks",
+                marker,
+                &project_filter(&["other".into()]),
+                10
+            )
+            .await?
+            .is_empty());
+    }
+    assert!(reader
+        .keyword("code_chunks", "cacheignoredmarker", "true", 10)
+        .await?
+        .is_empty());
+    let calls = server.requests.load(Ordering::Relaxed);
+    run(
+        &index,
+        &server,
+        remote,
+        &["code", path, "--project", "formal"],
+    )?;
+    assert_eq!(server.requests.load(Ordering::Relaxed), calls);
+    std::fs::write(repo.join("Proof.agda"), "-- replacementagdamarker\n")?;
+    std::fs::write(repo.join("Main.LEAN"), "-- replacementleanmarker\n")?;
+    std::fs::write(
+        repo.join("main.go"),
+        "package main\nfunc replacementgomarker() {}\n",
+    )?;
+    std::fs::write(
+        repo.join("Main.ELM"),
+        "module Main exposing (..)\nreplacementelmmarker = 2\n",
+    )?;
+    run(&index, &server, remote, &["code", path])?;
+    for (marker, language, old) in [
+        ("replacementagdamarker", "agda", "agdaproofmarker"),
+        ("replacementleanmarker", "lean", "leanproofmarker"),
+        ("replacementgomarker", "go", "gofunctionmarker"),
+        ("replacementelmmarker", "elm", "elmfunctionmarker"),
+    ] {
+        assert_eq!(
+            reader
+                .keyword(
+                    "code_chunks",
+                    marker,
+                    &format!("language = '{language}'"),
+                    10
+                )
+                .await?
+                .len(),
+            1
+        );
+        assert!(reader
+            .keyword("code_chunks", old, "true", 10)
+            .await?
+            .is_empty());
+    }
+    for (file, _, _, _) in fixtures {
+        std::fs::remove_file(repo.join(file))?;
+    }
+    run(&index, &server, remote, &["code", path])?;
+    assert_eq!(reader.count("code_chunks", "true").await?, 0);
+    Ok(())
+}
+
+#[test]
+fn formal_grammars_extract_declarations_and_original_line_ranges() {
+    use agentix_indexer::ingest::symbols::extract_symbols;
+    for (language, source, expected) in [
+        (
+            "go",
+            include_str!("fixtures/indexing.go"),
+            vec![
+                ("Identity", "function"),
+                ("Point", "struct"),
+                ("Reader", "interface"),
+                ("Alias", "type"),
+                ("Point.Read", "method"),
+                ("First", "const"),
+                ("Second", "const"),
+                ("Global", "variable"),
+            ],
+        ),
+        (
+            "elm",
+            include_str!("fixtures/indexing.elm"),
+            vec![
+                ("identity", "function"),
+                ("Choice", "type"),
+                ("Box", "type"),
+                ("unicode", "function"),
+            ],
+        ),
+        (
+            "agda",
+            include_str!("fixtures/formal.agda"),
+            vec![
+                ("identity", "function"),
+                ("nested", "function"),
+                ("Bool", "type"),
+                ("Box", "struct"),
+                ("_∧_", "function"),
+            ],
+        ),
+        (
+            "lean",
+            include_str!("fixtures/formal.lean"),
+            vec![
+                ("identity", "function"),
+                ("identity_eq", "theorem"),
+                ("unicode_identity", "theorem"),
+                ("Count", "type"),
+                ("Box", "struct"),
+                ("Choice", "type"),
+                ("nested", "function"),
+            ],
+        ),
+    ] {
+        let symbols = extract_symbols(source, language);
+        for (name, kind) in expected {
+            assert!(
+                symbols.iter().any(|s| s.name == name && s.kind == kind),
+                "missing {language} {kind} {name}; got {:?}",
+                symbols
+                    .iter()
+                    .map(|s| (&s.name, &s.kind))
+                    .collect::<Vec<_>>()
+            );
+        }
+        assert!(symbols.iter().all(|s| !s.name.contains("Fake")));
+        for symbol in &symbols {
+            let expected = source
+                .lines()
+                .skip(symbol.start_line - 1)
+                .take(symbol.end_line - symbol.start_line + 1)
+                .collect::<Vec<_>>()
+                .join("\n");
+            assert_eq!(symbol.content, expected);
+        }
+        if language == "agda" || language == "elm" {
+            let identity: Vec<_> = symbols.iter().filter(|s| s.name == "identity").collect();
+            assert_eq!(identity.len(), 1);
+            assert!(identity[0].content.contains("identity :"));
+            assert!(identity[0].content.contains("="));
+        }
+        if language == "agda" {
+            assert!(symbols
+                .iter()
+                .any(|s| s.name == "Bool" && s.content.contains("true : Bool")));
+            assert!(symbols
+                .iter()
+                .any(|s| s.name == "Box" && s.content.contains("value : A")));
+            let operator: Vec<_> = symbols.iter().filter(|s| s.name == "_∧_").collect();
+            assert_eq!(operator.len(), 1);
+            assert!(operator[0].content.contains("false ∧ b = false"));
+            assert!(operator[0].content.contains("true ∧ b = b"));
+        }
+    }
+}

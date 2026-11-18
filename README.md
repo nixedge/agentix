@@ -153,7 +153,8 @@ just stats
 just index /path/to/your/repo
 ```
 
-This walks the repo, extracts symbols for TypeScript, JavaScript, Python, Rust, Haskell, Java, and Kotlin
+This walks the repo, extracts symbols for TypeScript, JavaScript, Python, Rust, Haskell,
+Java, Kotlin, Agda, Lean 4, Go, and Elm
 files using tree-sitter (functions, classes, structs, etc.), and falls back to overlapping
 line windows for other file types. Files that haven't changed since the last run are skipped.
 
@@ -166,8 +167,24 @@ Use `search_code` or `bm25_search` with `language="kotlin"` for Kotlin code,
 `language="xml"` for manifests/resources, `language="groovy"` for `.gradle`, or
 `language="properties"` for properties. These files belong to code search, not `search_docs`.
 
+Agda (`.agda`, plain `.lagda`) and Lean 4 (`.lean`) sources use tree-sitter declaration
+chunks, preserving Unicode and original line numbers. Search with `language="agda"`
+or `language="lean"`; use `symbol_kind="function"`, `"theorem"` (Lean), `"type"`, or
+`"struct"` to narrow declarations. Agda signatures and consecutive equations are grouped.
+Plain `.lagda` parses LaTeX code blocks with original line coordinates; compound literate
+formats such as `.lagda.md` are outside this support. Files without recognized symbols
+use overlapping line windows.
+Extensions are case-insensitive. Lean `.lake` dependency/build caches are excluded;
+compiled `.agdai` and `.olean` files are not discovered.
+
+Go (`.go`, `language="go"`) indexes functions, receiver-qualified methods, types,
+interfaces, constants and variables. Elm (`.elm`, `language="elm"`) indexes functions,
+custom types and type aliases, grouping function annotations with implementations.
+Elm's `elm-stuff` cache is excluded. Run `just reindex /path/to/repo` to replace
+previously indexed Go line chunks with declaration chunks.
+
 After updating the indexer, run `just index /path/to/repo` again to add newly supported
-Android files. For a Git revision already marked complete, rerun its original
+files. For a Git revision already marked complete, rerun its original
 `ingest git <url> --rev <revision>` command with `--force`.
 
 Re-index everything from scratch:
